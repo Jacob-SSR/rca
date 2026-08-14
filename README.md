@@ -179,6 +179,47 @@ entrypoint จะรอ DB พร้อม → `prisma migrate deploy` → seed 
 
 ไฟล์ DOCX เก็บที่ `./data/documents` ซึ่ง mount เข้า container — ลบ container แล้วไฟล์ไม่หาย
 
+### แก้ปัญหาตอนขึ้น stack
+
+**`dependency failed to start: container rca-mysql-1 is unhealthy`**
+
+MySQL init ครั้งแรกช้ากว่า budget ของ healthcheck — พบบ่อยบน Docker Desktop/Windows
+ที่ดิสก์ช้า ตอนนี้ตั้ง budget ไว้ ~10 นาที และ `rca` ไม่ผูกกับ healthcheck แล้ว
+(ใช้ `service_started` + retry loop ใน entrypoint แทน) ปัญหานี้จึงไม่ควรบล็อกทั้ง stack อีก
+
+ถ้ายังเจอ ให้ดูว่า MySQL พังจริงหรือแค่ช้า:
+
+```bash
+docker compose logs mysql --tail 60
+docker inspect --format "{{json .State.Health}}" rca-mysql-1
+```
+
+**MySQL init ค้างหรือ volume เสีย** — ลบ volume แล้วเริ่มใหม่ (ข้อมูลหายหมด
+ถ้าเพิ่งติดตั้งก็ไม่มีอะไรให้เสีย):
+
+```bash
+docker compose down -v
+docker compose up -d
+```
+
+**อยากดูว่า `rca` รออยู่หรือพังไปแล้ว**
+
+```bash
+docker compose logs -f rca
+```
+
+ระหว่างรอจะเห็น `… รอ MySQL พร้อมรับ connection (ครั้งที่ n/60)` เป็นระยะ —
+ถ้าครบ 60 ครั้งจะพิมพ์ `DATABASE_URL` (ปิดบังรหัสผ่านแล้ว) ให้ตรวจว่าชี้ถูกที่หรือเปล่า
+ปรับเวลารอได้ด้วย `DB_WAIT_RETRIES` / `DB_WAIT_DELAY`
+
+**ขึ้นทีละตัวเพื่อไล่ปัญหา**
+
+```bash
+docker compose up -d mysql          # รอจนขึ้นก่อน
+docker compose up -d phpmyadmin     # เข้า :8089 ดูว่า MySQL ใช้ได้จริง
+docker compose up -d rca
+```
+
 ## การแก้เกณฑ์
 
 1. แก้ `data/criteria/opd-a1.json` — **ต้องเทียบกับ PDF ต้นฉบับ สนย. ทุกครั้ง**

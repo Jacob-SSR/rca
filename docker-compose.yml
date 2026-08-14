@@ -40,8 +40,12 @@ services:
       # ไฟล์ DOCX ที่อัปโหลดอยู่นอก container — ลบ container แล้วไฟล์ไม่หาย
       - ./data/documents:/app/data/documents
     depends_on:
+      # service_started ไม่ใช่ service_healthy — ตัวรอ DB จริงคือ retry loop ใน
+      # docker-entrypoint.sh ถ้าผูกกับ healthcheck แล้ว healthcheck เพี้ยน/ช้าเกิน
+      # timeout จะทำให้ทั้ง stack ขึ้นไม่ได้เลย ("dependency failed to start")
+      # ทั้งที่ MySQL อาจใช้ได้อยู่ — เอา failure mode นั้นออก
       mysql:
-        condition: service_healthy
+        condition: service_started
 
   # ── MySQL ของ RCA ────────────────────────────────────────────────────────────
   # image mysql สร้าง MYSQL_DATABASE + MYSQL_USER ให้เองตอนบูตครั้งแรก
@@ -69,17 +73,26 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
-      # ให้ rca รอจน MySQL รับ connection ได้จริงก่อนค่อยเริ่ม migrate
+      # ใช้แสดงสถานะเท่านั้น — ตัวรอ DB จริงคือ retry loop ใน docker-entrypoint.sh
+      #
+      # -h 127.0.0.1 (ไม่ใช่ localhost): บังคับต่อผ่าน TCP
+      # ถ้าใช้ localhost ตัว client จะไปเข้า unix socket ซึ่งช่วงที่ image กำลัง
+      # init ก็มีอยู่แล้ว (temp server รันด้วย --skip-networking) จะได้ healthy
+      # ก่อนที่ MySQL จะพร้อมรับ connection จริง
+      #
       # ต้องเป็น CMD-SHELL — CMD แบบ exec ไม่ขยายตัวแปร $MYSQL_ROOT_PASSWORD ให้
       test:
         [
           "CMD-SHELL",
-          "mysqladmin ping -h localhost -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent",
+          "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent",
         ]
       interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 30s
+      timeout: 10s
+      # budget = start_period 180s + 40×10s ≈ 10 นาที
+      # เผื่อเครื่องที่ดิสก์ช้า — MySQL init ครั้งแรกบน Docker Desktop/Windows
+      # ใช้เวลาได้หลายนาที ค่าเดิม (~150 วิ) น้อยเกินไป
+      retries: 40
+      start_period: 180s
 
   # ── phpMyAdmin ของ RCA ───────────────────────────────────────────────────────
   # ⚠️ เปิดเฉพาะวง LAN โรงพยาบาล ห้าม forward ออกอินเทอร์เน็ต

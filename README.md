@@ -142,7 +142,22 @@ FLUSH PRIVILEGES;
 
 user `rca` มีสิทธิ์เฉพาะ database `rca` — ต่อให้แอปมีช่องโหว่ก็แตะตาราง `km_ppch` ไม่ได้
 
-แล้วตั้ง `DATABASE_URL` ใน `.env` ให้ตรง เช่น `mysql://rca:xxx@mysql:3306/rca`
+### 3. ใส่รหัสผ่านลง `.env`
+
+รหัสผ่าน DB ตั้ง **2 ที่ ต้องตรงกัน**: ที่ `CREATE USER ... IDENTIFIED BY` ข้างบน
+และที่ `DATABASE_URL` ใน `.env`
+
+```
+DATABASE_URL="mysql://rca:รหัสเดียวกัน@mysql:3306/rca"
+```
+
+- **ห้ามใส่รหัสจริงใน `.env.example`** — ไฟล์นั้นเข้า git ส่วน `.env` อยู่ใน `.gitignore`
+- **ถ้ารหัสมีอักขระพิเศษต้อง URL-encode** เพราะอยู่ใน URL:
+  `@`→`%40` `:`→`%3A` `/`→`%2F` `#`→`%23` `?`→`%3F` `%`→`%25`
+  เช่น `p@ss#1` → `mysql://rca:p%40ss%231@mysql:3306/rca`
+  ทางที่ง่ายกว่าคือตั้งรหัสยาวๆ แต่ใช้แค่ `A-Z a-z 0-9`
+
+> `MYSQL_PASSWORD` ใน compose ของ km เป็นรหัสของ user `km` คนละตัวกัน ไม่ต้องแตะ
 
 ## Deploy
 

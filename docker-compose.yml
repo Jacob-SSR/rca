@@ -1,22 +1,22 @@
-# docker-compose.yml — RCA (container เดียว) + phpMyAdmin
+# docker-compose.yml — RCA container เดียว
 #
-# ── แผนผังพอร์ตบนเครื่องนี้ ───────────────────────────────────────────────────
-#   8080  km-system (แอป)                    ← ของเดิม ไม่แตะ
-#   8088  RCA (แอป)                          ← ตัวนี้
-#   8089  phpMyAdmin                         ← ตัวนี้
-#   3306  MySQL ตัวอื่นที่ใช้อยู่แล้ว          ← ของเดิม ไม่แตะ
-#   3307  MySQL ของ km                       ← ของเดิม ไม่แตะ (RCA ใช้ตัวนี้ร่วม)
-#   3308  ว่าง                                ← ไม่ได้ใช้ ปล่อยว่างไว้
+# ── สิ่งที่ km-system (kmppc-backtend) รันอยู่แล้ว อย่าไปชน ────────────────────
+#   3001  km api (NestJS)
+#   8080  phpMyAdmin ของ km        ← ใช้ตัวนี้จัดการ DB ได้เลย ไม่ต้องรันใหม่
+#   3307  MySQL ของ km             ← พอร์ตบน host (ภายใน container คือ 3306)
+#   6380  Redis ของ km
 #
-# RCA ไม่เปิดพอร์ต MySQL ของตัวเองเลย เพราะใช้ MySQL ตัวเดียวกับ km ตามสเปกข้อ 3
-# (แยกแค่ database: km ใช้ของมัน RCA ใช้ database ชื่อ `rca`)
+# ── ของ RCA ──────────────────────────────────────────────────────────────────
+#   8088  RCA (แอป)
+#   ไม่เปิดพอร์ต MySQL และไม่รัน phpMyAdmin เอง → 3308 ยังว่าง
 #
-# 3307 คือพอร์ตที่ km "เปิดออกมาบน host" — แต่ container ใน network เดียวกัน
-# คุยกันตรงๆ ที่พอร์ตภายใน 3306 ผ่านชื่อ service จึงไม่ต้องใช้ 3307 ในไฟล์นี้
+# RCA ใช้ MySQL ตัวเดียวกับ km ตามสเปกข้อ 3 แต่คนละ database:
+#   km  → km_ppch
+#   RCA → rca
 #
-# หาชื่อ network และชื่อ service ของ km:
-#   docker network ls                                     → KM_NETWORK
-#   docker compose -f <km>/docker-compose.yml ps          → DB_HOST
+# compose ของ km ไม่ได้ประกาศ networks ไว้ จึงใช้ default network ชื่อ
+# "<ชื่อโฟลเดอร์ที่รัน km>_default" — ยืนยันชื่อจริงด้วย `docker network ls`
+# แล้วใส่ลง .env เป็น KM_NETWORK
 
 services:
   rca:
@@ -26,7 +26,7 @@ services:
     ports:
       - "${APP_PORT:-8088}:3000"
     environment:
-      # host = ชื่อ service MySQL ของ km, port = 3306 (พอร์ตภายใน ไม่ใช่ 3307)
+      # host = ชื่อ service MySQL ของ km ("mysql"), port = 3306 (พอร์ตภายใน ไม่ใช่ 3307)
       #   mysql://rca:xxx@mysql:3306/rca
       DATABASE_URL: ${DATABASE_URL}
       AI_PROVIDER: ${AI_PROVIDER:-gemini}
@@ -39,28 +39,6 @@ services:
     volumes:
       # ไฟล์ DOCX ที่อัปโหลดอยู่นอก container — ลบ container แล้วไฟล์ไม่หาย
       - ./data/documents:/app/data/documents
-    networks:
-      - km
-
-  # ── phpMyAdmin — หน้าจอจัดการฐานข้อมูล ───────────────────────────────────────
-  # เห็นทุก database บน MySQL ของ km (รวม db ของ km เอง) ตามสิทธิ์ของ user ที่ล็อกอิน
-  # ถ้า km มี phpMyAdmin อยู่แล้ว ไม่ต้องรัน service นี้: `docker compose up -d rca`
-  #
-  # ⚠️ พอร์ตนี้เปิดเฉพาะในวง LAN ของโรงพยาบาลเท่านั้น ห้าม forward ออกอินเทอร์เน็ต
-  #    มันคือทางเข้า DB เต็มสิทธิ์ ไม่มี rate limit ไม่มี 2FA และล็อกอินผิดกี่ครั้งก็ได้
-  #    ถ้าเครื่องนี้มี public IP ให้ผูกพอร์ตไว้กับ LAN interface เท่านั้น เช่น
-  #      ports: ["192.168.x.x:8089:80"]
-  phpmyadmin:
-    image: phpmyadmin:5
-    restart: unless-stopped
-    ports:
-      - "${PHPMYADMIN_PORT:-8089}:80"
-    environment:
-      PMA_HOST: ${DB_HOST:?ต้องตั้ง DB_HOST เป็นชื่อ service MySQL ของ km ใน .env}
-      PMA_PORT: ${DB_PORT:-3306}
-      # เผื่อ import ไฟล์ .sql ก้อนใหญ่ (default ของ image คือ 2M ซึ่งน้อยไป)
-      UPLOAD_LIMIT: ${PMA_UPLOAD_LIMIT:-64M}
-      TZ: Asia/Bangkok
     networks:
       - km
 

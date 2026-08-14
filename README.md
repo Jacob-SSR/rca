@@ -100,36 +100,38 @@ lib/docx/export.ts             DOCX สรุปผล
 
 ### แผนผังพอร์ต
 
+ค่าที่ km ใช้อยู่ อ่านจาก `kmppc-backtend/docker-compose.yml` โดยตรง
+
 | พอร์ต | ใคร | หมายเหตุ |
 |---|---|---|
-| 8080 | km-system (แอป) | ของเดิม ไม่แตะ |
+| 3001 | km api (NestJS) | ของ km ไม่แตะ |
+| 8080 | **phpMyAdmin ของ km** | ของ km — ใช้จัดการ DB ของ RCA ได้เลย |
+| 3307 | MySQL ของ km | ของ km — RCA ใช้ตัวนี้ร่วม |
+| 6380 | Redis ของ km | ของ km ไม่แตะ |
 | **8088** | **RCA (แอป)** | ตั้งที่ `APP_PORT` |
-| **8089** | **phpMyAdmin** | ตั้งที่ `PHPMYADMIN_PORT` |
-| 3306 | MySQL ตัวอื่นที่ใช้อยู่แล้ว | ของเดิม ไม่แตะ |
-| 3307 | MySQL ของ km | ของเดิม — RCA ใช้ตัวนี้ร่วม |
 | 3308 | ว่าง | ไม่ได้ใช้ |
 
-**RCA ไม่เปิดพอร์ต MySQL ของตัวเองเลย** — 3308 ยังว่างเหมือนเดิม
+**RCA ไม่เปิดพอร์ต MySQL และไม่รัน phpMyAdmin ของตัวเอง** — km มีให้แล้วที่ 8080
+และมันชี้ไป MySQL ตัวเดียวกัน จึงเห็น database `rca` ด้วยอยู่แล้ว
 
 จุดที่สับสนง่าย: `3307` คือพอร์ตที่ km **เปิดออกมาบนเครื่อง host** สำหรับต่อจากข้างนอก
 แต่ container ที่อยู่ใน docker network เดียวกันคุยกันตรงๆ ที่พอร์ต**ภายใน** `3306` ผ่านชื่อ service
 ดังนั้นใน `DATABASE_URL` ต้องใช้ `mysql:3306` ไม่ใช่ `mysql:3307`
 
-เนื่องจาก MySQL ของ km เป็น container ใน compose ของ km stack นี้จึงเข้าไปอยู่ใน
-docker network เดียวกับ km แล้วเรียก MySQL ด้วย **ชื่อ service** ไม่ใช่ `localhost`
+### 1. หาชื่อ network ของ km
 
-### 1. หาชื่อ network และ service ของ km
+compose ของ km ไม่ได้ประกาศ `networks` ไว้ จึงใช้ default network
+ชื่อ `<ชื่อโฟลเดอร์ที่รัน km>_default` — ยืนยันชื่อจริง:
 
 ```bash
-docker network ls                                    # เช่น km-system_default
-docker compose -f <path ของ km>/docker-compose.yml ps  # เช่น service ชื่อ mysql
+docker network ls        # เช่น kmppc-backtend_default
 ```
 
-เอาไปใส่ `.env` เป็น `KM_NETWORK` และ `DB_HOST`
+เอาไปใส่ `.env` เป็น `KM_NETWORK` (ส่วนชื่อ service MySQL คือ `mysql` แน่นอนแล้ว)
 
 ### 2. สร้าง database + user
 
-เปิด phpMyAdmin ที่ **http://&lt;เครื่อง&gt;:8089** แล้วรัน (แท็บ SQL):
+เปิด phpMyAdmin ของ km ที่ **http://&lt;เครื่อง&gt;:8080** แล้วรัน (แท็บ SQL):
 
 ```sql
 CREATE DATABASE rca CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -138,28 +140,18 @@ GRANT ALL PRIVILEGES ON rca.* TO 'rca'@'%';
 FLUSH PRIVILEGES;
 ```
 
-user `rca` มีสิทธิ์เฉพาะ database `rca` — ต่อให้แอปมีช่องโหว่ก็แตะตารางของ km ไม่ได้
+user `rca` มีสิทธิ์เฉพาะ database `rca` — ต่อให้แอปมีช่องโหว่ก็แตะตาราง `km_ppch` ไม่ได้
 
 แล้วตั้ง `DATABASE_URL` ใน `.env` ให้ตรง เช่น `mysql://rca:xxx@mysql:3306/rca`
-
-> ⚠️ พอร์ต 8089 เปิดเฉพาะในวง LAN ของโรงพยาบาลเท่านั้น ห้าม forward ออกอินเทอร์เน็ต
-> phpMyAdmin คือทางเข้า DB เต็มสิทธิ์ ไม่มี rate limit และไม่มี 2FA
-> ถ้าเครื่องมี public IP ให้ผูกพอร์ตกับ LAN interface: `ports: ["192.168.x.x:8089:80"]`
->
-> ถ้า km มี phpMyAdmin อยู่แล้ว ใช้ตัวนั้นได้เลย ไม่ต้องรัน service นี้ —
-> `docker compose up -d rca`
 
 ## Deploy
 
 ```bash
-cp .env.example .env      # ตั้ง KM_NETWORK, DB_HOST, DATABASE_URL, GEMINI_API_KEY
+cp .env.example .env      # ตั้ง KM_NETWORK, DATABASE_URL, GEMINI_API_KEY
 docker compose up -d --build
 ```
 
-| service | URL |
-|---|---|
-| rca | http://&lt;เครื่อง&gt;:8088 (`APP_PORT`) |
-| phpmyadmin | http://&lt;เครื่อง&gt;:8089 (`PHPMYADMIN_PORT`) |
+เปิดใช้งานที่ **http://&lt;เครื่อง&gt;:8088**
 
 entrypoint จะรอ DB พร้อม → `prisma migrate deploy` → seed เกณฑ์ ให้อัตโนมัติ
 (ปิดได้ด้วย `RUN_MIGRATIONS=0` / `RUN_SEED=0`)

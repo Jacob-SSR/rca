@@ -1,36 +1,118 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# RCA — ผู้ช่วยตรวจคุณภาพการบันทึกข้อมูลผู้ป่วยนอก (MVP Phase 1)
 
-## Getting Started
+ระบบภายในโรงพยาบาลพลับพลาชัย สำหรับตรวจคุณภาพการบันทึกเวชระเบียนผู้ป่วยนอก (OPD)
+ตามเกณฑ์ **Form A1** ของสำนักนโยบายและยุทธศาสตร์ สธ. (มีนาคม 2558)
 
-First, run the development server:
+## หลักการที่ระบบนี้ยึด
+
+1. **Rule Engine ตัดสินคะแนน ไม่ใช่ AI** — AI มีหน้าที่สกัด facts จากเอกสารเป็น JSON เท่านั้น
+   เปลี่ยน AI provider แล้วคะแนนต้องไม่เปลี่ยน ถ้า facts เหมือนกัน
+2. **ทุกหัวข้อต้องมี evidence เป็นข้อความจริงจากเอกสาร** ไม่ใช่คำสรุปของ AI
+3. **ปิดบัง PHI ก่อนส่งเข้า AI ทุกครั้ง** — ชื่อ, HN, เลขบัตรประชาชน, ที่อยู่, เบอร์โทร
+   แต่ไม่ปิดบังอายุ เพศ โรคประจำตัว และข้อความทางคลินิก เพราะมีผลต่อการประเมิน
+4. **`data/criteria/opd-a1.json` คือ Source of Truth ของเกณฑ์** — แก้เกณฑ์ที่ JSON แล้ว seed ใหม่
+   ห้ามแก้ใน Prisma หรือในโค้ดตรงๆ
+5. **เรียก AI ครั้งเดียวต่อเอกสาร** — สกัดทุกหัวข้อในการเรียกเดียว
+6. **Phase 1 ไม่เชื่อม HOSxP** ทั้งฝั่งข้อมูลและ auth
+
+## Tech stack
+
+| ส่วน | ใช้ |
+|---|---|
+| Framework | Next.js 16 (App Router) — frontend + API Route Handlers ในตัวเดียว |
+| Language | TypeScript |
+| ORM | Prisma 7 (driver adapter `@prisma/adapter-mariadb`) |
+| Database | MySQL |
+| DOCX parse | `mammoth` |
+| DOCX generate | `docx` |
+| AI | Gemini (`@google/genai`) — Phase 1 ตัวเดียว |
+| Validation | Zod |
+| Deploy | Docker container เดียว + volume mount |
+
+## เริ่มใช้งาน
 
 ```bash
+npm install
+cp .env.example .env      # แล้วใส่ DATABASE_URL กับ GEMINI_API_KEY
+
+npm run db:migrate        # หรือ npx prisma migrate deploy บน production
+npm run db:seed           # โหลดเกณฑ์ A1_OPD_2015 เข้า DB
+
+npm run test              # เทสต์ Rule Engine + PHI sanitizer (ไม่ต้องมี DB / ไม่เรียก AI)
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+seed จะพิมพ์สรุปให้ตรวจ — ต้องได้ **6 เกณฑ์ maxScore รวม 17**
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Scripts
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| คำสั่ง | ทำอะไร |
+|---|---|
+| `npm run dev` / `build` / `start` | Next.js |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm run lint` | ESLint |
+| `npm run db:migrate` | สร้าง/รัน migration (dev) |
+| `npm run db:seed` | โหลดเกณฑ์จาก `data/criteria/opd-a1.json` |
+| `npm run test:rules` | เทสต์ Rule Engine ด้วย mock facts (36 เคส) |
+| `npm run test:phi` | เทสต์ PHI sanitizer สองด้าน: PHI หายจริง + ข้อมูลคลินิกไม่ถูกทำลาย (23 เคส) |
+| `npm test` | รันทั้งสองชุด |
 
-## Learn More
+## Pipeline
 
-To learn more about Next.js, take a look at the following resources:
+```
+อัปโหลด DOCX
+  → mammoth แปลงเป็น plain text            lib/docx/parse.ts
+  → ปิดบัง PHI                              lib/phi/sanitize.ts
+  → Gemini extractFacts() เรียกครั้งเดียว    lib/ai/gemini.ts
+  → Rule Engine ให้คะแนนตามเกณฑ์             lib/review/rule-engine.ts
+  → บันทึก Review + ReviewItem[] + Timeline  lib/review/pipeline.ts
+  → แสดงผล / Export DOCX                     app/reviews/[id]/
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## โครงสร้างที่สำคัญ
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```
+data/criteria/opd-a1.json      เกณฑ์ Form A1 — Source of Truth
+prisma/schema.prisma           schema (ตามสเปกข้อ 5 เป๊ะๆ)
+prisma/seed.ts                 JSON → CriteriaSet/Criterion/CriterionLevel (idempotent)
+lib/ai/                        provider.ts (interface + prompt กลาง), gemini.ts, anthropic.ts (โครง)
+lib/phi/sanitize.ts            PHI data minimization
+lib/review/criteria/opd-a1.ts  กติกาให้คะแนนต่อ criterion — "ที่เดียว" ที่ตัดสินคะแนน
+lib/review/rule-engine.ts      facts + criteria → ReviewItem[] + คะแนนรวม
+lib/review/pipeline.ts         ต่อทุกขั้นเข้าด้วยกัน
+lib/storage/documents.ts       เก็บไฟล์ลง volume
+lib/docx/export.ts             DOCX สรุปผล
+```
 
-## Deploy on Vercel
+## API
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+| Method | Path | ทำอะไร |
+|---|---|---|
+| GET/POST | `/api/cases` | รายการเคส / สร้างเคส |
+| POST | `/api/review` | อัปโหลด DOCX (multipart: `file`, `caseId?`) แล้วรัน pipeline |
+| GET/PUT | `/api/cases/[id]/timeline` | อ่าน / บันทึก timeline ที่ผู้ใช้แก้ |
+| GET | `/api/reviews/[id]/export` | ดาวน์โหลด DOCX สรุปผล |
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Deploy
+
+```bash
+docker compose up -d --build
+```
+
+entrypoint รัน `prisma migrate deploy` แล้ว seed ให้อัตโนมัติ
+(ปิดได้ด้วย `RUN_MIGRATIONS=0` / `RUN_SEED=0`)
+
+ไฟล์ DOCX เก็บที่ `./data/documents` ซึ่ง mount เข้า container — ลบ container แล้วไฟล์ไม่หาย
+
+## การแก้เกณฑ์
+
+1. แก้ `data/criteria/opd-a1.json` — **ต้องเทียบกับ PDF ต้นฉบับ สนย. ทุกครั้ง**
+2. ถ้าเนื้อหาเกณฑ์เปลี่ยน ให้ขึ้น `meta.version` เป็น 2, 3, …
+   seed จะสร้าง CriteriaSet ใหม่ (`A1_OPD_2015_V2`) แยกจากของเดิม
+   → Review เก่ายังอ้างเกณฑ์เวอร์ชันที่ใช้ตอนตรวจเสมอ ไม่เปลี่ยนย้อนหลัง
+3. ถ้าเงื่อนไขการให้คะแนนเปลี่ยน ต้องแก้ `lib/review/criteria/opd-a1.ts` ด้วย และเพิ่มเทสต์
+
+## ยังไม่ทำใน Phase 1 (Non-goals)
+
+Dashboard/chart, timeline anomaly detection ด้วย AI, Anthropic provider, CRUD เกณฑ์,
+ระบบ auth, การเชื่อม HOSxP, MinIO/S3, microservices, Form A2/A3/A4, ตาราง version history แยก

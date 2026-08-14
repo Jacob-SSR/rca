@@ -1,0 +1,163 @@
+// prisma/schema.prisma
+// ตาม MVP Phase 1 Spec ข้อ 5 — ห้ามเพิ่ม/ลด field โดยไม่แก้สเปกก่อน
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+model CriteriaSet {
+  id         String  @id @default(cuid())
+  code       String  @unique // e.g. "A1_OPD_2015"
+  name       String
+  version    Int
+  source     String? @db.Text
+  sourcePage String?
+  maxScore   Int
+  isActive   Boolean @default(true)
+
+  criteria Criterion[]
+  reviews  Review[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Criterion {
+  id            String @id @default(cuid())
+  criteriaSetId String
+
+  code     String // e.g. "CC", "DIAGNOSIS"
+  name     String  @db.Text
+  maxScore Int
+  allowNA  Boolean @default(false)
+  naRule   String? @db.Text
+
+  criteriaSet CriteriaSet @relation(fields: [criteriaSetId], references: [id])
+
+  levels      CriterionLevel[]
+  reviewItems ReviewItem[]
+
+  @@unique([criteriaSetId, code])
+}
+
+model CriterionLevel {
+  id          String @id @default(cuid())
+  criterionId String
+
+  score       Int
+  description String @db.Text
+
+  criterion Criterion @relation(fields: [criterionId], references: [id], onDelete: Cascade)
+
+  @@unique([criterionId, score])
+}
+
+model Case {
+  id String @id @default(cuid())
+
+  caseNumber String  @unique
+  title      String?
+  status     String  @default("DRAFT")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  events    TimelineEvent[]
+  documents Document[]
+  reviews   Review[]
+}
+
+// หมายเหตุ: ไม่ใส่ HN/VN ใน Phase 1 (ยังไม่เชื่อม HOSxP)
+// Phase 2 ค่อยเพิ่ม hosxpPatientRef / hosxpVisitRef
+
+model TimelineEvent {
+  id     String @id @default(cuid())
+  caseId String
+
+  eventTime DateTime?
+  title     String    @db.Text
+  source    String // "document" | "manual" | "ai"
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([caseId, eventTime])
+}
+
+// ห้ามเพิ่ม confidence / severity / anomaly field ใน Phase 1
+
+model Document {
+  id     String @id @default(cuid())
+  caseId String
+
+  fileName String
+  filePath String // path บน volume, ไม่เก็บไฟล์ใน DB
+  mimeType String
+  fileSize Int
+
+  extractedText String? @db.LongText
+
+  version Int @default(1)
+
+  case    Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  reviews Review[]
+
+  createdAt DateTime @default(now())
+
+  @@index([caseId])
+}
+
+model Review {
+  id String @id @default(cuid())
+
+  caseId        String
+  documentId    String
+  criteriaSetId String
+
+  provider String // "gemini" | "anthropic" (Phase 1: gemini เท่านั้น)
+  model    String?
+
+  status String @default("PENDING")
+
+  totalScore Int?
+  maxScore   Int?
+  percentage Decimal? @db.Decimal(5, 2)
+
+  factsJson Json? // ผลลัพธ์ extractFacts() จาก AI ทั้งก้อน
+
+  case        Case        @relation(fields: [caseId], references: [id])
+  document    Document    @relation(fields: [documentId], references: [id])
+  criteriaSet CriteriaSet @relation(fields: [criteriaSetId], references: [id])
+
+  items ReviewItem[]
+
+  createdAt DateTime @default(now())
+
+  @@index([caseId])
+  @@index([documentId])
+  @@index([criteriaSetId])
+}
+
+model ReviewItem {
+  id String @id @default(cuid())
+
+  reviewId    String
+  criterionId String
+
+  score Int?
+  isNA  Boolean @default(false)
+
+  reason   String? @db.Text // ทำไมได้คะแนนนี้ (มาจาก Rule Engine)
+  evidence String? @db.Text // ข้อความจริงจากเอกสารที่ใช้ตัดสิน
+
+  review    Review    @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  criterion Criterion @relation(fields: [criterionId], references: [id])
+
+  @@unique([reviewId, criterionId])
+  @@index([criterionId])
+}

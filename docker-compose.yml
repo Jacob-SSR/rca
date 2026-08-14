@@ -1,0 +1,22 @@
+# docker-compose.yml — container เดียว + volume สำหรับไฟล์เอกสาร (สเปกข้อ 3)
+# MySQL ใช้ตัวที่มีอยู่แล้ว (km-system) จึงไม่ประกาศ service db ที่นี่
+
+services:
+  rca:
+    build: .
+    image: rca:latest
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      AI_PROVIDER: ${AI_PROVIDER:-gemini}
+      AI_MODEL: ${AI_MODEL:-gemini-2.5-flash}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      DOCUMENT_STORAGE_DIR: /app/data/documents
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-10485760}
+      TZ: Asia/Bangkok
+    volumes:
+      # ไฟล์ DOCX ที่อัปโหลดอยู่นอก container — ลบ container แล้วไฟล์ไม่หาย
+      - ./data/documents:/app/data/documents

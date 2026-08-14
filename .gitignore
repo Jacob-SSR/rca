@@ -39,3 +39,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# ไฟล์ตัวอย่าง env ต้องอยู่ใน repo
+!.env.example
+
+# ไฟล์เอกสารที่ผู้ใช้อัปโหลด — เก็บบน volume ไม่เข้า git
+/data/documents/

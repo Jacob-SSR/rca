@@ -1,5 +1,16 @@
-# docker-compose.yml — container เดียว + volume สำหรับไฟล์เอกสาร (สเปกข้อ 3)
-# MySQL ใช้ตัวที่มีอยู่แล้ว (km-system) จึงไม่ประกาศ service db ที่นี่
+# docker-compose.yml — RCA (container เดียว) + phpMyAdmin
+#
+# MySQL ใช้ตัวเดียวกับ km-system ตามสเปกข้อ 3 — ไม่มี service db ที่นี่
+# แต่คนละ database: km ใช้ของมัน, RCA ใช้ database ชื่อ `rca` แยกต่างหาก
+#
+# เนื่องจาก MySQL ของ km เป็น container ใน compose ของ km
+# stack นี้จึงต้องเข้าไปอยู่ใน docker network เดียวกับ km แล้วเรียก MySQL
+# ด้วย "ชื่อ service ของ km" (เช่น mysql / db / mariadb) ไม่ใช่ localhost
+#
+# หาชื่อ network และชื่อ service ของ km:
+#   docker network ls                      → ชื่อ network (มักเป็น <ชื่อโฟลเดอร์>_default)
+#   docker compose -f <km>/docker-compose.yml ps    → ชื่อ service ของ MySQL
+# แล้วใส่ลง .env เป็น KM_NETWORK และ DB_HOST
 
 services:
   rca:
@@ -7,8 +18,10 @@ services:
     image: rca:latest
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "${APP_PORT:-3000}:3000"
     environment:
+      # host ใน DATABASE_URL ต้องเป็นชื่อ service MySQL ของ km เช่น
+      #   mysql://rca:xxx@mysql:3306/rca
       DATABASE_URL: ${DATABASE_URL}
       AI_PROVIDER: ${AI_PROVIDER:-gemini}
       AI_MODEL: ${AI_MODEL:-gemini-2.5-flash}
@@ -20,3 +33,34 @@ services:
     volumes:
       # ไฟล์ DOCX ที่อัปโหลดอยู่นอก container — ลบ container แล้วไฟล์ไม่หาย
       - ./data/documents:/app/data/documents
+    networks:
+      - km
+
+  # ── phpMyAdmin — หน้าจอจัดการฐานข้อมูล ───────────────────────────────────────
+  # เห็นทุก database บน MySQL ตัวนั้น (รวม km) ตามสิทธิ์ของ user ที่ล็อกอิน
+  #
+  # ⚠️ พอร์ตนี้เปิดเฉพาะในวง LAN ของโรงพยาบาลเท่านั้น ห้าม forward ออกอินเทอร์เน็ต
+  #    มันคือทางเข้า DB เต็มสิทธิ์ ไม่มี rate limit ไม่มี 2FA และล็อกอินผิดกี่ครั้งก็ได้
+  #    ถ้าเครื่องนี้มี public IP ให้ผูกพอร์ตไว้กับ LAN interface เท่านั้น เช่น
+  #      ports: ["192.168.x.x:8088:80"]
+  phpmyadmin:
+    image: phpmyadmin:5
+    restart: unless-stopped
+    ports:
+      - "${PHPMYADMIN_PORT:-8088}:80"
+    environment:
+      # ชื่อ service MySQL ของ km (ไม่ใช่ localhost — คนละ container กัน)
+      PMA_HOST: ${DB_HOST:?ต้องตั้ง DB_HOST เป็นชื่อ service MySQL ของ km ใน .env}
+      PMA_PORT: ${DB_PORT:-3306}
+      # เผื่อ import ไฟล์ .sql ก้อนใหญ่ (default ของ image คือ 2M ซึ่งน้อยไป)
+      UPLOAD_LIMIT: ${PMA_UPLOAD_LIMIT:-64M}
+      TZ: Asia/Bangkok
+    networks:
+      - km
+
+networks:
+  # network ที่ km สร้างไว้แล้ว — external: true แปลว่า compose นี้ไม่สร้างเอง
+  # ถ้าชื่อผิดจะขึ้น error ตั้งแต่ `docker compose up` ไม่ใช่ไปพังตอนต่อ DB
+  km:
+    external: true
+    name: ${KM_NETWORK:?ต้องตั้ง KM_NETWORK เป็นชื่อ docker network ของ km ใน .env}

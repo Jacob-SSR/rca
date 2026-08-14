@@ -93,13 +93,55 @@ lib/docx/export.ts             DOCX สรุปผล
 | GET/PUT | `/api/cases/[id]/timeline` | อ่าน / บันทึก timeline ที่ผู้ใช้แก้ |
 | GET | `/api/reviews/[id]/export` | ดาวน์โหลด DOCX สรุปผล |
 
+## ฐานข้อมูล
+
+ใช้ **MySQL ตัวเดียวกับ km-system** ตามสเปกข้อ 3 — ไม่ตั้ง instance ใหม่
+แต่ **แยก database**: km ใช้ของมัน, RCA ใช้ database ชื่อ `rca` ต่างหาก ไม่ปนตารางกัน
+
+เนื่องจาก MySQL ของ km เป็น container ใน compose ของ km stack นี้จึงเข้าไปอยู่ใน
+docker network เดียวกับ km แล้วเรียก MySQL ด้วย **ชื่อ service** ไม่ใช่ `localhost`
+
+### 1. หาชื่อ network และ service ของ km
+
+```bash
+docker network ls                                    # เช่น km-system_default
+docker compose -f <path ของ km>/docker-compose.yml ps  # เช่น service ชื่อ mysql
+```
+
+เอาไปใส่ `.env` เป็น `KM_NETWORK` และ `DB_HOST`
+
+### 2. สร้าง database + user
+
+เปิด phpMyAdmin ที่ **http://<เครื่อง>:8088** แล้วรัน (แท็บ SQL):
+
+```sql
+CREATE DATABASE rca CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'rca'@'%' IDENTIFIED BY 'ตั้งรหัสผ่านตรงนี้';
+GRANT ALL PRIVILEGES ON rca.* TO 'rca'@'%';
+FLUSH PRIVILEGES;
+```
+
+user `rca` มีสิทธิ์เฉพาะ database `rca` — ต่อให้แอปมีช่องโหว่ก็แตะตารางของ km ไม่ได้
+
+แล้วตั้ง `DATABASE_URL` ใน `.env` ให้ตรง เช่น `mysql://rca:xxx@mysql:3306/rca`
+
+> ⚠️ พอร์ต 8088 เปิดเฉพาะในวง LAN ของโรงพยาบาลเท่านั้น ห้าม forward ออกอินเทอร์เน็ต
+> phpMyAdmin คือทางเข้า DB เต็มสิทธิ์ ไม่มี rate limit และไม่มี 2FA
+> ถ้าเครื่องมี public IP ให้ผูกพอร์ตกับ LAN interface: `ports: ["192.168.x.x:8088:80"]`
+
 ## Deploy
 
 ```bash
+cp .env.example .env      # ตั้ง KM_NETWORK, DB_HOST, DATABASE_URL, GEMINI_API_KEY
 docker compose up -d --build
 ```
 
-entrypoint รัน `prisma migrate deploy` แล้ว seed ให้อัตโนมัติ
+| service | พอร์ต |
+|---|---|
+| rca | 3000 (`APP_PORT`) |
+| phpmyadmin | 8088 (`PHPMYADMIN_PORT`) |
+
+entrypoint จะรอ DB พร้อม → `prisma migrate deploy` → seed เกณฑ์ ให้อัตโนมัติ
 (ปิดได้ด้วย `RUN_MIGRATIONS=0` / `RUN_SEED=0`)
 
 ไฟล์ DOCX เก็บที่ `./data/documents` ซึ่ง mount เข้า container — ลบ container แล้วไฟล์ไม่หาย

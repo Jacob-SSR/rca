@@ -1,23 +1,19 @@
-# docker-compose.yml — RCA + phpMyAdmin ของตัวเอง
+# docker-compose.yml — RCA ยืนด้วยตัวเองทั้ง stack
+#
+# แอป + MySQL + phpMyAdmin ของ RCA เอง ไม่แตะ km และไม่ต่อ network ของ km เลย
+# `docker compose up -d` ครั้งแรก MySQL จะสร้าง database + user ให้อัตโนมัติ
+# ตามค่าใน .env — ไม่ต้องล็อกอิน root ไปรัน SQL เอง
 #
 # ── พอร์ตที่ km ใช้อยู่ อย่าไปชน ───────────────────────────────────────────────
-#   3001  km api (NestJS)
-#   8080  phpMyAdmin ของ km
-#   3307  MySQL ของ km        ← พอร์ตบน host (ภายใน container คือ 3306)
-#   6380  Redis ของ km
+#   3001 km api · 8080 phpMyAdmin ของ km · 3307 MySQL ของ km · 6380 Redis ของ km
 #
 # ── ของ RCA ──────────────────────────────────────────────────────────────────
 #   8088  RCA (แอป)
 #   8089  phpMyAdmin ของ RCA
-#   ไม่เปิดพอร์ต MySQL เอง → 3308 ยังว่าง
+#   3308  MySQL ของ RCA
 #
-# RCA ใช้ MySQL ตัวเดียวกับ km ตามสเปกข้อ 3 แต่คนละ database:
-#   km  → km_ppch
-#   RCA → rca
-#
-# compose ของ km ไม่ได้ประกาศ networks จึงใช้ default network ชื่อ
-# "<ชื่อโฟลเดอร์ที่รัน km>_default" — ยืนยันด้วย `docker network ls`
-# แล้วใส่ลง .env เป็น KM_NETWORK
+# หมายเหตุ: สเปกข้อ 3 เขียนไว้ว่าใช้ MySQL ตัวเดียวกับ km-system
+# ตรงนี้เลือกแยก instance ตามที่ตกลงกันภายหลัง เพื่อให้ RCA ไม่ผูกกับ stack ของ km
 
 services:
   rca:
@@ -27,9 +23,9 @@ services:
     ports:
       - "${APP_PORT:-8088}:3000"
     environment:
-      # host = ชื่อ service MySQL ของ km ("mysql"), port = 3306 (ภายใน ไม่ใช่ 3307)
-      #   mysql://rca:xxx@mysql:3306/rca
-      DATABASE_URL: ${DATABASE_URL}
+      # host = "mysql" คือชื่อ service ข้างล่าง, port 3306 คือพอร์ตภายใน
+      # (ไม่ใช่ 3308 ที่เปิดออกมาบน host)
+      DATABASE_URL: mysql://${MYSQL_USER:-rca}:${MYSQL_PASSWORD:?ต้องตั้ง MYSQL_PASSWORD ใน .env}@mysql:3306/${MYSQL_DATABASE:-rca}
       AI_PROVIDER: ${AI_PROVIDER:-gemini}
       AI_MODEL: ${AI_MODEL:-gemini-2.5-flash}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
@@ -40,11 +36,49 @@ services:
     volumes:
       # ไฟล์ DOCX ที่อัปโหลดอยู่นอก container — ลบ container แล้วไฟล์ไม่หาย
       - ./data/documents:/app/data/documents
-    networks:
-      - km
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  # ── MySQL ของ RCA ────────────────────────────────────────────────────────────
+  # image mysql สร้าง MYSQL_DATABASE + MYSQL_USER ให้เองตอนบูตครั้งแรก
+  # และ grant สิทธิ์ทั้งหมดบน database นั้นให้ user นั้นโดยอัตโนมัติ
+  #
+  # ⚠️ ค่าพวกนี้มีผลเฉพาะ "ตอนสร้าง volume ครั้งแรก" เท่านั้น
+  #    ถ้าแก้รหัสทีหลังแล้วอยากให้มีผล ต้อง ALTER USER เอง หรือลบ volume แล้วเริ่มใหม่
+  #    (docker compose down -v — ข้อมูลหายหมด)
+  mysql:
+    image: mysql:8
+    restart: unless-stopped
+    ports:
+      # 3308 บน host — 3306 เป็นของตัวอื่น, 3307 เป็นของ km
+      - "${DB_PUBLISH_PORT:-3308}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?ต้องตั้ง MYSQL_ROOT_PASSWORD ใน .env}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-rca}
+      MYSQL_USER: ${MYSQL_USER:-rca}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?ต้องตั้ง MYSQL_PASSWORD ใน .env}
+      TZ: Asia/Bangkok
+    command:
+      # ภาษาไทยต้องเป็น utf8mb4 — DB นี้เป็นของแอปเราเอง ไม่ใช่ HOSxP (ที่ใช้ tis620)
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      # ให้ rca รอจน MySQL รับ connection ได้จริงก่อนค่อยเริ่ม migrate
+      # ต้องเป็น CMD-SHELL — CMD แบบ exec ไม่ขยายตัวแปร $MYSQL_ROOT_PASSWORD ให้
+      test:
+        [
+          "CMD-SHELL",
+          "mysqladmin ping -h localhost -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
 
   # ── phpMyAdmin ของ RCA ───────────────────────────────────────────────────────
-  # ชี้ไป MySQL ตัวเดียวกับ km — สิทธิ์ที่เห็นขึ้นกับ user ที่ล็อกอิน ไม่ใช่ตัว phpMyAdmin
   # ⚠️ เปิดเฉพาะวง LAN โรงพยาบาล ห้าม forward ออกอินเทอร์เน็ต
   phpmyadmin:
     image: phpmyadmin:5
@@ -52,17 +86,13 @@ services:
     ports:
       - "${PHPMYADMIN_PORT:-8089}:80"
     environment:
-      PMA_HOST: ${DB_HOST:-mysql}
-      PMA_PORT: ${DB_PORT:-3306}
+      PMA_HOST: mysql
+      PMA_PORT: 3306
       # เผื่อ import .sql ก้อนใหญ่ (default ของ image คือ 2M)
       UPLOAD_LIMIT: ${PMA_UPLOAD_LIMIT:-64M}
       TZ: Asia/Bangkok
-    networks:
-      - km
+    depends_on:
+      - mysql
 
-networks:
-  # network ที่ km สร้างไว้แล้ว — external: true แปลว่า compose นี้ไม่สร้างเอง
-  # ถ้าชื่อผิดจะขึ้น error ตั้งแต่ `docker compose up` ไม่ใช่ไปพังตอนต่อ DB
-  km:
-    external: true
-    name: ${KM_NETWORK:?ต้องตั้ง KM_NETWORK เป็นชื่อ docker network ของ km ใน .env}
+volumes:
+  mysql_data:

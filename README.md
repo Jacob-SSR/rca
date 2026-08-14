@@ -27,18 +27,26 @@
 | DOCX generate | `docx` |
 | AI | Gemini (`@google/genai`) — Phase 1 ตัวเดียว |
 | Validation | Zod |
-| Deploy | Docker container เดียว + volume mount |
+| Deploy | Docker compose — rca + mysql + phpmyadmin |
 
 ## เริ่มใช้งาน
 
+ทางที่เร็วที่สุด — ขึ้นทั้ง stack เลย ไม่ต้องเตรียม database ไว้ก่อน:
+
 ```bash
+cp .env.example .env      # ตั้งรหัส MySQL + GEMINI_API_KEY
+docker compose up -d --build
+docker compose logs -f rca
+```
+
+หรือรัน dev นอก docker (ต้องมี MySQL ของ RCA ขึ้นอยู่แล้ว):
+
+```bash
+docker compose up -d mysql   # เอาแค่ DB
 npm install
-cp .env.example .env      # แล้วใส่ DATABASE_URL กับ GEMINI_API_KEY
-
-npm run db:migrate        # หรือ npx prisma migrate deploy บน production
-npm run db:seed           # โหลดเกณฑ์ A1_OPD_2015 เข้า DB
-
-npm run test              # เทสต์ Rule Engine + PHI sanitizer (ไม่ต้องมี DB / ไม่เรียก AI)
+npm run db:migrate
+npm run db:seed              # โหลดเกณฑ์ A1_OPD_2015 เข้า DB
+npm run test                 # เทสต์ Rule Engine + PHI (ไม่ต้องมี DB / ไม่เรียก AI)
 npm run dev
 ```
 
@@ -95,120 +103,73 @@ lib/docx/export.ts             DOCX สรุปผล
 
 ## ฐานข้อมูล
 
-ใช้ **MySQL ตัวเดียวกับ km-system** ตามสเปกข้อ 3 — ไม่ตั้ง instance ใหม่
-แต่ **แยก database**: km ใช้ของมัน, RCA ใช้ database ชื่อ `rca` ต่างหาก ไม่ปนตารางกัน
+RCA มี **MySQL ของตัวเอง** สร้างโดย `docker compose` ไม่เกี่ยวกับ km เลย
+ไม่ต่อ network ของ km ไม่ใช้ user ของ km และลบ/สร้าง stack นี้ใหม่ได้โดยไม่กระทบ km
+
+> สเปกข้อ 3 เขียนไว้ว่าใช้ MySQL ตัวเดียวกับ km-system —
+> ตรงนี้เลือกแยก instance ตามที่ตกลงกันภายหลัง เพื่อให้ RCA ไม่ผูกกับ stack ของ km
 
 ### แผนผังพอร์ต
 
-ค่าที่ km ใช้อยู่ อ่านจาก `kmppc-backtend/docker-compose.yml` โดยตรง
-
 | พอร์ต | ใคร | หมายเหตุ |
 |---|---|---|
-| 3001 | km api (NestJS) | ของ km ไม่แตะ |
-| 8080 | **phpMyAdmin ของ km** | ของ km — ใช้จัดการ DB ของ RCA ได้เลย |
-| 3307 | MySQL ของ km | ของ km — RCA ใช้ตัวนี้ร่วม |
+| 3001 | km api | ของ km ไม่แตะ |
+| 8080 | phpMyAdmin ของ km | ของ km ไม่แตะ |
+| 3307 | MySQL ของ km | ของ km ไม่แตะ |
 | 6380 | Redis ของ km | ของ km ไม่แตะ |
-| **8088** | **RCA (แอป)** | ตั้งที่ `APP_PORT` |
-| **8089** | **phpMyAdmin ของ RCA** | ตั้งที่ `PHPMYADMIN_PORT` |
-| 3308 | ว่าง | ไม่ได้ใช้ |
+| **8088** | **RCA (แอป)** | `APP_PORT` |
+| **8089** | **phpMyAdmin ของ RCA** | `PHPMYADMIN_PORT` |
+| **3308** | **MySQL ของ RCA** | `DB_PUBLISH_PORT` |
 
-**RCA ไม่เปิดพอร์ต MySQL ของตัวเอง** — 3308 ยังว่างเหมือนเดิม
+### ไม่ต้องรัน SQL เอง
 
-phpMyAdmin ที่ 8089 ชี้ไป MySQL ตัวเดียวกับของ km — สิทธิ์ที่เห็นขึ้นกับ
-**user ที่ล็อกอิน** ไม่ใช่ตัว phpMyAdmin (ล็อกอินเป็น `km` ก็ยังสร้าง database ไม่ได้
-เหมือนกัน เพราะ user `km` มีสิทธิ์เฉพาะ `km_ppch` — ต้องล็อกอินเป็น `root`)
+image `mysql` จะสร้าง database + user ให้อัตโนมัติตอนบูตครั้งแรก
+จากค่า `MYSQL_DATABASE` / `MYSQL_USER` / `MYSQL_PASSWORD` ใน `.env`
+พร้อม grant สิทธิ์บน database นั้นให้ครบ — ไม่ต้องล็อกอิน root ไปรัน
+`CREATE DATABASE` / `CREATE USER` / `GRANT` เอง
 
-จุดที่สับสนง่าย: `3307` คือพอร์ตที่ km **เปิดออกมาบนเครื่อง host** สำหรับต่อจากข้างนอก
-แต่ container ที่อยู่ใน docker network เดียวกันคุยกันตรงๆ ที่พอร์ต**ภายใน** `3306` ผ่านชื่อ service
-ดังนั้นใน `DATABASE_URL` ต้องใช้ `mysql:3306` ไม่ใช่ `mysql:3307`
-
-### 1. หาชื่อ network ของ km
-
-compose ของ km ไม่ได้ประกาศ `networks` ไว้ จึงใช้ default network
-ชื่อ `<ชื่อโฟลเดอร์ที่รัน km>_default` — ยืนยันชื่อจริง:
-
-```bash
-docker network ls        # เช่น kmppc-backtend_default
-```
-
-เอาไปใส่ `.env` เป็น `KM_NETWORK` (ส่วนชื่อ service MySQL คือ `mysql` แน่นอนแล้ว)
-
-### 2. สร้าง database + user (ต้องเป็น **root**)
-
-> ⚠️ **ล็อกอินด้วย user `km` ไม่ได้** — compose ของ km สร้าง user `km` ให้มีสิทธิ์เฉพาะ
-> `km_ppch` เท่านั้น ถ้ารัน `CREATE DATABASE` ด้วย user นี้จะได้
-> `#1044 - Access denied for user 'km'@'%' to database 'rca'`
-
-**หารหัส root** — จาก `MYSQL_ROOT_PASSWORD` ใน `.env` ของ km
-(ถ้าไม่ได้ตั้งไว้ = ค่า default `kmroot` ตามที่ compose ของ km เขียนไว้)
-
-```bash
-grep MYSQL_ROOT_PASSWORD /path/ไปยัง/kmppc-backtend/.env
-```
-
-**วิธีที่ 1 — phpMyAdmin** ที่ http://&lt;เครื่อง&gt;:8089 (หรือของ km ที่ :8080 ก็ได้
-ชี้ MySQL ตัวเดียวกัน) ล็อกอินเป็น **`root`** แล้วรันในแท็บ SQL
-
-**วิธีที่ 2 — CLI** (ไม่ต้องล็อกเอาต์จาก phpMyAdmin)
-
-```bash
-cd /path/ไปยัง/kmppc-backtend
-docker compose exec mysql mysql -uroot -p <<'SQL'
-CREATE DATABASE IF NOT EXISTS rca CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER IF NOT EXISTS 'rca'@'%' IDENTIFIED BY 'ตั้งรหัสผ่านตรงนี้';
-GRANT ALL PRIVILEGES ON rca.* TO 'rca'@'%';
-SQL
-```
-
-`IF NOT EXISTS` ทำให้รันซ้ำได้ไม่ error — ถ้าเผลอรันไปครึ่งทางแล้วก็รันใหม่ทั้งชุดได้เลย
-(`FLUSH PRIVILEGES` ไม่จำเป็น — จำเป็นเฉพาะตอนแก้ตาราง grant ตรงๆ ไม่ใช่ตอนใช้ `GRANT`)
-
-**ตรวจว่าผ่านจริง**
-
-```sql
-SELECT user, host FROM mysql.user WHERE user = 'rca';
-SHOW GRANTS FOR 'rca'@'%';
-```
-
-ต้องเห็น `rca | %` และ ``GRANT ALL PRIVILEGES ON `rca`.* TO `rca`@`%` ``
-ถ้าเห็น `ON *.*` แสดงว่าสิทธิ์กว้างเกินไป ให้ `REVOKE ALL ON *.* FROM 'rca'@'%';` แล้ว GRANT ใหม่
-
-#### ทำไมไม่ใช้ user `km` ไปเลย
-
-ใช้ได้ ไม่ผิดอะไรทางเทคนิค แต่**ไม่ได้ประหยัดขั้นตอน** — ยังต้องใช้ root รัน
-`GRANT ALL ON rca.* TO 'km'@'%';` อยู่ดี ต่างกันแค่ SQL บรรทัดเดียว
-
-ที่แลกไปคือ `DATABASE_URL` ของ RCA จะกลายเป็นรหัสที่เปิด `km_ppch` ได้ด้วย —
-ถ้ามันหลุด (env โผล่ใน error page, log, เผลอ commit `.env`) ก็เสียฐานข้อมูล KM ไปด้วย
-ทั้งที่ RCA แตะข้อมูลผู้ป่วย และ `CLAUDE.md` ของ km ก็ระบุว่า km เป็นเจ้าของ DB ของตัวเอง
-
-user `rca` มีสิทธิ์เฉพาะ database `rca` — ต่อให้แอปมีช่องโหว่ก็แตะตาราง `km_ppch` ไม่ได้
-
-### 3. ใส่รหัสผ่านลง `.env`
-
-รหัสผ่าน DB ตั้ง **2 ที่ ต้องตรงกัน**: ที่ `CREATE USER ... IDENTIFIED BY` ข้างบน
-และที่ `DATABASE_URL` ใน `.env`
+ค่า default ใน `.env.example`:
 
 ```
-DATABASE_URL="mysql://rca:รหัสเดียวกัน@mysql:3306/rca"
+MYSQL_ROOT_PASSWORD=rcaroot
+MYSQL_DATABASE=rca
+MYSQL_USER=rca
+MYSQL_PASSWORD=rcapass
 ```
 
-- **ห้ามใส่รหัสจริงใน `.env.example`** — ไฟล์นั้นเข้า git ส่วน `.env` อยู่ใน `.gitignore`
-- **ถ้ารหัสมีอักขระพิเศษต้อง URL-encode** เพราะอยู่ใน URL:
-  `@`→`%40` `:`→`%3A` `/`→`%2F` `#`→`%23` `?`→`%3F` `%`→`%25`
-  เช่น `p@ss#1` → `mysql://rca:p%40ss%231@mysql:3306/rca`
-  ทางที่ง่ายกว่าคือตั้งรหัสยาวๆ แต่ใช้แค่ `A-Z a-z 0-9`
+`DATABASE_URL` ที่แอปใช้ตอนอยู่ใน docker ประกอบให้อัตโนมัติใน `docker-compose.yml`
+จากค่าข้างบน จึงไม่ต้องตั้งซ้ำและไม่มีทางตั้งไม่ตรงกัน
 
-> `MYSQL_PASSWORD` ใน compose ของ km เป็นรหัสของ user `km` คนละตัวกัน ไม่ต้องแตะ
+> ⚠️ ค่าพวกนี้มีผล **เฉพาะตอนสร้าง volume ครั้งแรก** เท่านั้น
+> แก้รหัสทีหลังแล้วอยากให้มีผล ต้อง `ALTER USER 'rca'@'%' IDENTIFIED BY '<ใหม่>';`
+> หรือ `docker compose down -v` แล้วขึ้นใหม่ (**ข้อมูลหายหมด**)
+
+> ⚠️ พอร์ต 8089 (phpMyAdmin) และ 3308 (MySQL) เปิดเฉพาะวง LAN โรงพยาบาลเท่านั้น
+> ห้าม forward ออกอินเทอร์เน็ต ถ้าเครื่องมี public IP ให้ผูกกับ LAN interface
+> เช่น `ports: ["192.168.x.x:8089:80"]`
+
+### รันนอก docker (`npm run dev`)
+
+ใช้ `DATABASE_URL` ใน `.env` ที่ชี้มาที่พอร์ตบน host:
+
+```
+DATABASE_URL="mysql://rca:rcapass@localhost:3308/rca"
+```
 
 ## Deploy
 
 ```bash
-cp .env.example .env      # ตั้ง KM_NETWORK, DATABASE_URL, GEMINI_API_KEY
+cp .env.example .env      # ตั้งรหัส MySQL + GEMINI_API_KEY
 docker compose up -d --build
 ```
 
-เปิดใช้งานที่ **http://&lt;เครื่อง&gt;:8088**
+ขึ้นมา 3 container: `rca` (8088), `mysql` (3308), `phpmyadmin` (8089)
+ไม่ต้องเตรียม database ไว้ก่อน — สร้างให้เองตอนบูตครั้งแรก
+
+| service | URL |
+|---|---|
+| RCA | http://&lt;เครื่อง&gt;:8088 |
+| phpMyAdmin | http://&lt;เครื่อง&gt;:8089 (ล็อกอิน `rca` / `MYSQL_PASSWORD`) |
 
 entrypoint จะรอ DB พร้อม → `prisma migrate deploy` → seed เกณฑ์ ให้อัตโนมัติ
 (ปิดได้ด้วย `RUN_MIGRATIONS=0` / `RUN_SEED=0`)

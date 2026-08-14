@@ -48,7 +48,14 @@ COPY --from=builder /app/data/criteria ./data/criteria
 COPY --from=builder /app/lib ./lib
 COPY --from=builder /app/tsconfig.json ./tsconfig.json
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
+# sed ตัด \r ทิ้ง — ถ้าไฟล์ถูก checkout/แตกไฟล์บน Windows แบบ CRLF
+# บรรทัด shebang จะกลายเป็น "#!/bin/sh\r" เคอร์เนลจะไปหา interpreter ชื่อ
+# "/bin/sh\r" ที่ไม่มีจริง แล้วขึ้น error ชวนงงว่า
+#   exec /usr/local/bin/docker-entrypoint.sh: no such file or directory
+# (ไฟล์มีอยู่ ที่ไม่มีคือตัวแปลภาษา) — .gitattributes กันไว้อีกชั้นแล้ว
+# แต่ zip/copy ข้ามเครื่องไม่ผ่าน git จึงต้องกันตรงนี้ด้วย
+RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh \
+  && chmod +x /usr/local/bin/docker-entrypoint.sh \
   && mkdir -p /app/data/documents \
   && chown -R node:node /app/data
 

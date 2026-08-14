@@ -1,0 +1,24 @@
+# .gitattributes
+# โปรเจกต์นี้ dev บน Windows แต่ build/รันใน linux container
+# ถ้าปล่อยให้ git แปลงเป็น CRLF ตอน checkout ไฟล์ .sh จะพังทันที
+# (shebang กลายเป็น "#!/bin/sh\r" → exec ... : no such file or directory)
+
+# บังคับ LF ในไฟล์ text ทั้งหมด ไม่ว่าจะ checkout บน OS ไหน
+* text=auto eol=lf
+
+# shell script ห้ามเป็น CRLF เด็ดขาด
+*.sh text eol=lf
+docker-entrypoint.sh text eol=lf
+Dockerfile text eol=lf
+
+# ไฟล์ binary ห้ามให้ git ไปยุ่งกับ line ending
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.docx binary
+*.pdf binary
+*.zip binary

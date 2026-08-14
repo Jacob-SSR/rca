@@ -9,7 +9,18 @@ WORKDIR /app
 # ── deps: ติดตั้ง dependency ทั้งหมด (รวม dev เพราะต้องใช้ตอน build/seed) ──────
 FROM base AS deps
 COPY package.json package-lock.json ./
-RUN npm ci
+# ใช้ npm ci ก่อนเสมอ (เร็วกว่าและ reproducible) แต่ต้อง fallback เป็น npm install
+#
+# เหตุผล: npm มีบั๊กเก่าเรื่อง optional dependency ที่ผูกกับ platform
+# (@emnapi/*, @esbuild/*, @rollup/rollup-*) — รัน `npm install` บน Windows แล้ว
+# lock file จะถูกเขียนใหม่โดยตัดตัวที่ Windows ไม่ใช้ทิ้ง พอเอา lock นั้นมา
+# `npm ci` ใน alpine ก็ล้มด้วย "Missing: @emnapi/runtime from lock file"
+#
+# แลก reproducibility ไปนิดหน่อยเพื่อให้ build ไม่ล้มเพราะ lock drift ข้าม OS
+# ซึ่งเป็นเรื่องที่เกิดแน่ๆ เมื่อ dev บน Windows แต่ build ใน linux container
+RUN npm ci --no-audit --no-fund || \
+    (echo "⚠ npm ci ล้ม (lock ไม่ตรงกับ platform) — fallback ไป npm install" && \
+     npm install --no-audit --no-fund)
 
 # ── build ─────────────────────────────────────────────────────────────────────
 FROM base AS builder

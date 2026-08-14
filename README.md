@@ -181,6 +181,21 @@ entrypoint จะรอ DB พร้อม → `prisma migrate deploy` → seed 
 
 ### แก้ปัญหาตอนขึ้น stack
 
+**`npm ci can only install packages when your package.json and package-lock.json are in sync`**
+**`Missing: @emnapi/runtime from lock file`**
+
+lock file ถูกเขียนใหม่ตอนรัน `npm install` บน Windows แล้ว npm ตัด optional
+dependency ที่ผูกกับ platform ทิ้ง (`@emnapi/*`, `@esbuild/*`, `@rollup/rollup-*`)
+พอ `npm ci` ในคอนเทนเนอร์ linux ก็หาไม่เจอ
+
+Dockerfile จัดการให้แล้ว — `npm ci` ล้มจะ fallback ไป `npm install` อัตโนมัติ
+ถ้ายังอยากให้ `npm ci` ทำงานตรงๆ (build เร็วกว่า) ให้สร้าง lock ใหม่จากในคอนเทนเนอร์:
+
+```bash
+docker run --rm -v "%cd%":/app -w /app node:22-alpine npm install --package-lock-only
+```
+
+
 **`dependency failed to start: container rca-mysql-1 is unhealthy`**
 
 MySQL init ครั้งแรกช้ากว่า budget ของ healthcheck — พบบ่อยบน Docker Desktop/Windows

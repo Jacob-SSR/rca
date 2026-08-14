@@ -129,16 +129,53 @@ docker network ls        # เช่น kmppc-backtend_default
 
 เอาไปใส่ `.env` เป็น `KM_NETWORK` (ส่วนชื่อ service MySQL คือ `mysql` แน่นอนแล้ว)
 
-### 2. สร้าง database + user
+### 2. สร้าง database + user (ต้องเป็น **root**)
 
-เปิด phpMyAdmin ของ km ที่ **http://&lt;เครื่อง&gt;:8080** แล้วรัน (แท็บ SQL):
+> ⚠️ **ล็อกอินด้วย user `km` ไม่ได้** — compose ของ km สร้าง user `km` ให้มีสิทธิ์เฉพาะ
+> `km_ppch` เท่านั้น ถ้ารัน `CREATE DATABASE` ด้วย user นี้จะได้
+> `#1044 - Access denied for user 'km'@'%' to database 'rca'`
+
+**หารหัส root** — จาก `MYSQL_ROOT_PASSWORD` ใน `.env` ของ km
+(ถ้าไม่ได้ตั้งไว้ = ค่า default `kmroot` ตามที่ compose ของ km เขียนไว้)
+
+```bash
+grep MYSQL_ROOT_PASSWORD /path/ไปยัง/kmppc-backtend/.env
+```
+
+**วิธีที่ 1 — phpMyAdmin** ที่ http://&lt;เครื่อง&gt;:8080 ล็อกอินเป็น `root` แล้วรันในแท็บ SQL
+
+**วิธีที่ 2 — CLI** (ไม่ต้องล็อกเอาต์จาก phpMyAdmin)
+
+```bash
+cd /path/ไปยัง/kmppc-backtend
+docker compose exec mysql mysql -uroot -p <<'SQL'
+CREATE DATABASE IF NOT EXISTS rca CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER IF NOT EXISTS 'rca'@'%' IDENTIFIED BY 'ตั้งรหัสผ่านตรงนี้';
+GRANT ALL PRIVILEGES ON rca.* TO 'rca'@'%';
+SQL
+```
+
+`IF NOT EXISTS` ทำให้รันซ้ำได้ไม่ error — ถ้าเผลอรันไปครึ่งทางแล้วก็รันใหม่ทั้งชุดได้เลย
+(`FLUSH PRIVILEGES` ไม่จำเป็น — จำเป็นเฉพาะตอนแก้ตาราง grant ตรงๆ ไม่ใช่ตอนใช้ `GRANT`)
+
+**ตรวจว่าผ่านจริง**
 
 ```sql
-CREATE DATABASE rca CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER 'rca'@'%' IDENTIFIED BY 'ตั้งรหัสผ่านตรงนี้';
-GRANT ALL PRIVILEGES ON rca.* TO 'rca'@'%';
-FLUSH PRIVILEGES;
+SELECT user, host FROM mysql.user WHERE user = 'rca';
+SHOW GRANTS FOR 'rca'@'%';
 ```
+
+ต้องเห็น `rca | %` และ ``GRANT ALL PRIVILEGES ON `rca`.* TO `rca`@`%` ``
+ถ้าเห็น `ON *.*` แสดงว่าสิทธิ์กว้างเกินไป ให้ `REVOKE ALL ON *.* FROM 'rca'@'%';` แล้ว GRANT ใหม่
+
+#### ทำไมไม่ใช้ user `km` ไปเลย
+
+ใช้ได้ ไม่ผิดอะไรทางเทคนิค แต่**ไม่ได้ประหยัดขั้นตอน** — ยังต้องใช้ root รัน
+`GRANT ALL ON rca.* TO 'km'@'%';` อยู่ดี ต่างกันแค่ SQL บรรทัดเดียว
+
+ที่แลกไปคือ `DATABASE_URL` ของ RCA จะกลายเป็นรหัสที่เปิด `km_ppch` ได้ด้วย —
+ถ้ามันหลุด (env โผล่ใน error page, log, เผลอ commit `.env`) ก็เสียฐานข้อมูล KM ไปด้วย
+ทั้งที่ RCA แตะข้อมูลผู้ป่วย และ `CLAUDE.md` ของ km ก็ระบุว่า km เป็นเจ้าของ DB ของตัวเอง
 
 user `rca` มีสิทธิ์เฉพาะ database `rca` — ต่อให้แอปมีช่องโหว่ก็แตะตาราง `km_ppch` ไม่ได้
 

@@ -113,11 +113,12 @@ RCA มี **MySQL ของตัวเอง** สร้างโดย `docke
 
 | พอร์ต | ใคร | หมายเหตุ |
 |---|---|---|
+| 3000, 3100, 3300, 3500 | ระบบอื่น | มีเจ้าของแล้ว |
 | 3001 | km api | ของ km ไม่แตะ |
 | 8080 | phpMyAdmin ของ km | ของ km ไม่แตะ |
 | 3307 | MySQL ของ km | ของ km ไม่แตะ |
 | 6380 | Redis ของ km | ของ km ไม่แตะ |
-| **8088** | **RCA (แอป)** | `APP_PORT` |
+| **3800** | **RCA (แอป)** | `APP_PORT` |
 | **8089** | **phpMyAdmin ของ RCA** | `PHPMYADMIN_PORT` |
 | **3308** | **MySQL ของ RCA** | `DB_PUBLISH_PORT` |
 
@@ -150,10 +151,12 @@ MYSQL_PASSWORD=rcapass
 
 ### รันนอก docker (`npm run dev`)
 
-ใช้ `DATABASE_URL` ใน `.env` ที่ชี้มาที่พอร์ตบน host:
+ใช้ `DATABASE_URL` ใน `.env` ที่ชี้มาที่พอร์ตบน host และตั้ง `PORT`
+เพราะ Next.js เกาะ 3000 เป็น default ซึ่งมีเจ้าของแล้ว:
 
 ```
 DATABASE_URL="mysql://rca:rcapass@localhost:3308/rca"
+PORT=3800
 ```
 
 ## Deploy
@@ -163,12 +166,12 @@ cp .env.example .env      # ตั้งรหัส MySQL + GEMINI_API_KEY
 docker compose up -d --build
 ```
 
-ขึ้นมา 3 container: `rca` (8088), `mysql` (3308), `phpmyadmin` (8089)
+ขึ้นมา 3 container: `rca` (3800), `mysql` (3308), `phpmyadmin` (8089)
 ไม่ต้องเตรียม database ไว้ก่อน — สร้างให้เองตอนบูตครั้งแรก
 
 | service | URL |
 |---|---|
-| RCA | http://&lt;เครื่อง&gt;:8088 |
+| RCA | http://&lt;เครื่อง&gt;:3800 |
 | phpMyAdmin | http://&lt;เครื่อง&gt;:8089 (ล็อกอิน `rca` / `MYSQL_PASSWORD`) |
 
 entrypoint จะรอ DB พร้อม → `prisma migrate deploy` → seed เกณฑ์ ให้อัตโนมัติ

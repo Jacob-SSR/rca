@@ -109,10 +109,14 @@ lib/docx/export.ts             DOCX สรุปผล
 | 3307 | MySQL ของ km | ของ km — RCA ใช้ตัวนี้ร่วม |
 | 6380 | Redis ของ km | ของ km ไม่แตะ |
 | **8088** | **RCA (แอป)** | ตั้งที่ `APP_PORT` |
+| **8089** | **phpMyAdmin ของ RCA** | ตั้งที่ `PHPMYADMIN_PORT` |
 | 3308 | ว่าง | ไม่ได้ใช้ |
 
-**RCA ไม่เปิดพอร์ต MySQL และไม่รัน phpMyAdmin ของตัวเอง** — km มีให้แล้วที่ 8080
-และมันชี้ไป MySQL ตัวเดียวกัน จึงเห็น database `rca` ด้วยอยู่แล้ว
+**RCA ไม่เปิดพอร์ต MySQL ของตัวเอง** — 3308 ยังว่างเหมือนเดิม
+
+phpMyAdmin ที่ 8089 ชี้ไป MySQL ตัวเดียวกับของ km — สิทธิ์ที่เห็นขึ้นกับ
+**user ที่ล็อกอิน** ไม่ใช่ตัว phpMyAdmin (ล็อกอินเป็น `km` ก็ยังสร้าง database ไม่ได้
+เหมือนกัน เพราะ user `km` มีสิทธิ์เฉพาะ `km_ppch` — ต้องล็อกอินเป็น `root`)
 
 จุดที่สับสนง่าย: `3307` คือพอร์ตที่ km **เปิดออกมาบนเครื่อง host** สำหรับต่อจากข้างนอก
 แต่ container ที่อยู่ใน docker network เดียวกันคุยกันตรงๆ ที่พอร์ต**ภายใน** `3306` ผ่านชื่อ service
@@ -142,7 +146,8 @@ docker network ls        # เช่น kmppc-backtend_default
 grep MYSQL_ROOT_PASSWORD /path/ไปยัง/kmppc-backtend/.env
 ```
 
-**วิธีที่ 1 — phpMyAdmin** ที่ http://&lt;เครื่อง&gt;:8080 ล็อกอินเป็น `root` แล้วรันในแท็บ SQL
+**วิธีที่ 1 — phpMyAdmin** ที่ http://&lt;เครื่อง&gt;:8089 (หรือของ km ที่ :8080 ก็ได้
+ชี้ MySQL ตัวเดียวกัน) ล็อกอินเป็น **`root`** แล้วรันในแท็บ SQL
 
 **วิธีที่ 2 — CLI** (ไม่ต้องล็อกเอาต์จาก phpMyAdmin)
 

@@ -1,21 +1,22 @@
-# docker-compose.yml — RCA container เดียว
+# docker-compose.yml — RCA + phpMyAdmin ของตัวเอง
 #
-# ── สิ่งที่ km-system (kmppc-backtend) รันอยู่แล้ว อย่าไปชน ────────────────────
+# ── พอร์ตที่ km ใช้อยู่ อย่าไปชน ───────────────────────────────────────────────
 #   3001  km api (NestJS)
-#   8080  phpMyAdmin ของ km        ← ใช้ตัวนี้จัดการ DB ได้เลย ไม่ต้องรันใหม่
-#   3307  MySQL ของ km             ← พอร์ตบน host (ภายใน container คือ 3306)
+#   8080  phpMyAdmin ของ km
+#   3307  MySQL ของ km        ← พอร์ตบน host (ภายใน container คือ 3306)
 #   6380  Redis ของ km
 #
 # ── ของ RCA ──────────────────────────────────────────────────────────────────
 #   8088  RCA (แอป)
-#   ไม่เปิดพอร์ต MySQL และไม่รัน phpMyAdmin เอง → 3308 ยังว่าง
+#   8089  phpMyAdmin ของ RCA
+#   ไม่เปิดพอร์ต MySQL เอง → 3308 ยังว่าง
 #
 # RCA ใช้ MySQL ตัวเดียวกับ km ตามสเปกข้อ 3 แต่คนละ database:
 #   km  → km_ppch
 #   RCA → rca
 #
-# compose ของ km ไม่ได้ประกาศ networks ไว้ จึงใช้ default network ชื่อ
-# "<ชื่อโฟลเดอร์ที่รัน km>_default" — ยืนยันชื่อจริงด้วย `docker network ls`
+# compose ของ km ไม่ได้ประกาศ networks จึงใช้ default network ชื่อ
+# "<ชื่อโฟลเดอร์ที่รัน km>_default" — ยืนยันด้วย `docker network ls`
 # แล้วใส่ลง .env เป็น KM_NETWORK
 
 services:
@@ -26,7 +27,7 @@ services:
     ports:
       - "${APP_PORT:-8088}:3000"
     environment:
-      # host = ชื่อ service MySQL ของ km ("mysql"), port = 3306 (พอร์ตภายใน ไม่ใช่ 3307)
+      # host = ชื่อ service MySQL ของ km ("mysql"), port = 3306 (ภายใน ไม่ใช่ 3307)
       #   mysql://rca:xxx@mysql:3306/rca
       DATABASE_URL: ${DATABASE_URL}
       AI_PROVIDER: ${AI_PROVIDER:-gemini}
@@ -39,6 +40,23 @@ services:
     volumes:
       # ไฟล์ DOCX ที่อัปโหลดอยู่นอก container — ลบ container แล้วไฟล์ไม่หาย
       - ./data/documents:/app/data/documents
+    networks:
+      - km
+
+  # ── phpMyAdmin ของ RCA ───────────────────────────────────────────────────────
+  # ชี้ไป MySQL ตัวเดียวกับ km — สิทธิ์ที่เห็นขึ้นกับ user ที่ล็อกอิน ไม่ใช่ตัว phpMyAdmin
+  # ⚠️ เปิดเฉพาะวง LAN โรงพยาบาล ห้าม forward ออกอินเทอร์เน็ต
+  phpmyadmin:
+    image: phpmyadmin:5
+    restart: unless-stopped
+    ports:
+      - "${PHPMYADMIN_PORT:-8089}:80"
+    environment:
+      PMA_HOST: ${DB_HOST:-mysql}
+      PMA_PORT: ${DB_PORT:-3306}
+      # เผื่อ import .sql ก้อนใหญ่ (default ของ image คือ 2M)
+      UPLOAD_LIMIT: ${PMA_UPLOAD_LIMIT:-64M}
+      TZ: Asia/Bangkok
     networks:
       - km
 

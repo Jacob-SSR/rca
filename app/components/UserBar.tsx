@@ -26,16 +26,12 @@ export default function UserBar({ name, role }: Props) {
   }
 
   return (
-    <div className="flex items-center gap-3 text-xs">
-      <span className="text-zinc-600">
-        {name} <span className="text-zinc-400">({role})</span>
-      </span>
-      <button
-        type="button"
-        onClick={logout}
-        disabled={busy}
-        className="rounded border border-zinc-300 px-2 py-1 disabled:opacity-50"
-      >
+    <div className="flex items-center gap-3">
+      <div className="hidden text-right leading-tight sm:block">
+        <div className="text-base font-medium">{name}</div>
+        <div className="text-sm text-zinc-500">{role}</div>
+      </div>
+      <button type="button" onClick={logout} disabled={busy} className="btn btn-sm">
         {busy ? "…" : "ออกจากระบบ"}
       </button>
     </div>

@@ -1,6 +1,6 @@
 "use client";
 
-// แก้ timeline ของเคสได้ในหน้าจอ (สเปกข้อ 9)
+// แก้ timeline ของเคสได้ในหน้าจอ
 // บันทึกทั้งชุดผ่าน PUT /api/cases/[id]/timeline — event ที่แก้แล้วกลายเป็น source="manual"
 
 import { useRouter } from "next/navigation";
@@ -54,7 +54,7 @@ export default function TimelineEditor({ caseId, initialEvents }: Props) {
         }),
       });
       const json = await res.json();
-      setMessage(res.ok ? `บันทึกแล้ว ${json.saved} เหตุการณ์` : json?.error ?? "บันทึกไม่สำเร็จ");
+      setMessage(res.ok ? `บันทึกแล้ว ${json.saved} เหตุการณ์` : (json?.error ?? "บันทึกไม่สำเร็จ"));
       if (res.ok) router.refresh();
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ");
@@ -64,63 +64,60 @@ export default function TimelineEditor({ caseId, initialEvents }: Props) {
   }
 
   return (
-    <div className="rounded border border-zinc-200 bg-white p-4">
-      <h2 className="mb-2 font-semibold">ลำดับเหตุการณ์ (แก้ไขได้)</h2>
+    <section className="card overflow-hidden">
+      <h2 className="card-title">ลำดับเหตุการณ์ (แก้ไขได้)</h2>
 
-      {rows.length === 0 ? (
-        <p className="text-sm text-zinc-500">ยังไม่มีเหตุการณ์</p>
-      ) : (
-        <ul className="space-y-2">
-          {rows.map((row, i) => (
-            <li key={i} className="flex flex-wrap items-center gap-2">
-              <input
-                type="datetime-local"
-                value={row.eventTime}
-                onChange={(e) => update(i, { eventTime: e.target.value })}
-                className="rounded border border-zinc-300 px-2 py-1 text-sm"
-              />
-              <input
-                type="text"
-                value={row.title}
-                onChange={(e) => update(i, { title: e.target.value })}
-                className="min-w-0 flex-1 rounded border border-zinc-300 px-2 py-1 text-sm"
-              />
-              <span className="text-xs text-zinc-400">{row.source}</span>
-              <button
-                type="button"
-                onClick={() => setRows((prev) => prev.filter((_, j) => j !== i))}
-                className="rounded border border-zinc-300 px-2 py-1 text-xs"
-              >
-                ลบ
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+      <div className="px-5 py-5 sm:px-6">
+        {rows.length === 0 ? (
+          <p className="text-zinc-500">ยังไม่มีเหตุการณ์</p>
+        ) : (
+          <ul className="space-y-3">
+            {rows.map((row, i) => (
+              <li key={i} className="flex flex-wrap items-center gap-3">
+                <input
+                  type="datetime-local"
+                  value={row.eventTime}
+                  onChange={(e) => update(i, { eventTime: e.target.value })}
+                  className="input tabular w-auto"
+                />
+                <input
+                  type="text"
+                  value={row.title}
+                  onChange={(e) => update(i, { title: e.target.value })}
+                  className="input min-w-0 flex-1"
+                />
+                <span className="badge">{row.source}</span>
+                <button
+                  type="button"
+                  onClick={() => setRows((prev) => prev.filter((_, j) => j !== i))}
+                  className="btn btn-sm btn-danger"
+                >
+                  ลบ
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
 
-      <div className="mt-3 flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => setRows((prev) => [...prev, { eventTime: "", title: "", source: "manual" }])}
-          className="rounded border border-zinc-300 px-3 py-1.5 text-sm"
-        >
-          + เพิ่มเหตุการณ์
-        </button>
-        <button
-          type="button"
-          onClick={save}
-          disabled={busy}
-          className="rounded bg-zinc-900 px-3 py-1.5 text-sm text-white disabled:opacity-50"
-        >
-          {busy ? "กำลังบันทึก…" : "บันทึก timeline"}
-        </button>
-        {message ? <span className="text-sm text-zinc-600">{message}</span> : null}
+        <div className="mt-5 flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setRows((prev) => [...prev, { eventTime: "", title: "", source: "manual" }])}
+            className="btn"
+          >
+            + เพิ่มเหตุการณ์
+          </button>
+          <button type="button" onClick={save} disabled={busy} className="btn btn-primary">
+            {busy ? "กำลังบันทึก…" : "บันทึก timeline"}
+          </button>
+          {message ? <span className="text-zinc-600">{message}</span> : null}
+        </div>
+
+        <p className="mt-3 text-sm text-zinc-500">
+          การบันทึกจะแทนที่รายการทั้งหมดของเคสนี้ และทำให้ทุกรายการเป็น source = manual
+          (รอบตรวจถัดไปจะไม่ลบทิ้ง)
+        </p>
       </div>
-
-      <p className="mt-2 text-xs text-zinc-500">
-        การบันทึกจะแทนที่รายการทั้งหมดของเคสนี้ และทำให้ทุกรายการเป็น source = manual
-        (รอบตรวจถัดไปจะไม่ลบทิ้ง)
-      </p>
-    </div>
+    </section>
   );
 }

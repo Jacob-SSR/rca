@@ -1,10 +1,11 @@
-// app/cases/[id]/page.tsx — รายละเอียดเคส: เอกสาร, ผลตรวจ, timeline editor
+// app/cases/[id]/page.tsx — รายละเอียดเคส: ฟอร์ม, ผลตรวจ, timeline
 
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getCaseDetail } from "@/lib/review/queries";
+import { prisma } from "@/lib/prisma";
 import UploadForm from "@/app/components/UploadForm";
 import TimelineEditor from "@/app/components/TimelineEditor";
+import ScoreBadge from "@/app/components/ScoreBadge";
 
 export const dynamic = "force-dynamic";
 
@@ -18,50 +19,114 @@ function thaiDate(d: Date): string {
 
 export default async function CasePage({ params }: PageProps<"/cases/[id]">) {
   const { id } = await params;
-  const c = await getCaseDetail(id);
+
+  const c = await prisma.case.findUnique({
+    where: { id },
+    include: {
+      forms: { orderBy: { updatedAt: "desc" } },
+      events: { orderBy: [{ eventTime: "asc" }, { createdAt: "asc" }] },
+      reviews: {
+        orderBy: { createdAt: "desc" },
+        include: { document: { select: { fileName: true, version: true } } },
+      },
+    },
+  });
+
   if (!c) notFound();
 
   return (
     <div className="space-y-6">
       <div>
-        <Link href="/" className="text-sm text-blue-700 underline">
+        <Link href="/" className="link text-base">
           ← กลับหน้าแรก
         </Link>
-        <h1 className="mt-2 text-xl font-semibold">{c.caseNumber}</h1>
-        {c.title ? <p className="text-zinc-600">{c.title}</p> : null}
-        <p className="text-sm text-zinc-500">สร้างเมื่อ {thaiDate(c.createdAt)}</p>
+        <h1 className="tabular mt-3 text-2xl font-semibold">{c.caseNumber}</h1>
+        {c.title ? <p className="mt-1 text-zinc-600">{c.title}</p> : null}
+        <p className="mt-1 text-sm text-zinc-500">สร้างเมื่อ {thaiDate(c.createdAt)}</p>
       </div>
 
-      <section className="rounded border border-zinc-200 bg-white">
-        <h2 className="border-b border-zinc-200 px-4 py-3 font-semibold">ผลการตรวจ</h2>
-        {c.reviews.length === 0 ? (
-          <p className="px-4 py-6 text-sm text-zinc-500">ยังไม่มีผลการตรวจ</p>
+      {/* ── ฟอร์มในเคสนี้ ──────────────────────────────────────────────────── */}
+      <section className="card overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 px-5 py-4 sm:px-6">
+          <h2 className="text-lg font-semibold">ฟอร์มบันทึกเวชระเบียน</h2>
+          <Link href="/forms/new" className="btn btn-sm">
+            + สร้างฟอร์มใหม่
+          </Link>
+        </div>
+
+        {c.forms.length === 0 ? (
+          <p className="px-6 py-8 text-zinc-500">ยังไม่มีฟอร์มในเคสนี้</p>
         ) : (
           <ul className="divide-y divide-zinc-100">
-            {c.reviews.map((r) => (
-              <li key={r.id} className="flex items-center justify-between px-4 py-3 text-sm">
-                <div>
-                  <Link href={`/reviews/${r.id}`} className="text-blue-700 underline">
-                    {r.document.fileName}
+            {c.forms.map((f) => (
+              <li key={f.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 sm:px-6">
+                <div className="min-w-0">
+                  <Link href={`/forms/${f.id}`} className="link font-medium">
+                    {f.chiefComplaint?.trim() || "(ยังไม่ได้กรอกอาการสำคัญ)"}
                   </Link>
-                  <div className="text-xs text-zinc-500">
-                    {thaiDate(r.createdAt)} · {r.provider}
-                    {r.model ? ` (${r.model})` : ""}
+                  <div className="tabular mt-0.5 text-sm text-zinc-500">
+                    {f.serviceDate ?? "ไม่ระบุวันที่"}
+                    {f.serviceTime ? ` ${f.serviceTime} น.` : ""} · แก้ล่าสุด{" "}
+                    {thaiDate(f.updatedAt)}
                   </div>
                 </div>
-                <div className="text-right">
-                  {r.status === "COMPLETED" ? (
-                    <span className="font-medium">
-                      {r.totalScore}/{r.maxScore}
-                      {r.percentage ? ` (${Number(r.percentage).toFixed(2)}%)` : ""}
-                    </span>
-                  ) : (
-                    <span className="text-amber-700">{r.status}</span>
-                  )}
-                </div>
+                {f.source === "hosxp" ? <span className="badge">จาก HOSxP</span> : null}
               </li>
             ))}
           </ul>
+        )}
+      </section>
+
+      {/* ── ผลการตรวจ ─────────────────────────────────────────────────────── */}
+      <section className="card overflow-hidden">
+        <h2 className="card-title">ผลการตรวจ</h2>
+
+        {c.reviews.length === 0 ? (
+          <p className="px-6 py-8 text-zinc-500">ยังไม่มีผลการตรวจ</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>เอกสาร</th>
+                  <th>วันที่ตรวจ</th>
+                  <th>ที่มา</th>
+                  <th>คะแนน</th>
+                </tr>
+              </thead>
+              <tbody>
+                {c.reviews.map((r) => (
+                  <tr key={r.id}>
+                    <td>
+                      <Link href={`/reviews/${r.id}`} className="link font-medium">
+                        {r.document.fileName}
+                      </Link>
+                      <div className="text-sm text-zinc-500">ฉบับที่ {r.document.version}</div>
+                    </td>
+                    <td className="tabular whitespace-nowrap text-zinc-600">
+                      {thaiDate(r.createdAt)}
+                    </td>
+                    <td>
+                      <span className="badge">
+                        {r.sourceType === "form" ? "จากฟอร์ม" : "อัปโหลด"}
+                      </span>
+                    </td>
+                    <td>
+                      {r.status === "COMPLETED" ? (
+                        <ScoreBadge
+                          total={r.totalScore}
+                          max={r.maxScore}
+                          percentage={r.percentage?.toString() ?? null}
+                        />
+                      ) : (
+                        <span className="badge bg-warn-50 text-warn-600">{r.status}</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </section>
 

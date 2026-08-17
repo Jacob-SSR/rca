@@ -14,22 +14,28 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
 
   return (
     <html lang="th" className="h-full antialiased">
-      <body className="min-h-full flex flex-col bg-zinc-50 text-zinc-900">
-        <header className="border-b border-zinc-200 bg-white">
-          <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3">
-            <Link href="/" className="font-semibold">
-              RCA · ตรวจคุณภาพบันทึก OPD
-            </Link>
-            <div className="flex items-center gap-4">
-              <span className="hidden text-xs text-zinc-500 sm:inline">
-                Form A1 (สนย. 2558)
+      <body className="flex min-h-full flex-col bg-zinc-100 text-zinc-900">
+        <header className="sticky top-0 z-20 border-b border-zinc-200 bg-white/95 backdrop-blur">
+          <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
+            <Link href="/" className="flex items-center gap-3">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-brand-600 text-lg font-bold text-white">
+                R
               </span>
-              {session ? <UserBar name={session.name} role={session.role} /> : null}
-            </div>
+              <span className="leading-tight">
+                <span className="block text-lg font-semibold">ตรวจคุณภาพบันทึก OPD</span>
+                <span className="block text-sm text-zinc-500">
+                  เกณฑ์ Form A1 · สนย. 2558
+                </span>
+              </span>
+            </Link>
+
+            {session ? <UserBar name={session.name} role={session.role} /> : null}
           </div>
         </header>
-        <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6">{children}</main>
-        <footer className="border-t border-zinc-200 bg-white px-4 py-3 text-center text-xs text-zinc-500">
+
+        <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6">{children}</main>
+
+        <footer className="border-t border-zinc-200 bg-white px-4 py-5 text-center text-sm text-zinc-500">
           ระบบภายในโรงพยาบาลพลับพลาชัย — คะแนนตัดสินโดย Rule Engine ตามเกณฑ์ ไม่ใช่ดุลยพินิจของ AI
         </footer>
       </body>

@@ -13,6 +13,7 @@ type Props = {
 export default function UploadForm({ caseId }: Props) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
+  const [fileName, setFileName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
@@ -22,7 +23,7 @@ export default function UploadForm({ caseId }: Props) {
     const form = new FormData(e.currentTarget);
     const file = form.get("file");
     if (!(file instanceof File) || file.size === 0) {
-      setError("กรุณาเลือกไฟล์ .docx");
+      setError("กรุณาเลือกไฟล์ .docx ก่อน");
       return;
     }
     if (caseId) form.set("caseId", caseId);
@@ -47,32 +48,32 @@ export default function UploadForm({ caseId }: Props) {
   }
 
   return (
-    <form onSubmit={onSubmit} className="rounded border border-zinc-200 bg-white p-4">
-      <h2 className="mb-2 font-semibold">อัปโหลดเอกสาร (.docx)</h2>
-      <p className="mb-3 text-sm text-zinc-600">
-        ระบบจะปิดบังข้อมูลระบุตัวบุคคล (ชื่อ, HN, เลขบัตรประชาชน, ที่อยู่, เบอร์โทร)
-        ก่อนส่งเข้าประมวลผลเสมอ
+    <form onSubmit={onSubmit} className="card card-pad flex flex-col">
+      <h2 className="text-xl font-semibold">อัปโหลดเอกสารที่มีอยู่แล้ว</h2>
+      <p className="mt-2 text-zinc-600">
+        มีไฟล์ .docx อยู่แล้วก็ส่งตรวจได้เลย ระบบจะปิดบังข้อมูลระบุตัวบุคคล
+        (ชื่อ, HN, เลขบัตรประชาชน, ที่อยู่, เบอร์โทร) ก่อนส่งเข้าประมวลผลเสมอ
       </p>
 
-      <input
-        type="file"
-        name="file"
-        accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        className="block w-full text-sm"
-        disabled={busy}
-      />
+      <label className="mt-4 flex cursor-pointer items-center justify-center gap-3 rounded-lg border-2 border-dashed border-zinc-300 px-4 py-6 text-center transition hover:border-brand-500 hover:bg-brand-50/40">
+        <input
+          type="file"
+          name="file"
+          accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          className="sr-only"
+          disabled={busy}
+          onChange={(e) => setFileName(e.target.files?.[0]?.name ?? null)}
+        />
+        <span className={fileName ? "font-medium text-zinc-800" : "text-zinc-500"}>
+          {fileName ?? "คลิกเพื่อเลือกไฟล์ .docx"}
+        </span>
+      </label>
 
-      <button
-        type="submit"
-        disabled={busy}
-        className="mt-3 rounded bg-zinc-900 px-4 py-2 text-sm text-white disabled:opacity-50"
-      >
+      <button type="submit" disabled={busy} className="btn btn-primary mt-4 self-start">
         {busy ? "กำลังตรวจ… (อาจใช้เวลาสักครู่)" : "ตรวจเอกสาร"}
       </button>
 
-      {error ? (
-        <p className="mt-3 rounded bg-red-50 p-2 text-sm text-red-700">{error}</p>
-      ) : null}
+      {error ? <p className="alert alert-error mt-4">{error}</p> : null}
     </form>
   );
 }

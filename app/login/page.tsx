@@ -8,11 +8,17 @@ export const dynamic = "force-dynamic";
 
 export default function LoginPage() {
   return (
-    <div className="mx-auto max-w-sm py-12">
-      <h1 className="mb-1 text-xl font-semibold">เข้าสู่ระบบ</h1>
-      <p className="mb-6 text-sm text-zinc-600">
-        ใช้ชื่อผู้ใช้และรหัสผ่านเดียวกับระบบ dashboard โรงพยาบาล
-      </p>
+    <div className="mx-auto max-w-md py-10">
+      <div className="mb-6 text-center">
+        <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-xl bg-brand-600 text-2xl font-bold text-white">
+          R
+        </div>
+        <h1 className="text-2xl font-semibold">เข้าสู่ระบบ</h1>
+        <p className="mt-2 text-zinc-600">
+          ใช้ชื่อผู้ใช้และรหัสผ่านเดียวกับระบบ dashboard โรงพยาบาล
+        </p>
+      </div>
+
       <Suspense fallback={null}>
         <LoginForm />
       </Suspense>

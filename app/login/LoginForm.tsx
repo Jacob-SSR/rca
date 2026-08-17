@@ -48,42 +48,36 @@ export default function LoginForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} className="rounded border border-zinc-200 bg-white p-5">
-      <label className="mb-3 block">
-        <span className="mb-1 block text-sm text-zinc-700">ชื่อผู้ใช้</span>
+    <form onSubmit={onSubmit} className="card card-pad">
+      <label className="mb-4 block">
+        <span className="label">ชื่อผู้ใช้</span>
         <input
           name="username"
           autoComplete="username"
           autoFocus
           required
           disabled={busy}
-          className="w-full rounded border border-zinc-300 px-3 py-2 text-sm"
+          className="input"
         />
       </label>
 
-      <label className="mb-4 block">
-        <span className="mb-1 block text-sm text-zinc-700">รหัสผ่าน</span>
+      <label className="mb-6 block">
+        <span className="label">รหัสผ่าน</span>
         <input
           name="password"
           type="password"
           autoComplete="current-password"
           required
           disabled={busy}
-          className="w-full rounded border border-zinc-300 px-3 py-2 text-sm"
+          className="input"
         />
       </label>
 
-      <button
-        type="submit"
-        disabled={busy}
-        className="w-full rounded bg-zinc-900 px-4 py-2 text-sm text-white disabled:opacity-50"
-      >
+      <button type="submit" disabled={busy} className="btn btn-primary w-full">
         {busy ? "กำลังตรวจสอบ…" : "เข้าสู่ระบบ"}
       </button>
 
-      {error ? (
-        <p className="mt-3 rounded bg-red-50 p-2 text-sm text-red-700">{error}</p>
-      ) : null}
+      {error ? <p className="alert alert-error mt-4">{error}</p> : null}
     </form>
   );
 }

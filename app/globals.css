@@ -1,6 +1,167 @@
 @import "tailwindcss";
 
+/* ─────────────────────────────────────────────────────────────────────────────
+   ระบบดีไซน์ของ RCA
+
+   ⚠️ ตัวหนังสือต้องใหญ่กว่าเว็บทั่วไป
+   ภาษาไทยมีวรรณยุกต์และสระบน-ล่าง ที่ 14px วรรณยุกต์จะติดกันจนอ่านยาก
+   ตั้ง html เป็น 18px → ทุก utility ที่อิง rem ของ Tailwind ขยายตาม 12.5%
+   (text-sm = 15.75px, text-base = 18px, text-lg = 20.25px)
+
+   ผู้ใช้จริงคือบุคลากรที่นั่งกรอกเวชระเบียนทั้งวัน อ่านง่ายสำคัญกว่าสวย
+   ───────────────────────────────────────────────────────────────────────────── */
+
+@theme {
+  /* ฟอนต์ไทยที่มีติดเครื่องอยู่แล้ว ไม่ต้องโหลดจากเน็ต
+     → build ไม่พึ่ง network และหน้าไม่กระพริบตอนโหลดฟอนต์ */
+  --font-sans:
+    "Noto Sans Thai", "IBM Plex Sans Thai", "Sarabun", "Leelawadee UI", "Prompt",
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+
+  --font-mono: "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
+
+  /* สีหลัก — น้ำเงินอมเขียว อ่านสบายตา ไม่ฉูดฉาดแบบระบบราชการทั่วไป */
+  --color-brand-50: #eef6f7;
+  --color-brand-100: #d6eaed;
+  --color-brand-200: #aed6dc;
+  --color-brand-500: #17788a;
+  --color-brand-600: #12626f;
+  --color-brand-700: #0e4c56;
+
+  /* สีสถานะคะแนน */
+  --color-good-50: #ecfdf5;
+  --color-good-600: #059669;
+  --color-warn-50: #fffbeb;
+  --color-warn-600: #d97706;
+  --color-bad-50: #fef2f2;
+  --color-bad-600: #dc2626;
+}
+
+html {
+  /* ตัวคูณหลักของทั้งระบบ — ปรับตรงนี้จุดเดียวถ้าอยากใหญ่/เล็กกว่านี้ */
+  font-size: 18px;
+}
+
 body {
-  font-family:
-    "TH SarabunPSK", "Sarabun", "Noto Sans Thai", system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans);
+  /* ภาษาไทยต้องการระยะบรรทัดมากกว่าปกติ ไม่งั้นวรรณยุกต์บรรทัดบนชนสระบรรทัดล่าง */
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ตัวเลขเรียงตรงคอลัมน์ในตารางคะแนน */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   คลาสร่วม — นิยามที่นี่ที่เดียว หน้าไหนก็หน้าตาเหมือนกัน
+   ───────────────────────────────────────────────────────────────────────────── */
+
+@layer components {
+  .card {
+    @apply rounded-xl border border-zinc-200 bg-white shadow-sm;
+  }
+
+  .card-pad {
+    @apply p-5 sm:p-6;
+  }
+
+  .card-title {
+    @apply border-b border-zinc-200 px-5 py-4 text-lg font-semibold sm:px-6;
+  }
+
+  /* ── ปุ่ม ── ขนาดใหญ่พอกดด้วยนิ้วบนแท็บเล็ตได้ */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-zinc-300
+           bg-white px-5 py-2.5 text-base font-medium text-zinc-800 transition
+           hover:bg-zinc-50 focus-visible:outline-2 focus-visible:outline-offset-2
+           focus-visible:outline-brand-500 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .btn-primary {
+    @apply border-brand-600 bg-brand-600 text-white hover:bg-brand-700;
+  }
+
+  .btn-sm {
+    @apply px-3 py-1.5 text-sm;
+  }
+
+  .btn-danger {
+    @apply border-red-300 text-red-700 hover:bg-red-50;
+  }
+
+  /* ── ช่องกรอก ── */
+  .label {
+    @apply mb-1.5 block text-base font-medium text-zinc-800;
+  }
+
+  .hint {
+    @apply mt-1.5 block text-sm leading-relaxed text-zinc-500;
+  }
+
+  .input {
+    @apply w-full rounded-lg border border-zinc-300 bg-white px-3.5 py-2.5 text-base
+           text-zinc-900 transition placeholder:text-zinc-400
+           focus:border-brand-500 focus:outline-2 focus:outline-offset-0
+           focus:outline-brand-500/30 disabled:bg-zinc-50 disabled:text-zinc-500;
+  }
+
+  textarea.input {
+    @apply leading-relaxed;
+  }
+
+  /* ── ตาราง ── */
+  .table {
+    @apply w-full border-collapse text-base;
+  }
+
+  .table thead th {
+    @apply border-b border-zinc-200 bg-zinc-50 px-5 py-3 text-left text-sm
+           font-semibold tracking-wide text-zinc-600;
+  }
+
+  .table tbody td {
+    @apply border-b border-zinc-100 px-5 py-3.5 align-top;
+  }
+
+  .table tbody tr:last-child td {
+    @apply border-b-0;
+  }
+
+  .table tbody tr:hover {
+    @apply bg-zinc-50/60;
+  }
+
+  /* ── ป้ายกำกับ ── */
+  .badge {
+    @apply inline-flex items-center rounded-md bg-zinc-100 px-2 py-0.5 text-sm
+           font-medium text-zinc-600;
+  }
+
+  .badge-brand {
+    @apply bg-brand-50 text-brand-700;
+  }
+
+  .link {
+    @apply text-brand-600 underline decoration-brand-200 underline-offset-2
+           hover:decoration-brand-500;
+  }
+
+  /* ── กล่องข้อความแจ้งเตือน ── */
+  .alert {
+    @apply rounded-lg px-4 py-3 text-base;
+  }
+
+  .alert-error {
+    @apply bg-red-50 text-red-800;
+  }
+
+  .alert-ok {
+    @apply bg-emerald-50 text-emerald-800;
+  }
+
+  .alert-info {
+    @apply bg-brand-50 text-brand-700;
+  }
 }

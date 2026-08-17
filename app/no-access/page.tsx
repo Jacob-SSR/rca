@@ -11,26 +11,28 @@ export default async function NoAccessPage() {
   const capabilities = capabilitiesForRole(session?.role);
 
   return (
-    <div className="mx-auto max-w-md py-12">
-      <h1 className="mb-2 text-xl font-semibold">ไม่มีสิทธิ์เข้าถึงส่วนนี้</h1>
+    <div className="mx-auto max-w-lg py-10">
+      <div className="card card-pad text-center">
+        <h1 className="text-2xl font-semibold">ไม่มีสิทธิ์เข้าถึงส่วนนี้</h1>
 
-      {session ? (
-        <p className="mb-4 text-sm text-zinc-600">
-          บัญชี <span className="font-medium">{session.name}</span> มีสิทธิ์{" "}
-          <span className="font-medium">{session.role}</span>
-          {capabilities.length === 0
-            ? " ซึ่งยังไม่ได้รับสิทธิ์ใช้งานระบบนี้"
-            : ` (${capabilities.join(", ")})`}
+        {session ? (
+          <p className="mt-4 text-zinc-600">
+            บัญชี <span className="font-medium text-zinc-900">{session.name}</span> มีสิทธิ์{" "}
+            <span className="badge badge-brand">{session.role}</span>
+            {capabilities.length === 0
+              ? " ซึ่งยังไม่ได้รับสิทธิ์ใช้งานระบบนี้"
+              : ` (${capabilities.join(", ")})`}
+          </p>
+        ) : null}
+
+        <p className="mt-3 text-zinc-600">
+          ถ้าคิดว่าควรเข้าได้ กรุณาติดต่อผู้ดูแลระบบเพื่อตั้งสิทธิ์ให้บัญชีนี้
         </p>
-      ) : null}
 
-      <p className="mb-4 text-sm text-zinc-600">
-        ถ้าคิดว่าควรเข้าได้ กรุณาติดต่อผู้ดูแลระบบเพื่อตั้งสิทธิ์ให้บัญชีนี้
-      </p>
-
-      <Link href="/" className="text-sm text-blue-700 underline">
-        ← กลับหน้าแรก
-      </Link>
+        <Link href="/" className="btn mt-6">
+          กลับหน้าแรก
+        </Link>
+      </div>
     </div>
   );
 }

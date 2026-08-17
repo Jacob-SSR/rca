@@ -20,6 +20,7 @@ import {
 } from "docx";
 import type { RecordFormInput } from "@/lib/form/schema";
 import { FORM_SECTIONS } from "@/lib/form/schema";
+import { formatThaiDate, formatTime } from "@/lib/form/thai-date";
 
 const FONT = "TH SarabunPSK";
 
@@ -119,9 +120,13 @@ export function buildRecordDocx(
   }
 
   // ── วันเวลาที่มารับบริการ — รวมเป็นบรรทัดเดียวให้อ่านเป็นประโยค ──────────────
+  // ฟอร์มเก็บวันที่เป็น ISO (จาก date picker) แต่เอกสารต้องเป็นวันที่ไทย พ.ศ.
+  const thaiDate = formatThaiDate(form.serviceDate);
+  const time = formatTime(form.serviceTime);
+
   const dateTimeParts = [
-    form.serviceDate?.trim() ? `วันที่มารับบริการ ${form.serviceDate.trim()}` : null,
-    form.serviceTime?.trim() ? `เวลา ${form.serviceTime.trim()} น.` : null,
+    thaiDate ? `วันที่มารับบริการ ${thaiDate}` : null,
+    time ? `เวลา ${time} น.` : null,
   ].filter(Boolean);
 
   if (dateTimeParts.length > 0) {
@@ -183,6 +188,7 @@ export function buildRecordDocx(
 
 /** ชื่อไฟล์ที่อ่านรู้เรื่อง — ไม่ใส่ชื่อผู้ป่วยเพราะชื่อไฟล์ไปโผล่ได้หลายที่ */
 export function recordDocxFileName(form: RecordFormInput, caseNumber: string): string {
-  const date = form.serviceDate?.trim().replace(/[^\dก-๙A-Za-z]/g, "-") ?? "";
+  // ใช้ ISO ในชื่อไฟล์ (ไม่ใช่วันที่ไทย) เพื่อให้เรียงชื่อไฟล์ตามเวลาได้
+  const date = form.serviceDate?.trim().replace(/[^\d-]/g, "") ?? "";
   return `OPD-${caseNumber}${date ? `-${date}` : ""}.docx`;
 }

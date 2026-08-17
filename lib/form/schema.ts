@@ -69,14 +69,41 @@ export type CreateRecordFormInput = z.infer<typeof createRecordFormSchema>;
 // เพิ่มช่องใหม่ต้องแก้ที่นี่ที่เดียว แล้วทั้งฟอร์มและเอกสารจะตามไปเอง
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type FieldKind = "line" | "area";
+export type FieldKind =
+  | "line" // ช่องข้อความบรรทัดเดียว
+  | "area" // ช่องข้อความหลายบรรทัด
+  | "date" // ปฏิทินให้กดเลือก — เก็บเป็น YYYY-MM-DD
+  | "time" // นาฬิกาให้กดเลือก — เก็บเป็น HH:mm
+  | "select"; // เลือกจากรายการ
+
+/** ที่มาของตัวเลือกใน dropdown ที่ต้องดึงตอน runtime */
+export type OptionSource = "departments" | "pttypes";
 
 export type FormField = {
   name: keyof RecordFormInput;
   label: string;
   kind: FieldKind;
   hint?: string;
+
+  /** kind="select" — ตัวเลือกคงที่ที่รู้ล่วงหน้า */
+  options?: readonly string[];
+
+  /** kind="select" — ดึงตัวเลือกจาก HOSxP ตอนเปิดฟอร์ม */
+  optionsFrom?: OptionSource;
+
+  /**
+   * kind="select" — ให้เลือก "อื่นๆ" แล้วพิมพ์เองได้
+   * จำเป็นสำหรับทุก dropdown ในระบบนี้ เพราะห้ามให้รายการที่ไม่ครบ
+   * ขวางการกรอกเวชระเบียน (ถ้าขวาง คนจะเลิกใช้แล้วกลับไปเขียนมือ)
+   */
+  allowOther?: boolean;
 };
+
+/** ตัวเลือกเพศ — LGBTQ ถือเป็นตัวเลือกตั้งต้น ไม่ใช่ "อื่นๆ" */
+export const GENDER_OPTIONS = ["ชาย", "หญิง", "LGBTQ"] as const;
+
+/** ข้อความที่ใช้แทน "ไม่อยู่ในรายการ" ใน dropdown */
+export const OTHER_OPTION_LABEL = "อื่นๆ (พิมพ์เอง)";
 
 export type FormSection = {
   key: string;
@@ -97,9 +124,29 @@ export const FORM_SECTIONS: FormSection[] = [
       { name: "hn", label: "HN", kind: "line" },
       { name: "patientName", label: "ชื่อ-สกุล", kind: "line" },
       { name: "age", label: "อายุ", kind: "line", hint: 'เช่น "52 ปี" หรือ "1 ปี 6 เดือน"' },
-      { name: "gender", label: "เพศ", kind: "line" },
-      { name: "department", label: "แผนก", kind: "line" },
-      { name: "pttype", label: "สิทธิการรักษา", kind: "line" },
+      {
+        name: "gender",
+        label: "เพศ",
+        kind: "select",
+        options: GENDER_OPTIONS,
+        allowOther: true,
+      },
+      {
+        name: "department",
+        label: "แผนก",
+        kind: "select",
+        optionsFrom: "departments",
+        allowOther: true,
+        hint: "รายการมาจาก HOSxP — ถ้าไม่มีในรายการเลือก “อื่นๆ” แล้วพิมพ์เองได้",
+      },
+      {
+        name: "pttype",
+        label: "สิทธิการรักษา",
+        kind: "select",
+        optionsFrom: "pttypes",
+        allowOther: true,
+        hint: "รายการมาจาก HOSxP — ถ้าไม่มีในรายการเลือก “อื่นๆ” แล้วพิมพ์เองได้",
+      },
     ],
   },
   {
@@ -108,8 +155,13 @@ export const FORM_SECTIONS: FormSection[] = [
     criterion: "SERVICE_DATETIME",
     maxScore: 1,
     fields: [
-      { name: "serviceDate", label: "วันที่", kind: "line", hint: "เช่น 14 สิงหาคม 2569" },
-      { name: "serviceTime", label: "เวลา", kind: "line", hint: "เช่น 09:15" },
+      {
+        name: "serviceDate",
+        label: "วันที่",
+        kind: "date",
+        hint: "กดเลือกจากปฏิทิน — เอกสารจะแสดงเป็นวันที่ไทย พ.ศ. ให้เอง",
+      },
+      { name: "serviceTime", label: "เวลา", kind: "time", hint: "กดเลือกเวลา" },
     ],
   },
   {

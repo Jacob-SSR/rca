@@ -6,6 +6,7 @@
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { FORM_SECTIONS, type RecordFormInput } from "@/lib/form/schema";
+import FormFieldInput from "@/app/components/FormFieldInput";
 
 type Props = {
   formId?: string;
@@ -180,27 +181,14 @@ export default function RecordFormEditor({ formId, initial, caseNumber }: Props)
                   {field.label}
                 </label>
 
-                {field.kind === "area" ? (
-                  <textarea
-                    id={field.name}
-                    rows={4}
-                    value={values[field.name] ?? ""}
-                    onChange={(e) => set(field.name, e.target.value)}
-                    disabled={busy !== null}
-                    className="input"
-                  />
-                ) : (
-                  <input
-                    id={field.name}
-                    type="text"
-                    value={values[field.name] ?? ""}
-                    onChange={(e) => set(field.name, e.target.value)}
-                    disabled={busy !== null}
-                    className="input"
-                  />
-                )}
-
-                {field.hint ? <span className="hint">{field.hint}</span> : null}
+                {/* hint แสดงอยู่ใน FormFieldInput เพราะช่องที่ดึงตัวเลือกจาก HOSxP
+                    ต้องเปลี่ยนข้อความ hint ตามว่าดึงรายการได้หรือไม่ */}
+                <FormFieldInput
+                  field={field}
+                  value={values[field.name] ?? ""}
+                  disabled={busy !== null}
+                  onChange={(v) => set(field.name, v)}
+                />
               </div>
             ))}
           </div>

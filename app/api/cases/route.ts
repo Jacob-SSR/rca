@@ -5,6 +5,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { requireCapability } from "@/lib/auth/session";
+import { authErrorResponse } from "@/lib/auth/api";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +36,13 @@ async function nextCaseNumber(): Promise<string> {
 }
 
 export async function GET() {
+  // proxy กันไว้ชั้นหนึ่งแล้ว แต่ route ที่แตะข้อมูลผู้ป่วยต้องตรวจซ้ำเสมอ
+  try {
+    await requireCapability("view");
+  } catch (e) {
+    return authErrorResponse(e) ?? NextResponse.json({ error: "Internal" }, { status: 500 });
+  }
+
   const cases = await prisma.case.findMany({
     orderBy: { createdAt: "desc" },
     take: 100,
@@ -64,6 +73,12 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  try {
+    await requireCapability("review");
+  } catch (e) {
+    return authErrorResponse(e) ?? NextResponse.json({ error: "Internal" }, { status: 500 });
+  }
+
   let body: unknown;
   try {
     body = await req.json();

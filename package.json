@@ -14,7 +14,10 @@
     "db:seed": "prisma db seed",
     "test:rules": "tsx scripts/test-rule-engine.ts",
     "test:phi": "tsx scripts/test-phi.ts",
-    "test": "npm run test:rules && npm run test:phi"
+    "test": "npm run test:rules && npm run test:phi && npm run test:auth",
+    "make:samples": "tsx scripts/make-sample-docs.ts",
+    "inspect": "tsx scripts/inspect-docx.ts",
+    "test:auth": "tsx scripts/test-auth.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -23,9 +26,12 @@
     "@google/genai": "^2.17.1",
     "@prisma/adapter-mariadb": "^7.9.1",
     "@prisma/client": "^7.9.1",
+    "bcryptjs": "^3.0.3",
     "docx": "^9.7.1",
     "dotenv": "^17.4.2",
+    "jose": "^6.2.9",
     "mammoth": "^1.12.1",
+    "mysql2": "^3.23.3",
     "next": "16.3.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",
@@ -33,6 +39,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

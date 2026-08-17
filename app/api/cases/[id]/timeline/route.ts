@@ -8,6 +8,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { requireCapability } from "@/lib/auth/session";
+import { authErrorResponse } from "@/lib/auth/api";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +21,12 @@ const eventSchema = z.object({
 const putSchema = z.object({ events: z.array(eventSchema).max(200) });
 
 export async function GET(_req: NextRequest, ctx: RouteContext<"/api/cases/[id]/timeline">) {
+  try {
+    await requireCapability("view");
+  } catch (e) {
+    return authErrorResponse(e) ?? NextResponse.json({ error: "Internal" }, { status: 500 });
+  }
+
   const { id } = await ctx.params;
 
   const events = await prisma.timelineEvent.findMany({
@@ -34,6 +42,12 @@ export async function GET(_req: NextRequest, ctx: RouteContext<"/api/cases/[id]/
 }
 
 export async function PUT(req: NextRequest, ctx: RouteContext<"/api/cases/[id]/timeline">) {
+  try {
+    await requireCapability("review");
+  } catch (e) {
+    return authErrorResponse(e) ?? NextResponse.json({ error: "Internal" }, { status: 500 });
+  }
+
   const { id } = await ctx.params;
 
   const caseRow = await prisma.case.findUnique({ where: { id }, select: { id: true } });

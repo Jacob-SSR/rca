@@ -13,6 +13,8 @@ import { DOCX_MIME, DocxParseError } from "@/lib/docx/parse";
 import { AIProviderError } from "@/lib/ai";
 import { RuleEngineError } from "@/lib/review/rule-engine";
 import { PipelineError, runReviewPipeline, DEFAULT_CRITERIA_SET_CODE } from "@/lib/review/pipeline";
+import { requireCapability } from "@/lib/auth/session";
+import { authErrorResponse } from "@/lib/auth/api";
 
 export const dynamic = "force-dynamic";
 // pipeline มีการเรียก AI — ต้องรันบน Node runtime (mammoth/prisma ใช้ node built-in)
@@ -37,6 +39,12 @@ async function ensureCase(caseId: string | null): Promise<string> {
 }
 
 export async function POST(req: NextRequest) {
+  try {
+    await requireCapability("review");
+  } catch (e) {
+    return authErrorResponse(e) ?? NextResponse.json({ error: "Internal" }, { status: 500 });
+  }
+
   let form: FormData;
   try {
     form = await req.formData();

@@ -29,6 +29,15 @@ services:
       # host = "mysql" คือชื่อ service ข้างล่าง, port 3306 คือพอร์ตภายใน
       # (ไม่ใช่ 3308 ที่เปิดออกมาบน host)
       DATABASE_URL: mysql://${MYSQL_USER:-rca}:${MYSQL_PASSWORD:?ต้องตั้ง MYSQL_PASSWORD ใน .env}@mysql:3306/${MYSQL_DATABASE:-rca}
+
+      # ── auth: ใช้บัญชีเดียวกับระบบ dashboard (ppc-hos-10667) ──
+      AUTH_DB_HOST: ${AUTH_DB_HOST}
+      AUTH_DB_PORT: ${AUTH_DB_PORT:-3306}
+      AUTH_DB_USER: ${AUTH_DB_USER}
+      AUTH_DB_PASS: ${AUTH_DB_PASS}
+      AUTH_DB_NAME: ${AUTH_DB_NAME:-ppchos}
+      JWT_SECRET: ${JWT_SECRET:?ต้องตั้ง JWT_SECRET ใน .env (openssl rand -hex 32)}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
       AI_PROVIDER: ${AI_PROVIDER:-gemini}
       AI_MODEL: ${AI_MODEL:-gemini-2.5-flash}
       GEMINI_API_KEY: ${GEMINI_API_KEY}

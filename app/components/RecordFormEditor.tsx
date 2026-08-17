@@ -79,8 +79,12 @@ export default function RecordFormEditor({ formId, initial, caseNumber }: Props)
       const id = await save();
       if (!id) return;
       setMessage("บันทึกแล้ว");
-      if (!formId) router.push(`/forms/${id}`);
-      router.refresh();
+      // ถ้าจะย้ายหน้า ห้ามตาม refresh() (มันยกเลิก push — ดูคอมเมนต์ใน LoginForm)
+      if (formId) {
+        router.refresh();
+      } else {
+        router.push(`/forms/${id}`);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "บันทึกไม่สำเร็จ");
     } finally {
@@ -104,8 +108,11 @@ export default function RecordFormEditor({ formId, initial, caseNumber }: Props)
       }
 
       setMessage(`สร้างเอกสารแล้ว (ฉบับที่ ${json.version})`);
-      if (!formId) router.push(`/forms/${id}`);
-      router.refresh();
+      if (formId) {
+        router.refresh();
+      } else {
+        router.push(`/forms/${id}`);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "สร้างเอกสารไม่สำเร็จ");
     } finally {
@@ -129,7 +136,6 @@ export default function RecordFormEditor({ formId, initial, caseNumber }: Props)
       }
 
       router.push(`/reviews/${json.reviewId}`);
-      router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "ตรวจไม่สำเร็จ");
     } finally {

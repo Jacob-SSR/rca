@@ -1,9 +1,11 @@
-"use client";
-
+// app/components/UserBar.tsx
 // แถบผู้ใช้มุมขวาบน — ชื่อ, สิทธิ์, ปุ่มออกจากระบบ
+//
+// เป็น server component ได้เพราะปุ่มออกจากระบบใช้ Server Action
+// (ลบ cookie แล้ว redirect ฝั่ง server — ไม่ต้องมี state ฝั่ง client)
 
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { logoutAction } from "@/app/actions/auth";
+import LogoutButton from "@/app/components/LogoutButton";
 
 type Props = {
   name: string;
@@ -11,29 +13,15 @@ type Props = {
 };
 
 export default function UserBar({ name, role }: Props) {
-  const router = useRouter();
-  const [busy, setBusy] = useState(false);
-
-  async function logout() {
-    setBusy(true);
-    try {
-      await fetch("/api/auth/logout", { method: "POST" });
-      router.push("/login");
-      router.refresh();
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
     <div className="flex items-center gap-3">
       <div className="hidden text-right leading-tight sm:block">
         <div className="text-base font-medium">{name}</div>
         <div className="text-sm text-zinc-500">{role}</div>
       </div>
-      <button type="button" onClick={logout} disabled={busy} className="btn btn-sm">
-        {busy ? "…" : "ออกจากระบบ"}
-      </button>
+      <form action={logoutAction}>
+        <LogoutButton />
+      </form>
     </div>
   );
 }

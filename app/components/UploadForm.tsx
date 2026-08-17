@@ -38,8 +38,10 @@ export default function UploadForm({ caseId }: Props) {
         return;
       }
 
+      // ห้ามตาม refresh() ทันที — มันจะ re-render route ปัจจุบันแล้วยกเลิก push นี้
+      // (ดูคอมเมนต์ใน LoginForm) หน้าปลายทางเป็น force-dynamic และเป็น id ใหม่
+      // จึงไม่มีของเก่าใน Router Cache ให้ต้อง refresh อยู่แล้ว
       router.push(`/reviews/${json.reviewId}`);
-      router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "เชื่อมต่อไม่สำเร็จ");
     } finally {

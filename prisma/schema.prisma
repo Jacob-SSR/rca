@@ -63,12 +63,81 @@ model Case {
   title      String?
   status     String  @default("DRAFT")
 
+  // Phase 2 — อ้างอิงกลับไป HOSxP
+  // ⚠️ hosxpPatientRef คือ HN = PHI ห้ามส่งเข้า AI
+  hosxpPatientRef String? @db.VarChar(20)
+  hosxpVisitRef   String? @db.VarChar(20)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   events    TimelineEvent[]
   documents Document[]
   reviews   Review[]
+  forms     RecordForm[]
+
+  @@index([hosxpPatientRef])
+  @@index([hosxpVisitRef])
+}
+
+/// ฟอร์มบันทึกเวชระเบียน — ตัวที่ CRUD และ generate DOCX ออกมา (Phase 2)
+///
+/// ช่องทั้งหมดตรงกับเกณฑ์ A1 หกข้อ กรอกครบ = มีข้อมูลพอให้ได้ 17 คะแนน
+/// ⚠️ ฟอร์มคือแหล่งความจริงที่แก้ได้ DOCX คือผลลัพธ์ที่ generate ออกมา
+///    แก้ฟอร์ม → generate ใหม่ → Document.version +1 ไม่แก้ DOCX ตรงๆ
+model RecordForm {
+  id     String @id @default(cuid())
+  caseId String
+
+  // ── ข้อมูลผู้ป่วย ──────────────────────────────────────────────────────────
+  // ⚠️ hn / patientName เป็น PHI — ถูก mask ก่อนเข้า AI เสมอ
+  hn          String? @db.VarChar(20)
+  patientName String? @db.VarChar(200)
+  age         String? @db.VarChar(50)
+  gender      String? @db.VarChar(20)
+  department  String? @db.VarChar(100)
+  pttype      String? @db.VarChar(100)
+
+  // ── SERVICE_DATETIME ───────────────────────────────────────────────────────
+  serviceDate String? @db.VarChar(50)
+  serviceTime String? @db.VarChar(20)
+
+  // ── CC ─────────────────────────────────────────────────────────────────────
+  chiefComplaint String? @db.Text
+
+  // ── HISTORY ────────────────────────────────────────────────────────────────
+  presentIllness  String? @db.Text
+  pastHistory     String? @db.Text
+  personalHistory String? @db.Text
+
+  // ── PHYSICAL_EXAM ──────────────────────────────────────────────────────────
+  vitalSigns   String? @db.Text
+  physicalExam String? @db.Text
+  labResult    String? @db.Text
+
+  // ── DIAGNOSIS / TREATMENT ──────────────────────────────────────────────────
+  diagnosis String? @db.Text
+  treatment String? @db.Text
+
+  note     String? @db.Text
+  recorder String? @db.VarChar(200)
+
+  // ── ที่มาของข้อมูล ─────────────────────────────────────────────────────────
+  source        String    @default("manual") // "manual" | "hosxp"
+  hosxpVisitRef String?   @db.VarChar(20)
+  prefilledAt   DateTime?
+
+  createdBy String? @db.VarChar(100)
+  updatedBy String? @db.VarChar(100)
+
+  case      Case       @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  documents Document[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([caseId])
+  @@index([hn])
 }
 
 // หมายเหตุ: ไม่ใส่ HN/VN ใน Phase 1 (ยังไม่เชื่อม HOSxP)
@@ -104,12 +173,18 @@ model Document {
 
   version Int @default(1)
 
-  case    Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
-  reviews Review[]
+  // DOCX ที่ generate จากฟอร์มจะผูกกลับไปที่ฟอร์มต้นทาง
+  // null = ไฟล์ที่ผู้ใช้อัปโหลดเอง (Phase 1)
+  recordFormId String?
+
+  case       Case        @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  recordForm RecordForm? @relation(fields: [recordFormId], references: [id])
+  reviews    Review[]
 
   createdAt DateTime @default(now())
 
   @@index([caseId])
+  @@index([recordFormId])
 }
 
 model Review {
@@ -123,6 +198,9 @@ model Review {
   model    String?
 
   status String @default("PENDING")
+
+  // "upload" = อัปโหลด DOCX เอง | "form" = generate จาก RecordForm
+  sourceType String @default("upload")
 
   totalScore Int?
   maxScore   Int?

@@ -64,7 +64,8 @@ seed จะพิมพ์สรุปให้ตรวจ — ต้องไ�
 | `npm run test:rules` | เทสต์ Rule Engine ด้วย mock facts (36 เคส) |
 | `npm run test:phi` | เทสต์ PHI sanitizer สองด้าน: PHI หายจริง + ข้อมูลคลินิกไม่ถูกทำลาย (23 เคส) |
 | `npm run test:auth` | เทสต์สิทธิ์ตาม role + rate limit + การตรวจรหัสผ่าน (24 เคส) |
-| `npm test` | รันทั้งสามชุด |
+| `npm run test:form` | เทสต์ ฟอร์ม → DOCX → mammoth ได้ข้อความครบทุกหัวข้อ (20 เคส) |
+| `npm test` | รันทั้งสี่ชุด |
 | `npm run make:samples` | สร้างเอกสาร OPD ตัวอย่าง 3 ฉบับใน `data/samples/` |
 | `npm run inspect -- <file.docx>` | ดูข้อความที่จะถูกส่งเข้า AI จริง (parse + mask แล้ว) |
 
@@ -123,14 +124,41 @@ lib/storage/documents.ts       เก็บไฟล์ลง volume
 lib/docx/export.ts             DOCX สรุปผล
 ```
 
+## ฟอร์มบันทึกเวชระเบียน (Phase 2)
+
+นอกจากอัปโหลด `.docx` เอง ยังกรอกฟอร์มในระบบแล้วให้มัน generate เอกสารให้ได้
+
+```
+กรอกฟอร์ม → สร้าง .docx ตามแบบ สนย. → PHI mask → AI → Rule Engine → คะแนน
+```
+
+หัวข้อในฟอร์มตรงกับเกณฑ์ A1 ทั้ง 6 ข้อ กรอกครบ = มีข้อมูลพอให้ได้ 17 คะแนน
+โครงฟอร์มนิยามไว้ที่ `lib/form/schema.ts` ที่เดียว — เพิ่มช่องใหม่ที่นั่น
+แล้วทั้งหน้าจอและ DOCX จะตามไปเอง
+
+**ฟอร์มคือแหล่งความจริง DOCX คือผลลัพธ์** — แก้ฟอร์มแล้ว generate ใหม่จะได้
+`Document` เวอร์ชันถัดไป ไม่ทับของเดิม ผลตรวจเก่าจึงยังชี้เอกสารเวอร์ชันที่ใช้
+ตอนให้คะแนน และ audit ย้อนหลังได้
+
+> ⚠️ ช่องที่เว้นว่างจะ**หายไปจากเอกสารเลย** ระบบไม่เติม `-` หรือ `ไม่มี` แทนให้
+> เพราะจะทำให้คะแนนสูงกว่าความจริง — ระบบนี้มีไว้หาเอกสารที่บันทึกไม่ครบ
+> ถ้าบังคับกรอกครบก่อนบันทึกได้ ก็จะไม่มีวันเจอสิ่งที่ต้องการหา
+
 ## API
 
-| Method | Path | ทำอะไร |
-|---|---|---|
-| GET/POST | `/api/cases` | รายการเคส / สร้างเคส |
-| POST | `/api/review` | อัปโหลด DOCX (multipart: `file`, `caseId?`) แล้วรัน pipeline |
-| GET/PUT | `/api/cases/[id]/timeline` | อ่าน / บันทึก timeline ที่ผู้ใช้แก้ |
-| GET | `/api/reviews/[id]/export` | ดาวน์โหลด DOCX สรุปผล |
+| Method | Path | ทำอะไร | สิทธิ์ |
+|---|---|---|---|
+| GET/POST | `/api/cases` | รายการเคส / สร้างเคส | view / review |
+| POST | `/api/review` | อัปโหลด DOCX (multipart: `file`, `caseId?`) แล้วรัน pipeline | review |
+| GET/PUT | `/api/cases/[id]/timeline` | อ่าน / บันทึก timeline ที่ผู้ใช้แก้ | view / review |
+| GET | `/api/reviews/[id]/export` | ดาวน์โหลด DOCX สรุปผล | view |
+| GET/POST | `/api/forms` | รายการฟอร์ม (กรอง `caseId` / `hn` ได้) / สร้างฟอร์ม | view / review |
+| GET/PATCH/DELETE | `/api/forms/[id]` | อ่าน / แก้ / ลบฟอร์ม | view / review / manage |
+| POST | `/api/forms/[id]/generate` | สร้าง DOCX จากฟอร์ม (ยังไม่ตรวจ) | review |
+| GET | `/api/forms/[id]/generate` | ดาวน์โหลด DOCX ฉบับล่าสุดของฟอร์ม | view |
+| POST | `/api/forms/[id]/review` | สร้างเอกสารแล้วสั่งตรวจในคราวเดียว | review |
+| POST | `/api/auth/login` · `/api/auth/logout` | เข้า / ออกจากระบบ | public |
+| GET | `/api/auth/me` | ใครล็อกอินอยู่ | public |
 
 ## เข้าสู่ระบบ (auth)
 

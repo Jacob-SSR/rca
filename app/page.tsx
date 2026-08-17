@@ -30,6 +30,20 @@ export default async function Home() {
 
   return (
     <div className="space-y-6">
+      <section className="rounded border border-zinc-200 bg-white p-4">
+        <h2 className="mb-2 font-semibold">บันทึกเวชระเบียนใหม่</h2>
+        <p className="mb-3 text-sm text-zinc-600">
+          กรอกฟอร์มที่มีหัวข้อตรงตามเกณฑ์ สนย. ทั้ง 6 ข้อ → ระบบสร้างเอกสาร .docx ให้
+          → ส่งให้ AI ตรวจ
+        </p>
+        <Link
+          href="/forms/new"
+          className="inline-block rounded bg-zinc-900 px-4 py-2 text-sm text-white"
+        >
+          + สร้างฟอร์มใหม่
+        </Link>
+      </section>
+
       <UploadForm />
 
       <section className="rounded border border-zinc-200 bg-white">

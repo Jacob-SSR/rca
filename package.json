@@ -14,10 +14,11 @@
     "db:seed": "prisma db seed",
     "test:rules": "tsx scripts/test-rule-engine.ts",
     "test:phi": "tsx scripts/test-phi.ts",
-    "test": "npm run test:rules && npm run test:phi && npm run test:auth",
+    "test": "npm run test:rules && npm run test:phi && npm run test:auth && npm run test:form",
     "make:samples": "tsx scripts/make-sample-docs.ts",
     "inspect": "tsx scripts/inspect-docx.ts",
-    "test:auth": "tsx scripts/test-auth.ts"
+    "test:auth": "tsx scripts/test-auth.ts",
+    "test:form": "tsx scripts/test-form-docx.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

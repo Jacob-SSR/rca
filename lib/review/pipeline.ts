@@ -1,10 +1,15 @@
 // lib/review/pipeline.ts
-// ต่อทุกขั้นของ Phase 1 เข้าด้วยกัน (สเปกข้อ 9)
+// ต่อทุกขั้นของการตรวจเข้าด้วยกัน (สเปก Phase 1 ข้อ 9)
 //
 //   DOCX → mammoth → PHI masking → AI extractFacts (1 ครั้ง) → Rule Engine
 //        → Review + ReviewItem[] → TimelineEvent[]
 //
 // ลำดับนี้ห้ามสลับ: PHI masking ต้องมาก่อน AI เสมอ (สเปกข้อ 2.3)
+//
+// เอกสารเข้าระบบได้สองทางและใช้เส้นทางตรวจเดียวกันทั้งคู่
+//   1. ผู้ใช้อัปโหลด .docx เอง      → runReviewPipeline()
+//   2. generate จาก RecordForm      → reviewExistingDocument()
+// คะแนนจากสองทางจึงเทียบกันได้ เพราะผ่าน sanitizer / prompt / Rule Engine ชุดเดียวกัน
 
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -28,15 +33,7 @@ export class PipelineError extends Error {
   }
 }
 
-export type RunReviewInput = {
-  caseId: string;
-  fileName: string;
-  mimeType: string;
-  data: Buffer;
-  criteriaSetCode?: string;
-};
-
-export type RunReviewOutput = {
+export type ReviewResult = {
   reviewId: string;
   documentId: string;
   totalScore: number;
@@ -45,69 +42,65 @@ export type RunReviewOutput = {
   maskCounts: Record<string, number>;
 };
 
-/**
- * รันทั้ง pipeline สำหรับเอกสาร 1 ไฟล์
- * Review ถูกสร้างด้วย status PENDING ก่อน แล้วอัปเดตเป็น COMPLETED/FAILED เมื่อจบ
- * → ถ้าพังกลางทางยังมีร่องรอยให้ audit ว่าเคยพยายามตรวจอะไร ตอนไหน ด้วย model ไหน
- */
-export async function runReviewPipeline(input: RunReviewInput): Promise<RunReviewOutput> {
-  const criteriaSetCode = input.criteriaSetCode ?? DEFAULT_CRITERIA_SET_CODE;
+// ─────────────────────────────────────────────────────────────────────────────
+// แกนกลาง — ใช้ร่วมกันทั้งสองเส้นทาง
+// ─────────────────────────────────────────────────────────────────────────────
 
-  const caseRow = await prisma.case.findUnique({ where: { id: input.caseId } });
-  if (!caseRow) {
-    throw new PipelineError(`ไม่พบ Case id=${input.caseId}`, "case-lookup");
-  }
-
+async function loadCriteriaSet(code: string) {
   const criteriaSet = await prisma.criteriaSet.findUnique({
-    where: { code: criteriaSetCode },
+    where: { code },
     include: { criteria: { orderBy: { code: "asc" } } },
   });
+
   if (!criteriaSet) {
     throw new PipelineError(
-      `ไม่พบ CriteriaSet code=${criteriaSetCode} — รัน \`npm run db:seed\` ก่อน`,
+      `ไม่พบ CriteriaSet code=${code} — รัน \`npm run db:seed\` ก่อน`,
       "criteria-lookup",
     );
   }
 
-  // ── 1) เก็บไฟล์ลง volume ────────────────────────────────────────────────────
-  const stored = await storeDocument(input.caseId, input.fileName, input.data);
+  return criteriaSet;
+}
 
-  // ── 2) parse DOCX ───────────────────────────────────────────────────────────
-  const parsed = await parseDocx(input.data);
+type ScoreDocumentInput = {
+  caseId: string;
+  documentId: string;
+  text: string;
+  criteriaSetCode: string;
+  sourceType: "upload" | "form";
+};
 
-  const document = await prisma.document.create({
-    data: {
-      caseId: input.caseId,
-      fileName: stored.fileName,
-      filePath: stored.filePath,
-      mimeType: input.mimeType,
-      fileSize: stored.fileSize,
-      extractedText: parsed.text,
-      version: (await prisma.document.count({ where: { caseId: input.caseId } })) + 1,
-    },
-  });
+/**
+ * ตรวจเอกสารที่มีอยู่แล้วในระบบ
+ *
+ * Review ถูกสร้างด้วย status PENDING ก่อน แล้วอัปเดตเป็น COMPLETED/FAILED เมื่อจบ
+ * → ถ้าพังกลางทางยังมีร่องรอยให้ audit ว่าเคยพยายามตรวจอะไร ตอนไหน ด้วย model ไหน
+ */
+async function scoreDocument(input: ScoreDocumentInput): Promise<ReviewResult> {
+  const criteriaSet = await loadCriteriaSet(input.criteriaSetCode);
 
-  // ── 3) PHI data minimization — ก่อนเข้า AI เสมอ ─────────────────────────────
-  const sanitized = sanitizePHI(parsed.text);
+  // ── PHI data minimization — ก่อนเข้า AI เสมอ ────────────────────────────────
+  const sanitized = sanitizePHI(input.text);
 
   const provider = getAIProvider();
 
   const review = await prisma.review.create({
     data: {
       caseId: input.caseId,
-      documentId: document.id,
+      documentId: input.documentId,
       criteriaSetId: criteriaSet.id,
       provider: provider.name,
       model: provider.model,
       status: "PENDING",
+      sourceType: input.sourceType,
     },
   });
 
   try {
-    // ── 4) AI extract facts — เรียกครั้งเดียว ────────────────────────────────
+    // ── AI extract facts — เรียกครั้งเดียว ────────────────────────────────────
     const facts = await provider.extractFacts(sanitized.text);
 
-    // ── 5) Rule Engine ตัดสินคะแนน ────────────────────────────────────────────
+    // ── Rule Engine ตัดสินคะแนน ───────────────────────────────────────────────
     const criteria: CriterionInput[] = criteriaSet.criteria.map((c) => ({
       id: c.id,
       code: c.code,
@@ -118,7 +111,7 @@ export async function runReviewPipeline(input: RunReviewInput): Promise<RunRevie
 
     const result = runRuleEngine(facts, criteria, criteriaSet.code);
 
-    // ── 6) เขียนผลลงฐานข้อมูลเป็นก้อนเดียว ───────────────────────────────────
+    // ── เขียนผลลงฐานข้อมูลเป็นก้อนเดียว ──────────────────────────────────────
     await prisma.$transaction([
       prisma.reviewItem.deleteMany({ where: { reviewId: review.id } }),
       prisma.reviewItem.createMany({
@@ -146,12 +139,12 @@ export async function runReviewPipeline(input: RunReviewInput): Promise<RunRevie
       }),
     ]);
 
-    // ── 7) Timeline — แทนที่ของเดิมที่มาจาก AI, ไม่แตะที่ผู้ใช้แก้เอง ─────────
+    // ── Timeline — แทนที่ของเดิมที่มาจาก AI, ไม่แตะที่ผู้ใช้แก้เอง ────────────
     await syncTimelineFromFacts(input.caseId, facts);
 
     return {
       reviewId: review.id,
-      documentId: document.id,
+      documentId: input.documentId,
       totalScore: result.totalScore,
       maxScore: result.maxScore,
       percentage: result.percentage,
@@ -160,12 +153,87 @@ export async function runReviewPipeline(input: RunReviewInput): Promise<RunRevie
   } catch (e) {
     await prisma.review.update({ where: { id: review.id }, data: { status: "FAILED" } });
     if (e instanceof PipelineError) throw e;
-    throw new PipelineError(
-      e instanceof Error ? e.message : String(e),
-      "extract-or-score",
-      { cause: e },
-    );
+    throw new PipelineError(e instanceof Error ? e.message : String(e), "extract-or-score", {
+      cause: e,
+    });
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// เส้นทางที่ 1 — ผู้ใช้อัปโหลด .docx เอง
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type RunReviewInput = {
+  caseId: string;
+  fileName: string;
+  mimeType: string;
+  data: Buffer;
+  criteriaSetCode?: string;
+};
+
+export async function runReviewPipeline(input: RunReviewInput): Promise<ReviewResult> {
+  const criteriaSetCode = input.criteriaSetCode ?? DEFAULT_CRITERIA_SET_CODE;
+
+  const caseRow = await prisma.case.findUnique({ where: { id: input.caseId } });
+  if (!caseRow) {
+    throw new PipelineError(`ไม่พบ Case id=${input.caseId}`, "case-lookup");
+  }
+
+  // ตรวจว่าเกณฑ์มีอยู่ก่อนจะไปเขียนไฟล์ — จะได้ไม่ทิ้งขยะไว้บน volume
+  await loadCriteriaSet(criteriaSetCode);
+
+  const stored = await storeDocument(input.caseId, input.fileName, input.data);
+  const parsed = await parseDocx(input.data);
+
+  const document = await prisma.document.create({
+    data: {
+      caseId: input.caseId,
+      fileName: stored.fileName,
+      filePath: stored.filePath,
+      mimeType: input.mimeType,
+      fileSize: stored.fileSize,
+      extractedText: parsed.text,
+      version: (await prisma.document.count({ where: { caseId: input.caseId } })) + 1,
+    },
+  });
+
+  return scoreDocument({
+    caseId: input.caseId,
+    documentId: document.id,
+    text: parsed.text,
+    criteriaSetCode,
+    sourceType: "upload",
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// เส้นทางที่ 2 — เอกสารที่ generate จาก RecordForm แล้ว
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function reviewExistingDocument(
+  documentId: string,
+  criteriaSetCode: string = DEFAULT_CRITERIA_SET_CODE,
+): Promise<ReviewResult> {
+  const document = await prisma.document.findUnique({
+    where: { id: documentId },
+    select: { id: true, caseId: true, extractedText: true },
+  });
+
+  if (!document) {
+    throw new PipelineError(`ไม่พบเอกสาร id=${documentId}`, "document-lookup");
+  }
+
+  if (!document.extractedText?.trim()) {
+    throw new PipelineError("เอกสารนี้ไม่มีข้อความที่อ่านได้", "document-empty");
+  }
+
+  return scoreDocument({
+    caseId: document.caseId,
+    documentId: document.id,
+    text: document.extractedText,
+    criteriaSetCode,
+    sourceType: "form",
+  });
 }
 
 /**

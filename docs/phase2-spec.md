@@ -1,309 +1,382 @@
-# RCA — Phase 2 Spec: HOSxP Adapter (อ่านอย่างเดียว)
+# RCA — Phase 2 Spec: ฟอร์มบันทึกเวชระเบียน (CRUD) + HOSxP prefill
 
 สถานะ: **ร่างเพื่อตรวจ** — ยังไม่เริ่ม implement
-ขอบเขต Phase 2 รอบนี้: **HOSxP adapter อ่านอย่างเดียว เท่านั้น**
-(Auth / Claude provider / versioning ยังไม่เอาเข้ารอบนี้)
+ฉบับนี้เขียนทับร่างเดิมที่เข้าใจโจทย์ผิด (ร่างเดิมคิดว่า HOSxP เป็นต้นทางของการตรวจ)
 
 ---
 
-## 1. เป้าหมาย
+## 1. โจทย์จริง
 
-Phase 1 ตรวจได้เฉพาะเอกสารที่คนอัปโหลดเข้ามาทีละไฟล์ — ซึ่งแปลว่า
-ต้องมีคน export เวชระเบียนออกมาเป็น DOCX ก่อน จึงตรวจได้ทีละใบ ช้าและไม่ครอบคลุม
+> "อยากให้กรอก HN แล้วข้อมูลเด้งมาให้เอง และแก้ไขได้ (ไม่ใช่แก้ในฐานข้อมูล
+> คือแก้ในข้อความไฟล์ Word ที่สร้างมาให้เอง) แล้วสร้างไฟล์ DOCX แล้วให้ AI อ่าน
+> ก็คือ CRUD เพื่อสร้างเอกสาร DOCX แล้วนำไฟล์นั้นมาให้ AI ตรวจ"
 
-Phase 2 ให้ระบบ **ดึง visit จาก HOSxP มาตรวจได้ตรงๆ** โดยไม่ต้องอัปโหลดอะไร
-เลือกช่วงวันที่ → เห็นรายการ visit → กดตรวจ → ได้คะแนนตามเกณฑ์ A1 ชุดเดิม
+แปลเป็นงาน:
 
-ผลลัพธ์ที่ต้องได้: สุ่มตรวจคุณภาพบันทึกได้จำนวนมากขึ้นมาก โดยเกณฑ์และวิธีคิดคะแนน
-**เหมือนกันเป๊ะ**กับที่ตรวจจาก DOCX — คะแนนจากสองทางต้องเทียบกันได้
+```
+กรอก HN → HOSxP เด้งข้อมูลมาเติมฟอร์ม → แก้ไขในหน้าจอได้ → กด "สร้างเอกสาร"
+   → ได้ DOCX ตามแบบ สนย. → เข้า pipeline เดิม → AI ตรวจ → คะแนน
+```
 
----
+**HOSxP เป็นแค่ตัวเติมข้อมูลตั้งต้น (prefill) ไม่ใช่ต้นทางของการให้คะแนน**
+ต้นทางของการตรวจยังเป็น DOCX เหมือน Phase 1 ทุกประการ
 
-## 2. หลักการที่ต้องยึด (ห้ามละเมิด)
-
-หลักการทั้ง 6 ข้อของ Phase 1 ยังใช้ทั้งหมด และเพิ่มอีก 4 ข้อ
-
-7. **HOSxP เป็น read-only เด็ดขาด** — ห้ามมี `INSERT` / `UPDATE` / `DELETE` /
-   `CREATE` / `ALTER` / `DROP` ในโค้ดที่ยิงไปฝั่ง HOSxP แม้แต่บรรทัดเดียว
-   บังคับสามชั้น: user ใน MySQL มีสิทธิ์ `SELECT` อย่างเดียว, pool แยกตัวจาก DB ของแอป,
-   และมี guard ในโค้ดที่ throw ถ้า SQL ไม่ได้ขึ้นต้นด้วย `SELECT`
-   เหตุผล: นี่คือ production DB ของโรงพยาบาล พังแล้วไม่ใช่แค่ระบบนี้เจ๊ง
-
-8. **PHI ถูกกันตั้งแต่ระดับ query ไม่ใช่แค่ mask ทีหลัง** —
-   คำสั่ง `SELECT` ที่ยิงไป HOSxP **ห้าม select คอลัมน์ชื่อ/ที่อยู่/เบอร์โทร/เลขบัตร**
-   ตั้งแต่แรก (`patient.pname/fname/lname`, `patient.addrpart`, `patient.hometel`,
-   `patient.cid` ฯลฯ) — ข้อมูลที่ไม่เคยออกจาก DB ย่อมรั่วไม่ได้
-   ตัว PHI sanitizer ยังต้องรันทับอีกชั้นเหมือนเดิม เพราะ free text
-   (`opdscreen.cc`, `ovst_doctor_diag.diag_text`) มีชื่อคนปนได้เสมอ
-
-9. **คะแนนต้องเทียบกันได้ระหว่าง DOCX กับ HOSxP** — ใช้ CriteriaSet ชุดเดียวกัน
-   Rule Engine ตัวเดียวกัน และ `ExtractedFacts` โครงเดียวกัน
-   ห้ามเขียนกติกาให้คะแนนชุดที่สองสำหรับ HOSxP โดยเด็ดขาด
-
-10. **ไม่ scan ทั้ง DB** — ดึงเฉพาะ visit ที่ผู้ใช้เลือก และจำกัดจำนวนต่อครั้ง
-    (ดูข้อ 8 เรื่อง quota) — HOSxP เป็น production ห้ามยิง query ที่กิน I/O หนัก
-    ในเวลาราชการ
+ผลที่ตามมาที่สำคัญ: **ระบบทำงานได้เต็มรูปแบบโดยไม่ต้องต่อ HOSxP เลย**
+HOSxP เป็นของเสริมที่เพิ่มทีหลังได้ — จึงไม่ต้องรอ DBA ก่อนเริ่มงาน
 
 ---
 
-## 3. Non-goals — ห้ามทำใน Phase 2 รอบนี้
+## 2. "form เหมือน สนย." — มีสองฟอร์ม ต้องทำทั้งคู่
 
-- ❌ **เขียนกลับ HOSxP ทุกรูปแบบ** — รวมถึงตาราง log ของตัวเอง
-- ❌ HOSxP auth adapter (ใช้ user/รหัสของ HOSxP มาล็อกอิน) — คนละงาน แยกรอบ
-- ❌ ระบบ auth ใดๆ — ยังเป็น internal tool ใน LAN เหมือนเดิม
+เปิดเอกสารต้นฉบับ (สนย., มี.ค. 2558) แล้วพบว่า **Form A1 คือตารางสรุปผลตรวจ
+ไม่ใช่ฟอร์มเวชระเบียน** (หน้า 17 = ตัวอย่างกรอกแล้ว, หน้า 55 = ฟอร์มเปล่า)
+
+### ฟอร์ม ก. — ฟอร์มกรอกเวชระเบียน (ตัวที่ CRUD)
+
+เอกสารต้นฉบับไม่ได้กำหนดหน้าตา OPD card ไว้ แต่กำหนด **หัวข้อที่ต้องมี** ผ่านเกณฑ์
+6 ข้อ ฟอร์มกรอกจึงต้องมีช่องตรงกับ 6 หัวข้อนั้นเป๊ะ — กรอกครบ = ได้ 17 คะแนน
+
+| ช่องในฟอร์ม | เกณฑ์ที่ตรงกัน | maxScore |
+|---|---|---|
+| วันที่ + เวลาที่มารับบริการ | `SERVICE_DATETIME` | 1 |
+| อาการสำคัญ / เหตุผลที่มา | `CC` | 2 |
+| ประวัติปัจจุบัน · โรคประจำตัว/อดีต · ประวัติส่วนตัว/ปัจจัยเสี่ยง | `HISTORY` | 3 |
+| ผลตรวจร่างกาย (แยกรายระบบ) + ผลชันสูตร | `PHYSICAL_EXAM` | 4 |
+| คำวินิจฉัยโรค (หลายรายการ) | `DIAGNOSIS` | 4 |
+| การรักษา (ยา/หัตถการ) | `TREATMENT` | 3 |
+
+### ฟอร์ม ข. — Form A1 ตารางสรุปผลตรวจ (ตัวที่ export)
+
+ทำตามหน้า 55 เป๊ะ — นี่คือเอกสารที่เอาไปแนบแฟ้มคุณภาพจริง
+
+```
+รหัสสถานพยาบาล ____ ชื่อ ____ วันที่ ____ ตรวจโดย ____
+
+HN | วันที่ | เวลา | วัน/เวลา | CC | ประวัติ | ตรวจร่างกาย | คำวินิจฉัย | การรักษา | คะแนนเต็ม | คะแนนที่ได้ | หมายเหตุ
+
+สรุปผลการตรวจ  คะแนนที่ได้ทั้งหมด ____ คะแนนเต็ม ____ สัดส่วน ____ %
+```
+
+- คอลัมน์คะแนน 6 ช่องเรียงตามลำดับในเอกสารต้นฉบับ — **ห้ามสลับ**
+- ช่อง N/A ให้ใส่ `N/A` ไม่ใช่ `0` และ "คะแนนเต็ม" ของแถวนั้นลดตาม
+- "หมายเหตุ" = `ReviewItem.reason` ของข้อที่เสียคะแนน (ตัวอย่างในต้นฉบับ:
+  *"คำวินิจฉัย Myalgia ไม่บอกตำแหน่ง"*) — ตรงกับที่ Rule Engine ผลิตอยู่แล้ว
+- export ได้ทีละหลาย Review ในไฟล์เดียว (เลือกช่วงวันที่ / เลือกเคส)
+
+---
+
+## 3. หลักการที่เพิ่มจาก Phase 1
+
+หลักการ 6 ข้อของ Phase 1 ยังใช้ทั้งหมด และเพิ่ม
+
+7. **ฟอร์มคือแหล่งความจริงที่แก้ได้ DOCX คือผลลัพธ์ที่ generate ออกมา**
+   แก้ฟอร์ม → generate DOCX ใหม่ → `Document.version` +1 (field นี้มีอยู่แล้วใน Phase 1)
+   ไม่แก้ DOCX ตรงๆ และไม่ parse DOCX กลับมาเป็นฟอร์ม
+
+8. **ห้ามเขียนกลับ HOSxP ทุกกรณี** — prefill เป็น `SELECT` อย่างเดียว
+   บังคับสามชั้น: user MySQL สิทธิ์ `SELECT` เท่านั้น, pool แยกจาก DB ของแอป,
+   และ guard ในโค้ดที่ throw ถ้า SQL ไม่ขึ้นต้นด้วย `SELECT`
+
+9. **ระบบต้องทำงานได้เต็มรูปแบบเมื่อ `HOSXP_ENABLED=false`**
+   ปิด HOSxP แล้วต้องยังกรอกฟอร์มเอง สร้าง DOCX และตรวจได้ครบ
+   — ห้ามเขียนโค้ดที่พังเมื่อไม่มี HOSxP
+
+10. **คะแนนยังมาจาก AI อ่าน DOCX เท่านั้น ห้าม shortcut**
+    ถึงจะรู้ค่าในฟอร์มอยู่แล้วก็ห้ามเอาไปคำนวณคะแนนตรงๆ
+    เพราะจุดประสงค์คือตรวจว่า "เอกสารที่ออกมา" มีคุณภาพพอไหม
+    ถ้า shortcut คะแนนจะกลายเป็นการเช็คว่ากรอกฟอร์มครบไหม ซึ่งคนละเรื่องกัน
+
+> **หมายเหตุออกแบบ** — ข้อ 10 ทำให้เกิด round trip: ฟอร์ม → DOCX → text → AI → facts
+> ทั้งที่ facts บางส่วนรู้อยู่แล้วจากฟอร์ม ตั้งใจให้เป็นแบบนี้ เพราะ DOCX คือ
+> "เอกสารที่ใช้จริง" และต้องถูกตรวจอย่างที่คนตรวจจะอ่านมัน
+> ถ้าอยากประหยัด quota ทีหลัง ค่อยคุยเรื่อง cache ตาม hash ของข้อความ ไม่ใช่ shortcut คะแนน
+
+---
+
+## 4. Non-goals
+
+- ❌ เขียนกลับ HOSxP ทุกรูปแบบ
+- ❌ HOSxP auth adapter (ใช้ user HOSxP ล็อกอิน) — คนละงาน
+- ❌ ระบบ auth — **แต่ดูข้อ 9 เรื่องความเสี่ยง HN**
 - ❌ Claude provider — ยังใช้ Gemini ตัวเดียว
-- ❌ ตรวจอัตโนมัติทั้งเดือน / cron / batch ทั้งก้อน — Phase 3
-- ❌ IPD (Form A3/A4) และ ICD A-H (Form A2) — เกณฑ์คนละชุด
-- ❌ Dashboard/chart สรุปผลรายแพทย์ — Phase 3
-- ❌ เขียน adapter ให้ HIS ยี่ห้ออื่น
+- ❌ แก้ DOCX ตรงๆ แล้ว sync กลับเข้าฟอร์ม
+- ❌ IPD (A3/A4), ICD A-H (A2)
+- ❌ ดึง visit ทั้งช่วงวันที่มาตรวจรวดเดียว — Phase 3
+- ❌ Dashboard/chart สรุปรายแพทย์ — Phase 3
 
 ---
 
-## 4. Prisma schema ที่เพิ่ม
-
-Phase 1 เขียนหมายเหตุไว้แล้วว่า Phase 2 ค่อยเพิ่ม `hosxpPatientRef` / `hosxpVisitRef`
+## 5. Prisma schema ที่เพิ่ม
 
 ```prisma
+/// ฟอร์มบันทึกเวชระเบียน — ตัวที่ CRUD และ generate DOCX ออกมา
+model RecordForm {
+  id     String @id @default(cuid())
+  caseId String
+
+  // ── ข้อมูลผู้ป่วย ──────────────────────────────────────────────────────────
+  // ⚠️ hn / patientName เป็น PHI — ถูก mask ก่อนเข้า AI เสมอ
+  hn          String? @db.VarChar(20)
+  patientName String? @db.VarChar(200)
+  age         String? @db.VarChar(50)   // "52 ปี" / "1 ปี 6 เดือน" — เก็บเป็นข้อความตามที่กรอก
+  gender      String? @db.VarChar(20)
+  department  String? @db.VarChar(100)
+  pttype      String? @db.VarChar(100)
+
+  // ── 6 หัวข้อตามเกณฑ์ A1 ────────────────────────────────────────────────────
+  serviceDate     String? @db.VarChar(30)   // "14 สิงหาคม 2569"
+  serviceTime     String? @db.VarChar(20)   // "09:15"
+
+  chiefComplaint  String? @db.Text
+
+  presentIllness  String? @db.Text
+  pastHistory     String? @db.Text
+  personalHistory String? @db.Text
+
+  vitalSigns      String? @db.Text
+  physicalExam    String? @db.Text          // ผลตรวจร่างกายรายระบบ
+  labResult       String? @db.Text
+
+  diagnosis       String? @db.Text          // หลายรายการ บรรทัดละ 1 โรค
+  treatment       String? @db.Text          // หลายรายการ บรรทัดละ 1 อย่าง
+  note            String? @db.Text
+
+  // ── ที่มาของข้อมูล ─────────────────────────────────────────────────────────
+  source       String    @default("manual")  // "manual" | "hosxp"
+  hosxpVisitRef String?  @db.VarChar(20)     // VN ตอน prefill
+  prefilledAt  DateTime?
+
+  case      Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  documents Document[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([caseId])
+  @@index([hn])
+}
+
 model Case {
-  // ... field เดิมทั้งหมด ไม่เปลี่ยน
+  // ... เดิมทั้งหมด
+  forms RecordForm[]
 
-  // อ้างอิงกลับไป HOSxP — ใช้ตรวจซ้ำและ audit
-  // ⚠️ hosxpPatientRef คือ HN = PHI ห้ามส่งเข้า AI และห้ามโชว์บนหน้าจอที่ไม่มี auth
-  hosxpPatientRef String?  @db.VarChar(20)
-  hosxpVisitRef   String?  @db.VarChar(20)   // VN
+  // Phase 1 เขียนหมายเหตุไว้ว่า Phase 2 ค่อยเพิ่ม
+  hosxpPatientRef String? @db.VarChar(20)
+  hosxpVisitRef   String? @db.VarChar(20)
+}
 
-  @@unique([hosxpVisitRef])   // 1 visit = 1 case กันตรวจซ้ำโดยไม่ตั้งใจ
-  @@index([hosxpPatientRef])
+model Document {
+  // ... เดิมทั้งหมด
+
+  // DOCX ที่ generate จากฟอร์ม จะผูกกลับไปที่ฟอร์มต้นทาง
+  // null = ไฟล์ที่ผู้ใช้อัปโหลดเอง (Phase 1)
+  recordFormId String?
+  recordForm   RecordForm? @relation(fields: [recordFormId], references: [id])
+
+  @@index([recordFormId])
 }
 
 model Review {
-  // ... field เดิมทั้งหมด ไม่เปลี่ยน
-
-  // "document" = อัปโหลด DOCX (Phase 1) | "hosxp" = ดึงจาก HOSxP (Phase 2)
-  sourceType String @default("document")
+  // ... เดิมทั้งหมด
+  sourceType String @default("upload")  // "upload" | "form"
 }
 ```
 
-`Document` **ไม่เปลี่ยน** — visit ที่ดึงจาก HOSxP ก็ยังสร้าง `Document` หนึ่งแถว
-โดยเก็บข้อความที่ render แล้วลง `extractedText`, `fileName` เป็น `HOSXP-{vn}.txt`,
-`filePath` เป็น path ของ snapshot ที่เขียนลง volume
-
-เหตุผลที่ต้องเก็บ snapshot: **HOSxP แก้ย้อนหลังได้** ถ้าไม่เก็บไว้
-พอเปิดผลตรวจเก่าดูอีกที ข้อมูลอาจไม่ใช่ตัวที่ใช้ตอนให้คะแนนแล้ว — audit ไม่ได้
+`Document.version` ที่มีอยู่แล้วใช้ได้พอดี — แก้ฟอร์มแล้ว generate ใหม่ = version ถัดไป
+Review เก่ายังชี้ Document version เก่า จึง audit ย้อนหลังได้ว่าตอนให้คะแนนนั้น
+เอกสารหน้าตาอย่างไร
 
 ---
 
-## 5. โครงสร้างโค้ด
+## 6. โครงสร้างโค้ดที่เพิ่ม
 
 ```
+lib/form/
+├── schema.ts          # Zod ของ RecordForm (ใช้ทั้ง API และ UI)
+└── to-docx.ts         # RecordForm → DOCX ตามแบบ สนย.
+
+lib/docx/
+└── form-a1.ts         # หลาย Review → ตาราง Form A1 (หน้า 55)
+
 lib/hosxp/
-├── client.ts      # mysql2 pool แยกตัว + read-only guard
-├── queries.ts     # SELECT ทั้งหมด อยู่ที่นี่ที่เดียว
-├── render.ts      # แถวจาก HOSxP → ข้อความเวชระเบียน (เข้า pipeline เดิม)
-├── overrides.ts   # fact ที่ DB รู้แน่นอน ใช้ทับผลจาก AI
+├── client.ts          # pool แยก + read-only guard
+├── queries.ts         # SELECT ทั้งหมดอยู่ที่นี่ที่เดียว
+├── to-form.ts         # แถวจาก HOSxP → ค่าตั้งต้นของ RecordForm
 └── types.ts
+
+app/api/forms/
+├── route.ts                    # GET list · POST create
+└── [id]/
+    ├── route.ts                # GET · PATCH · DELETE
+    ├── generate/route.ts       # POST → สร้าง DOCX + Document
+    └── review/route.ts         # POST → generate + รัน pipeline ในคราวเดียว
+
+app/api/hosxp/
+└── lookup/route.ts             # GET ?hn=... → ค่าตั้งต้นของฟอร์ม (ไม่บันทึกอะไร)
+
+app/api/reports/
+└── form-a1/route.ts            # GET → DOCX ตาราง Form A1
+
+app/forms/
+├── new/page.tsx
+└── [id]/page.tsx               # ฟอร์มแก้ไข + ปุ่มสร้างเอกสาร/ตรวจ
 ```
 
-### `client.ts` — ยืมแบบจาก `ppc-hos-10667/lib/db.ts`
+---
+
+## 7. HOSxP prefill
+
+### กติกาความปลอดภัย
 
 ```ts
+// lib/hosxp/client.ts
 const pool = mysql.createPool({
   host: env.HOSXP_DB_HOST,
   port: env.HOSXP_DB_PORT,
-  user: env.HOSXP_DB_USER,        // ⚠️ ต้องเป็น user ที่มีสิทธิ์ SELECT อย่างเดียว
+  user: env.HOSXP_DB_USER,     // ⚠️ ต้องมีสิทธิ์ SELECT อย่างเดียว
   password: env.HOSXP_DB_PASS,
   database: env.HOSXP_DB_NAME,
-  charset: "tis620",              // HOSxP ใช้ TIS-620 ไม่ใช่ utf8mb4 — ต่อผิดภาษาไทยเพี้ยนทั้งระบบ
-  multipleStatements: false,      // กัน stacked-query injection
-  connectionLimit: 4,             // จำกัดไว้ อย่าไปแย่ง connection ของ HOSxP
+  charset: "tis620",           // HOSxP ใช้ TIS-620 — ต่อผิดภาษาไทยเพี้ยนทั้งระบบ
+  multipleStatements: false,   // กัน stacked-query injection
+  connectionLimit: 4,          // อย่าไปแย่ง connection ของ HOSxP
 });
-```
 
-**read-only guard** — ทุก query ต้องผ่านฟังก์ชันเดียวที่เช็คก่อนยิง:
-
-```ts
 export async function hosxpSelect<T>(sql: string, params: unknown[]): Promise<T[]> {
-  if (!/^\s*SELECT\s/i.test(sql)) {
-    throw new Error("HOSxP client รับเฉพาะ SELECT");
-  }
+  if (!/^\s*SELECT\s/i.test(sql)) throw new Error("HOSxP client รับเฉพาะ SELECT");
   if (/\b(INSERT|UPDATE|DELETE|REPLACE|DROP|ALTER|CREATE|TRUNCATE|GRANT)\b/i.test(sql)) {
-    throw new Error("พบคำสั่งที่ไม่ใช่ SELECT ใน SQL ที่ส่งเข้า HOSxP client");
+    throw new Error("พบคำสั่งที่ไม่ใช่ SELECT");
   }
   // ...
 }
 ```
 
-guard นี้ไม่ได้แทนสิทธิ์ระดับ MySQL — เป็น**ชั้นที่สอง** ไว้ให้พังตั้งแต่ตอนเขียนโค้ด
-ไม่ใช่ไปพังตอน production
+กติกาการเขียน SQL ยืมวินัยจาก `ppc-hos-10667`:
+ค่าจาก request ใช้ `?` เสมอ · `assertDate()` เช็ครูปแบบก่อนแม้จะส่งเป็น param แล้ว ·
+SQL fragment สร้างจาก constant เท่านั้น · คอมเมนต์ลำดับ param เมื่อมี subquery ·
+cast ทุกค่าที่ออกจาก DB
 
-### กติกาการเขียน SQL (ยืมวินัยจาก ppc-hos-10667)
+### ตารางที่ใช้ (ยืนยันแล้วว่ามีใช้จริงใน `ppc-hos-10667`)
 
-1. ค่าจาก request → placeholder `?` เสมอ ห้าม concat แม้แต่วันที่
-2. `assertDate()` เช็ค `YYYY-MM-DD` ก่อนทุกครั้ง แม้จะส่งเป็น param แล้ว (defense-in-depth)
-3. SQL fragment สร้างจาก constant เท่านั้น ค่าที่เป็น identifier ใช้ whitelist
-4. คอมเมนต์ลำดับ param กำกับทุก query ที่มี subquery
-5. cast ทุกค่าที่ออกจาก DB — `Number()` / `String(x ?? "").trim()`
-
----
-
-## 6. ตาราง HOSxP ที่ใช้ และแมปไปเกณฑ์ A1
-
-ตารางและคอลัมน์ที่ **ยืนยันแล้ว**ว่ามีใช้จริงใน `ppc-hos-10667`:
-
-| เกณฑ์ | ตาราง / คอลัมน์ |
+| ช่องในฟอร์ม | มาจาก |
 |---|---|
-| `SERVICE_DATETIME` | `ovst.vstdate`, `ovst.vsttime` |
-| `CC` | `opdscreen.cc` |
-| `HISTORY` | `opdscreen` (ช่องประวัติ — **ต้องยืนยันชื่อคอลัมน์**) |
-| `PHYSICAL_EXAM` | `opdscreen` (สัญญาณชีพ — **ต้องยืนยันชื่อคอลัมน์**) + `lab_head` / `lab_order` / `lab_items` |
-| `DIAGNOSIS` | `ovst_doctor_diag.diag_text` (คำวินิจฉัยเป็นข้อความ) และ `ovstdiag.icd10` + `diagtype` |
-| `TREATMENT` | `opitemrece` (`icode`, `qty`) + `drugitems` / `nondrugitems` |
+| `serviceDate` / `serviceTime` | `ovst.vstdate`, `ovst.vsttime` |
+| `chiefComplaint` | `opdscreen.cc` |
+| `diagnosis` | `ovst_doctor_diag.diag_text` (ข้อความ) — `ovstdiag.icd10` ใช้แค่แสดงประกอบ |
+| `treatment` | `opitemrece` + `drugitems` / `nondrugitems` |
+| `labResult` | `lab_head` → `lab_order` → `lab_items` |
+| `department` | `kskdepartment.department` ผ่าน `ovst.main_dep` |
+| `pttype` | `pttype.name` |
 
-ตารางประกอบ: `vn_stat` (visit หลัก), `patient` (**เอาแค่ `hn` ห้าม select ชื่อ/ที่อยู่**),
-`doctor`, `doctor_position`, `kskdepartment`, `pttype`
+เงื่อนไขบังคับทุก query: `ovst.an IS NULL` (เอาเฉพาะ OPD ไม่เอาที่ admit)
+— `ppc-hos-10667` ใช้เงื่อนไขนี้ทุก query เช่นกัน
 
-เงื่อนไขที่ต้องมีทุก query: `ovst.an IS NULL` — กรองเอาเฉพาะ OPD ไม่เอาที่ admit
-(`ppc-hos-10667` ใช้เงื่อนไขนี้ทุก query เช่นกัน)
+> ⚠️ **`ovstdiag.icd10` ห้ามเอาไปใส่ช่อง `diagnosis`** — เกณฑ์ `DIAGNOSIS` ระดับ 0 คือ
+> *"ใช้รหัส ICD แทนคำวินิจฉัยโรค"* ถ้า prefill เอา ICD ไปใส่ ระบบจะสร้างเอกสาร
+> ที่ผิดเกณฑ์ให้เองตั้งแต่ต้น
 
-### ⚠️ ต้องยืนยันกับ schema จริงก่อนเขียนโค้ด
+### ⚠️ ต้อง DESCRIBE ก่อนเขียนโค้ด
 
-`ppc-hos-10667` ใช้แค่ `opdscreen.cc` เท่านั้น จึงยืนยันชื่อคอลัมน์อื่นไม่ได้จากที่นั่น
-ก่อนเริ่มข้อ 12.2 ต้องรัน `DESCRIBE opdscreen;` แล้วเทียบก่อน โดยเฉพาะ:
+`ppc-hos-10667` ใช้แค่ `opdscreen.cc` จึงยืนยันคอลัมน์อื่นไม่ได้จากที่นั่น
+ก่อนเริ่มข้อ 10.6 ต้องรัน `DESCRIBE opdscreen;` แล้วเติมชื่อจริงลงสเปกก่อน โดยเฉพาะ
+สัญญาณชีพ (คาดว่า `bps` `bpd` `temperature` `pulse` `rr` `bw` `height`),
+ช่องประวัติ/อาการ, ช่องตรวจร่างกาย, และคอลัมน์วิธีใช้ยาใน `opitemrece`
+(ต้องมีเพื่อให้ `TREATMENT` แยกระดับ 1/2/3 ได้)
 
-- ช่องสัญญาณชีพ (คาดว่า `bps` `bpd` `temperature` `pulse` `rr` `bw` `height` `o2sat`)
-- ช่องประวัติ / อาการ (คาดว่า `symptom` หรือ `hpi`)
-- ช่องตรวจร่างกาย (บาง รพ. อยู่ที่ `ovst_doctor_diag` ไม่ใช่ `opdscreen`)
-- คอลัมน์วิธีใช้ยาใน `opitemrece` (ต้องมีเพื่อให้ `TREATMENT` แยกระดับ 1/2/3 ได้)
+**ห้ามเดาชื่อคอลัมน์แล้วยิง production DB**
 
-**ห้ามเดาชื่อคอลัมน์แล้วเขียนโค้ดไปก่อน** — query ที่ผิดบน production DB
-อย่างน้อยก็ error อย่างมากก็ไปกิน I/O ฟรีๆ
+### พฤติกรรมที่ต้องเป็น
 
----
-
-## 7. Pipeline Phase 2
-
-ยึดหลักการข้อ 9: **ใช้ pipeline เดิมทั้งเส้น** เปลี่ยนแค่ต้นทาง
-
-```
-เลือกช่วงวันที่ / แผนก บนหน้าจอ
-   ↓
-queries.ts ดึงรายการ visit (ยังไม่ดึงเนื้อหา)        ← SELECT อย่างเดียว
-   ↓
-ผู้ใช้เลือก visit ที่จะตรวจ
-   ↓
-queries.ts ดึงเนื้อหาของ visit นั้น                  ← ไม่ select ชื่อ/ที่อยู่/เบอร์โทร
-   ↓
-render.ts ประกอบเป็นข้อความเวชระเบียน               ← เก็บ snapshot ลง volume
-   ↓  ───────────── ตั้งแต่จุดนี้ลงไปคือ pipeline เดิมของ Phase 1 ไม่แก้อะไรเลย ─────────────
-PHI sanitizer
-   ↓
-Gemini extractFacts() — 1 call
-   ↓
-overrides.ts ทับ fact ที่ DB รู้แน่นอน               ← จุดเดียวที่เพิ่มเข้ามา
-   ↓
-Rule Engine → ReviewItem[]
-   ↓
-Review + Timeline + แสดงผล + Export DOCX
-```
-
-### จุดที่เพิ่ม: deterministic overrides
-
-`overrides.ts` ทับเฉพาะ fact ที่ **HOSxP รู้แน่นอนกว่า AI** — รายการนี้ปิด ห้ามขยาย
-โดยไม่แก้สเปก เพราะทุกตัวที่เพิ่มคือการเอาคะแนนออกจากมือ AI ซึ่งดี แต่ต้องตั้งใจ
-
-| fact | มาจาก | เหตุผล |
-|---|---|---|
-| `serviceDateTime.hasDate` | `ovst.vstdate IS NOT NULL` | เป็น column ตรงๆ AI ไม่ต้องเดา |
-| `serviceDateTime.hasTime` | `ovst.vsttime IS NOT NULL` | เดียวกัน |
-| `physicalExam.labWasOrdered` | มีแถวใน `lab_head` ของ vn นั้น | **AI ไม่มีทางรู้** ว่าสั่งแล็บแล้วแต่ไม่บันทึกผล |
-| `physicalExam.labResultExists` | มี `lab_order.lab_order_result` ที่ไม่ว่าง | เดียวกัน |
-| `treatment.isNA` | ไม่มีแถวใน `opitemrece` ของ vn นั้น | แยก "ไม่มีการรักษา" (N/A) ออกจาก "มีแต่ไม่บันทึก" (0 คะแนน) ได้แน่นอน |
-
-ตัวที่ 3-4 สำคัญมาก — เกณฑ์ `PHYSICAL_EXAM` ระดับ 3 คือ *"ตรวจมากกว่าสองระบบ
-แต่ไม่บันทึกผลชันสูตร **ทั้งๆ ที่มีผลการตรวจชันสูตร**"* ซึ่งต้องรู้ว่ามีการสั่งแล็บจริงไหม
-Phase 1 ต้องให้ AI เดาจากข้อความ Phase 2 รู้จาก DB ได้เลย
-
-ทุก override ต้องบันทึกไว้ใน `ReviewItem.reason` ว่ามาจาก HOSxP ไม่ใช่จาก AI
-เช่น `"(จาก HOSxP) มีการส่งตรวจชันสูตร 2 รายการ แต่ไม่พบผลในบันทึก"`
+- กรอก HN → แสดง visit ล่าสุด N รายการให้เลือก (default 10) → เลือกแล้วเติมฟอร์ม
+- prefill **ไม่บันทึกอะไรลง DB ของแอป** จนกว่าผู้ใช้จะกด save
+- ช่องที่ HOSxP ไม่มีข้อมูล ปล่อยว่างไว้ ห้ามเติมข้อความหลอกอย่าง "ไม่มี" หรือ "-"
+  เพราะจะทำให้คะแนนสูงกว่าความจริง
+- ทุกช่องที่ prefill มา ต้องแก้ได้ทั้งหมด และมีปุ่ม "ล้างค่า" กลับเป็นว่าง
+- `HOSXP_ENABLED=false` → ซ่อนช่องค้นหา HN ไปเลย ที่เหลือใช้งานได้ปกติ
 
 ---
 
-## 8. Config
+## 8. Config ที่เพิ่ม
 
 ```
-HOSXP_ENABLED=false          # default ปิด — เปิดเมื่อพร้อมเท่านั้น
+HOSXP_ENABLED=false              # default ปิด — เปิดเมื่อ DBA พร้อมเท่านั้น
 HOSXP_DB_HOST=
 HOSXP_DB_PORT=3306
-HOSXP_DB_USER=rca_readonly   # ⚠️ ต้องมีสิทธิ์ SELECT อย่างเดียว
+HOSXP_DB_USER=rca_readonly       # ⚠️ SELECT อย่างเดียว
 HOSXP_DB_PASS=
 HOSXP_DB_NAME=hos
+HOSXP_LOOKUP_LIMIT=10            # จำนวน visit ล่าสุดที่ดึงมาให้เลือก
+HOSXP_QUERY_TIMEOUT_MS=15000
 
-HOSXP_MAX_VISITS_PER_QUERY=200   # กันเผลอดึงทั้งเดือน
-HOSXP_QUERY_TIMEOUT_MS=15000     # ตัดทิ้งถ้า query ช้าผิดปกติ อย่าค้างบน production
+HOSPITAL_CODE=10667              # ใช้ในหัวตาราง Form A1
+HOSPITAL_NAME=โรงพยาบาลพลับพลาชัย
 ```
 
-SQL ที่ DBA ต้องรันให้ (ใส่ใน `docs/sql/hosxp-readonly-user.sql`):
+SQL ที่ DBA ต้องรัน (`docs/sql/hosxp-readonly-user.sql`):
 
 ```sql
 CREATE USER 'rca_readonly'@'<ip ของเครื่อง rca>' IDENTIFIED BY '<รหัส>';
 GRANT SELECT ON hos.* TO 'rca_readonly'@'<ip ของเครื่อง rca>';
--- ห้าม GRANT อย่างอื่นเด็ดขาด และห้ามใช้ '%' เป็น host
+-- ห้าม GRANT อย่างอื่น และห้ามใช้ '%' เป็น host
 ```
 
-จำกัด host เป็น IP เดียว ไม่ใช่ `%` — ถ้ารหัสหลุด ก็ยังต่อจากเครื่องอื่นไม่ได้
+---
+
+## 9. ความเสี่ยงที่ต้องตัดสินใจก่อน
+
+| ความเสี่ยง | หมายเหตุ |
+|---|---|
+| **HN + ชื่อผู้ป่วยอยู่ในระบบที่ไม่มี auth** | ตอนนี้ใครในวง LAN เปิด `:3800` ได้หมด Phase 1 ยังพอรับได้เพราะไม่มีข้อมูลคนไข้ แต่ Phase 2 จะมีทั้ง HN ชื่อ และเวชระเบียนเต็ม — **อันนี้ต้องตัดสินใจก่อนเปิดใช้จริง** |
+| query กวน HOSxP | `connectionLimit: 4`, timeout 15 วิ, ดึงทีละ visit ไม่ scan ช่วงวันที่ |
+| ภาษาไทยเพี้ยน | `charset: "tis620"` |
+| prefill เอา ICD ไปใส่ช่องคำวินิจฉัย | ห้ามเด็ดขาด (ดูข้อ 7) |
+| ชื่อคนปนใน free text ของ HOSxP | PHI sanitizer รันทับเสมอ + `npm run inspect` ตรวจก่อนเปิดใช้ |
+
+**ข้อแรกคือข้อที่ผมอยากให้ตัดสินก่อนเริ่ม** — ทางเลือก
+(ก) ทำ auth ก่อนแล้วค่อยทำ Phase 2
+(ข) ทำ Phase 2 ก่อน แต่ยังไม่เปิด HOSxP และไม่กรอก HN จริง ใช้ทดสอบภายในอย่างเดียว
+(ค) รับความเสี่ยงไว้เพราะเป็นเครือข่ายภายในโรงพยาบาล
 
 ---
 
-## 9. ลำดับการ build
+## 10. ลำดับการ build
 
-1. `DESCRIBE` ตารางที่จะใช้บน HOSxP จริง แล้วเติมชื่อคอลัมน์ลงข้อ 6 ให้ครบก่อน
-2. ขอ DBA สร้าง user read-only + ทดสอบว่า `INSERT` แล้ว **ถูกปฏิเสธจริง**
-3. `lib/hosxp/client.ts` + read-only guard + เทสต์ว่า guard โยน error กับ SQL ที่ไม่ใช่ SELECT
-4. `lib/hosxp/queries.ts` — query รายการ visit (วันที่ + แผนก) ทดสอบกับข้อมูลจริง
-5. `lib/hosxp/queries.ts` — query เนื้อหาราย visit
-6. `lib/hosxp/render.ts` — ประกอบเป็นข้อความ + `npm run inspect` ตรวจว่า PHI ไม่หลุด
-7. `lib/hosxp/overrides.ts` + เทสต์ด้วย mock (เหมือน `scripts/test-rule-engine.ts`)
-8. ต่อเข้า pipeline — `POST /api/hosxp/review`
-9. UI: หน้าเลือกช่วงวันที่ → ตารางรายการ visit → ปุ่มตรวจ
-10. เทียบผล: เอา visit ที่มี DOCX อยู่แล้วมาตรวจทั้งสองทาง คะแนนควรใกล้เคียงกัน
-    ถ้าต่างมาก แปลว่า `render.ts` ประกอบข้อความไม่ครบ
+เรียงให้ **ได้ของใช้ก่อนแตะ production DB** — ข้อ 1-5 ไม่ต้องพึ่ง DBA เลย
 
-**ห้ามข้ามข้อ 1-2** — เขียนโค้ดก่อนรู้ schema จริงคือการเดา และต่อ production DB
-ด้วย user ที่ยังไม่ได้พิสูจน์ว่า read-only จริง คือความเสี่ยงที่ไม่ควรรับ
+1. Prisma schema + migration (`RecordForm`, field ที่เพิ่มใน `Case`/`Document`/`Review`)
+2. `lib/form/schema.ts` — Zod ของฟอร์ม ใช้ร่วมกันทั้ง API และ UI
+3. `app/api/forms/**` — CRUD ครบ (list / create / read / update / delete)
+4. `lib/form/to-docx.ts` — ฟอร์ม → DOCX ตามแบบ สนย. + เทสต์ว่า generate แล้ว
+   parse กลับด้วย mammoth ได้ข้อความครบทุกหัวข้อ
+5. UI ฟอร์ม + ปุ่ม "สร้างเอกสารและตรวจ" → ต่อเข้า pipeline เดิม
+   **ถึงตรงนี้ระบบใช้งานได้จริงแล้ว โดยยังไม่แตะ HOSxP**
+6. `lib/docx/form-a1.ts` + `app/api/reports/form-a1` — export ตารางสรุปตามหน้า 55
+7. `DESCRIBE` ตาราง HOSxP จริง แล้วเติมชื่อคอลัมน์ลงข้อ 7
+8. ขอ DBA สร้าง user read-only + **ทดสอบว่า `INSERT` ถูกปฏิเสธจริง**
+9. `lib/hosxp/client.ts` + guard + เทสต์ว่า guard โยน error กับ SQL ที่ไม่ใช่ SELECT
+10. `lib/hosxp/queries.ts` + `to-form.ts` + `app/api/hosxp/lookup`
+11. ต่อช่องค้นหา HN เข้าหน้าฟอร์ม
+12. `npm run inspect` กับเอกสารที่ generate จากข้อมูล HOSxP จริง — ตรวจว่า PHI ไม่หลุด
 
 ---
 
-## 10. เทสต์ที่ต้องมี
+## 11. เทสต์ที่ต้องมี
 
-ทั้งหมดต้องรันได้โดย **ไม่ต่อ HOSxP จริง** (เหมือน Phase 1 ที่เทสต์ได้โดยไม่มี DB)
+ทั้งหมดต้องรันได้โดยไม่ต่อ HOSxP จริง (เหมือน Phase 1 ที่เทสต์ได้โดยไม่มี DB)
 
 | เทสต์ | ตรวจอะไร |
 |---|---|
-| `test:hosxp-guard` | guard โยน error กับ INSERT/UPDATE/DELETE/DROP และปล่อยผ่านเฉพาะ SELECT |
-| `test:hosxp-overrides` | mock แถวจาก HOSxP → override ทับ fact ถูกตัว และไม่แตะ fact อื่น |
-| `test:hosxp-render` | mock แถว → ข้อความที่ประกอบออกมามีครบทุกหัวข้อที่เกณฑ์ต้องใช้ |
-| `test:phi` (เดิม) | เพิ่มเคส: ข้อความที่ render จาก HOSxP ต้องไม่มี PHI หลงเหลือ |
-
----
-
-## 11. ความเสี่ยงที่ต้องระวัง
-
-| ความเสี่ยง | วิธีกัน |
-|---|---|
-| query หนักไปกวน HOSxP ในเวลาราชการ | `connectionLimit: 4`, timeout 15 วิ, จำกัดจำนวน visit ต่อครั้ง, แนะนำให้ตรวจนอกเวลา |
-| ภาษาไทยเพี้ยน | `charset: "tis620"` — ผิดตรงนี้พังทั้งระบบและดูออกยาก |
-| ชื่อคนไข้ปนใน free text แล้วหลุดเข้า AI | PHI sanitizer รันทับเสมอ + `npm run inspect` ตรวจก่อนเปิดใช้ |
-| HN โชว์บนหน้าจอที่ใครก็เข้าได้ | ยังไม่มี auth — **ต้องคุยกันก่อนว่าจะโชว์ HN บนหน้าจอไหม** หรือรอ auth ก่อน |
-| ข้อมูลใน HOSxP ถูกแก้ย้อนหลัง ทำให้ audit ไม่ตรง | เก็บ snapshot ข้อความลง `Document.extractedText` + volume ทุกครั้ง |
-| เผลอเขียนกลับ | user read-only + guard ในโค้ด + ไม่มีโค้ดเขียนอยู่เลย |
+| `test:form-docx` | ฟอร์ม → DOCX → mammoth → ข้อความมีครบทุกหัวข้อที่เกณฑ์ต้องใช้ |
+| `test:form-a1` | mock Review หลายรายการ → ตารางมีคอลัมน์ครบ เรียงถูก N/A แสดงถูก คะแนนรวมถูก |
+| `test:hosxp-guard` | guard โยน error กับ INSERT/UPDATE/DELETE/DROP ปล่อยผ่านเฉพาะ SELECT |
+| `test:hosxp-to-form` | mock แถว HOSxP → ฟอร์มถูกช่อง และ **ไม่มี ICD หลุดเข้าช่องคำวินิจฉัย** |
+| `test:phi` (เดิม) | เพิ่มเคส: DOCX ที่ generate จากฟอร์มต้องไม่มี PHI หลงเหลือหลัง mask |
 
 ---
 
 ## 12. คำถามที่ต้องตอบก่อนเริ่ม
 
-1. **จะโชว์ HN บนหน้าจอไหม** — ตอนนี้ระบบไม่มี auth ใครในวง LAN ก็เปิด `:3800` ได้
-   ถ้าโชว์ HN เท่ากับเปิดข้อมูลผู้ป่วยให้ทุกคนในโรงพยาบาล
-   ทางเลือก: (ก) ไม่โชว์ HN เลย ใช้ caseNumber แทน (ข) ทำ auth ก่อนค่อยทำ adapter
-2. **DBA ยอมสร้าง user read-only ให้ไหม** และเครื่อง rca ต่อ HOSxP ได้ทาง network หรือยัง
-3. **ตรวจย้อนหลังได้กี่วัน** — มีผลกับ index และความหนักของ query
-4. `opdscreen` ของ รพ. เก็บประวัติ/ตรวจร่างกายไว้ที่คอลัมน์ไหน (ข้อ 6)
+1. **เรื่อง auth/HN ในข้อ 9** — เลือก (ก) (ข) หรือ (ค)
+2. ฟอร์มกรอก 1 ฟอร์ม = 1 visit ใช่ไหม หรือรวมหลาย visit ของคนไข้คนเดียวในเคสเดียว
+3. `RecordForm` ต้องมีสถานะ draft/final ไหม หรือแก้ได้ตลอด
+4. DOCX ที่ generate ต้องมีหัวกระดาษ/โลโก้โรงพยาบาลไหม
+5. Form A1 export — เลือกเคสเองทีละใบ หรือเลือกตามช่วงวันที่

@@ -35,7 +35,9 @@ function pool(): mysql.Pool {
       port: cfg.port,
       user: cfg.user,
       password: cfg.password,
-      database: cfg.database,
+      // ไม่ระบุ database ก็ต่อได้ — แล้วค่อยหาว่าตาราง master อยู่ฐานไหน
+      // (lib/hosxp/queries.ts จะ SELECT แบบระบุชื่อฐานนำหน้าเอง)
+      ...(cfg.database ? { database: cfg.database } : {}),
 
       // HOSxP เก็บภาษาไทยเป็น TIS-620 ไม่ใช่ utf8mb4
       // ต่อผิด charset แล้วชื่อแผนก/สิทธิจะเพี้ยนทั้งหมด

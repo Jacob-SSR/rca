@@ -9,7 +9,7 @@ import {
   HosxpWriteAttemptError,
   hosxpSelect,
 } from "@/lib/hosxp/client";
-import { isHosxpEnabled } from "@/lib/hosxp/env";
+import { hosxpConfig, isHosxpEnabled } from "@/lib/hosxp/env";
 import { isOptionKind, loadOptions } from "@/lib/hosxp/queries";
 import { formatThaiDate, formatTime, isIsoDate } from "@/lib/form/thai-date";
 
@@ -105,6 +105,86 @@ async function main() {
 
   await test("ปฏิเสธ SQL ที่ไม่ขึ้นต้นด้วย SELECT (เช่น WITH)", async () => {
     await expectReject("WITH t AS (SELECT 1) SELECT * FROM t", "write");
+  });
+
+  console.log("\n── สืบค่าจาก AUTH_DB_* (เครื่องเดียวกัน) ──");
+
+  /** ตั้ง env ชั่วคราวแล้วคืนค่าเดิมเสมอ ไม่ให้เทสต์ก่อนหน้ารั่วไปข้อถัดไป */
+  function withEnv(patch: Record<string, string | undefined>, fn: () => void) {
+    const keys = Object.keys(patch);
+    const before = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+    try {
+      for (const k of keys) {
+        if (patch[k] === undefined) delete process.env[k];
+        else process.env[k] = patch[k];
+      }
+      fn();
+    } finally {
+      for (const k of keys) {
+        if (before[k] === undefined) delete process.env[k];
+        else process.env[k] = before[k];
+      }
+    }
+  }
+
+  const AUTH_ONLY = {
+    HOSXP_ENABLED: undefined,
+    HOSXP_DB_HOST: undefined,
+    HOSXP_DB_PORT: undefined,
+    HOSXP_DB_USER: undefined,
+    HOSXP_DB_PASS: undefined,
+    HOSXP_DB_NAME: undefined,
+    AUTH_DB_HOST: "10.0.0.9",
+    AUTH_DB_PORT: "3306",
+    AUTH_DB_USER: "hosuser",
+    AUTH_DB_PASS: "hospass",
+    AUTH_DB_NAME: "ppchos",
+  };
+
+  await test("ตั้งแค่ AUTH_DB_* ก็เปิด HOSxP ให้เอง ไม่ต้องใส่ HOSXP_ENABLED=true", () => {
+    withEnv(AUTH_ONLY, () => {
+      assert.equal(isHosxpEnabled(), true);
+      const cfg = hosxpConfig();
+      assert.equal(cfg.host, "10.0.0.9");
+      assert.equal(cfg.user, "hosuser");
+      assert.equal(cfg.password, "hospass");
+    });
+  });
+
+  await test("ไม่สืบทอดชื่อฐานจาก AUTH_DB_NAME — ฐานผู้ใช้กับฐาน HOSxP คนละฐานได้", () => {
+    withEnv(AUTH_ONLY, () => {
+      // ปล่อยว่างไว้ แล้วให้ queries.ts ไปหาเองว่าตารางอยู่ฐานไหน
+      assert.equal(hosxpConfig().database, undefined);
+    });
+  });
+
+  await test("HOSXP_DB_* ที่ตั้งไว้เองต้องชนะค่าที่สืบมา", () => {
+    withEnv({ ...AUTH_ONLY, HOSXP_DB_HOST: "10.0.0.20", HOSXP_DB_NAME: "hos" }, () => {
+      const cfg = hosxpConfig();
+      assert.equal(cfg.host, "10.0.0.20");
+      assert.equal(cfg.database, "hos");
+      // ที่ไม่ได้ตั้งยังสืบจาก AUTH_DB_* ต่อ
+      assert.equal(cfg.user, "hosuser");
+    });
+  });
+
+  await test("HOSXP_ENABLED=false สั่งปิดได้เสมอ แม้ค่าจะครบ", () => {
+    withEnv({ ...AUTH_ONLY, HOSXP_ENABLED: "false" }, () => {
+      assert.equal(isHosxpEnabled(), false);
+    });
+  });
+
+  await test("ไม่มีค่าให้ต่อเลย = ปิด และ hosxpConfig ต้อง throw ไม่ใช่ต่อมั่ว", () => {
+    withEnv({ ...AUTH_ONLY, AUTH_DB_HOST: undefined, AUTH_DB_USER: undefined }, () => {
+      assert.equal(isHosxpEnabled(), false);
+      assert.throws(() => hosxpConfig(), /ไม่ครบ/);
+    });
+  });
+
+  await test("ค่าว่างถือว่าไม่ได้ตั้ง (ไม่ใช่ host ชื่อ \"\")", () => {
+    withEnv({ ...AUTH_ONLY, HOSXP_DB_HOST: "" }, () => {
+      assert.equal(hosxpConfig().host, "10.0.0.9");
+    });
   });
 
   console.log("\n── option kind ──");

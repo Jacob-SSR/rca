@@ -179,42 +179,65 @@ async function checkAuthDb(): Promise<Result> {
 
 // ── 3) HOSxP ─────────────────────────────────────────────────────────────────
 async function checkHosxp(): Promise<Result> {
-  if (process.env.HOSXP_ENABLED !== "true") {
+  if (process.env.HOSXP_ENABLED === "false") {
     return {
       ok: true,
-      detail: "ปิดอยู่ (HOSXP_ENABLED != true) — แผนก/สิทธิจะเป็นช่องพิมพ์เอง ระบบใช้ได้ปกติ",
+      detail: "สั่งปิดไว้ (HOSXP_ENABLED=false) — แผนก/สิทธิจะเป็นช่องพิมพ์เอง ระบบใช้ได้ปกติ",
     };
   }
 
-  const host = process.env.HOSXP_DB_HOST;
-  const name = process.env.HOSXP_DB_NAME || "hos";
+  // ค่าเดียวกับที่แอปใช้: ไม่ได้ตั้ง HOSXP_DB_* ก็ตกไปใช้ AUTH_DB_* (เครื่องเดียวกัน)
+  const pick = (a?: string, b?: string) => (a && a.length > 0 ? a : b);
+  const host = pick(process.env.HOSXP_DB_HOST, process.env.AUTH_DB_HOST);
+  const user = pick(process.env.HOSXP_DB_USER, process.env.AUTH_DB_USER);
+  const pass = pick(process.env.HOSXP_DB_PASS, process.env.AUTH_DB_PASS);
+  const inherited = !process.env.HOSXP_DB_HOST && !!process.env.AUTH_DB_HOST;
+  const preferred = process.env.HOSXP_DB_NAME || "";
 
-  if (!host) {
+  if (!host || !user || !pass) {
     return {
       ok: false,
-      detail: "HOSXP_ENABLED=true แต่ไม่ได้ตั้ง HOSXP_DB_HOST",
-      fix: "ก็อป DB_HOST จาก .env ของ ppc-hos-10667",
+      detail: "ไม่มีค่าให้ต่อ HOSxP (ทั้ง HOSXP_DB_* และ AUTH_DB_* ว่าง)",
+      fix: "ถ้าเป็นเครื่องเดียวกัน ตั้งแค่ AUTH_DB_HOST / AUTH_DB_USER / AUTH_DB_PASS ก็พอ",
     };
   }
 
+  // ต่อโดยไม่เลือก database แล้วถาม information_schema ว่าตาราง master อยู่ฐานไหน
   const r = await withConn(
     {
       host,
-      port: Number(process.env.HOSXP_DB_PORT || 3306),
-      user: process.env.HOSXP_DB_USER,
-      password: process.env.HOSXP_DB_PASS,
-      database: name,
+      port: Number(pick(process.env.HOSXP_DB_PORT, process.env.AUTH_DB_PORT) || 3306),
+      user,
+      password: pass,
       charset: "tis620",
     },
     async (c) => {
+      const find = async (table: string) => {
+        const [rows] = await c.query<mysql.RowDataPacket[]>(
+          `SELECT table_schema AS db FROM information_schema.tables
+            WHERE table_name = ? ORDER BY (table_schema = ?) DESC, table_schema LIMIT 1`,
+          [table, preferred],
+        );
+        return rows[0] ? String(rows[0].db) : "";
+      };
+
+      const depDb = await find("kskdepartment");
+      const pttDb = await find("pttype");
+      if (!depDb || !pttDb) return { depDb, pttDb, dep: 0, ptt: 0, sample: [] as string[] };
+
       const [dep] = await c.query<mysql.RowDataPacket[]>(
-        "SELECT COUNT(*) AS n FROM kskdepartment",
+        `SELECT COUNT(*) AS n FROM \`${depDb}\`.kskdepartment`,
       );
-      const [ptt] = await c.query<mysql.RowDataPacket[]>("SELECT COUNT(*) AS n FROM pttype");
+      const [ptt] = await c.query<mysql.RowDataPacket[]>(
+        `SELECT COUNT(*) AS n FROM \`${pttDb}\`.pttype`,
+      );
       const [sample] = await c.query<mysql.RowDataPacket[]>(
-        "SELECT department FROM kskdepartment WHERE department <> '' ORDER BY department LIMIT 3",
+        `SELECT department FROM \`${depDb}\`.kskdepartment
+          WHERE department <> '' ORDER BY department LIMIT 3`,
       );
       return {
+        depDb,
+        pttDb,
         dep: Number(dep[0]?.n ?? 0),
         ptt: Number(ptt[0]?.n ?? 0),
         sample: sample.map((x) => String(x.department)),
@@ -225,20 +248,33 @@ async function checkHosxp(): Promise<Result> {
   if (!r.ok) {
     return {
       ok: false,
-      detail: `ต่อ ${host}/${name} ไม่ได้ — ${r.error}`,
-      fix:
-        r.code === "ER_NO_SUCH_TABLE"
-          ? `ต่อได้แต่ไม่มีตาราง — ตรวจ HOSXP_DB_NAME (ตอนนี้ = ${name})`
-          : "ตรวจ HOSXP_DB_HOST / HOSXP_DB_USER / HOSXP_DB_PASS",
+      detail: `ต่อ ${host} ไม่ได้ — ${r.error}`,
+      fix: inherited
+        ? "ใช้ค่าเดียวกับ AUTH_DB_* อยู่ — ถ้า HOSxP คนละเครื่อง ให้ตั้ง HOSXP_DB_* แยก"
+        : "ตรวจ HOSXP_DB_HOST / HOSXP_DB_USER / HOSXP_DB_PASS",
     };
   }
+
+  const { depDb, pttDb } = r.value;
+
+  if (!depDb || !pttDb) {
+    const missing = [!depDb && "kskdepartment", !pttDb && "pttype"].filter(Boolean).join(", ");
+    return {
+      ok: false,
+      detail: `ต่อ ${host} ได้ แต่ user นี้มองไม่เห็นตาราง: ${missing}`,
+      fix: "ให้ผู้ดูแลระบบ grant SELECT บนฐาน HOSxP ให้ user นี้",
+    };
+  }
+
+  const where = depDb === pttDb ? `ฐาน ${depDb}` : `ฐาน ${depDb} / ${pttDb}`;
 
   return {
     ok: true,
     detail:
-      `ต่อ ${host}/${name} ได้ · แผนก ${r.value.dep} รายการ · สิทธิ ${r.value.ptt} รายการ\n` +
+      `ต่อ ${host} ได้${inherited ? " (ใช้ค่าเดียวกับ AUTH_DB_*)" : ""} · ${where}\n` +
+      `   แผนก ${r.value.dep} รายการ · สิทธิ ${r.value.ptt} รายการ\n` +
       `   ตัวอย่างแผนก: ${r.value.sample.join(", ") || "(ไม่มี)"}` +
-      (r.value.sample.some((s) => /[^ -฀-๿]/.test(s))
+      (r.value.sample.some((s) => /[^ -฀-๿]/.test(s))
         ? "\n   ⚠️ ชื่อแผนกดูเพี้ยน — charset อาจไม่ใช่ tis620"
         : ""),
   };
@@ -252,8 +288,8 @@ async function main() {
   line("HOSxP (HOSXP_DB_*)", await checkHosxp());
 
   console.log("═".repeat(60));
-  console.log("หมายเหตุ: host ของ HOSxP กับฐานผู้ใช้เป็นเครื่องเดียวกันได้");
-  console.log("แต่คนละ database — ตาราง users อยู่ใน ppchos ไม่ใช่ hos\n");
+  console.log("หมายเหตุ: HOSxP กับฐานผู้ใช้เป็นเครื่องเดียวกัน — ไม่ต้องตั้ง HOSXP_DB_* ซ้ำ");
+  console.log("ถ้าไม่ได้ตั้ง ระบบจะใช้ค่าของ AUTH_DB_* ต่อให้เอง และหาเองว่าตารางอยู่ฐานไหน\n");
 }
 
 main().catch((e) => {

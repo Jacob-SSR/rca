@@ -40,13 +40,16 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
 
       # ── HOSxP (อ่านอย่างเดียว) — ใช้ดึงรายการแผนก/สิทธิมาเป็นตัวเลือกใน dropdown
-      # ปิดอยู่ก็ใช้ระบบได้ปกติ ช่องพวกนั้นจะกลายเป็นช่องพิมพ์เองแทน
-      HOSXP_ENABLED: ${HOSXP_ENABLED:-false}
+      # ⚠️ ทุกตัวต้อง default เป็นค่าว่าง ห้ามใส่ค่าสำเร็จรูป
+      #    เพราะแอปจะถือว่า "ไม่ได้ตั้ง" แล้วไปใช้ค่าของ AUTH_DB_* ต่อให้เอง
+      #    (HOSxP กับฐานผู้ใช้อยู่เครื่องเดียวกัน) — ถ้าใส่ :-false / :-hos ไว้
+      #    จะกลายเป็นสั่งปิดและล็อกชื่อฐานทั้งที่ผู้ใช้ไม่ได้ตั้งอะไรเลย
+      HOSXP_ENABLED: ${HOSXP_ENABLED:-}
       HOSXP_DB_HOST: ${HOSXP_DB_HOST:-}
-      HOSXP_DB_PORT: ${HOSXP_DB_PORT:-3306}
+      HOSXP_DB_PORT: ${HOSXP_DB_PORT:-}
       HOSXP_DB_USER: ${HOSXP_DB_USER:-}
       HOSXP_DB_PASS: ${HOSXP_DB_PASS:-}
-      HOSXP_DB_NAME: ${HOSXP_DB_NAME:-hos}
+      HOSXP_DB_NAME: ${HOSXP_DB_NAME:-}
       HOSXP_CACHE_TTL_SEC: ${HOSXP_CACHE_TTL_SEC:-3600}
       AI_PROVIDER: ${AI_PROVIDER:-gemini}
       AI_MODEL: ${AI_MODEL:-gemini-2.5-flash}

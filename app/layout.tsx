@@ -29,7 +29,14 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
               </span>
             </Link>
 
-            {session ? <UserBar name={session.name} role={session.role} /> : null}
+            {session ? (
+              <div className="flex items-center gap-4">
+                <Link href="/reports" className="link text-base whitespace-nowrap">
+                  Form A1
+                </Link>
+                <UserBar name={session.name} role={session.role} />
+              </div>
+            ) : null}
           </div>
         </header>
 

@@ -92,7 +92,7 @@ export type FormField = {
   optionsFrom?: OptionSource;
 
   /**
-   * kind="select" — ให้เลือก "อื่นๆ" แล้วพิมพ์เองได้
+   * kind="select" — ยอมให้ใช้ค่าที่ไม่มีในรายการ (พิมพ์ลงไปตรงๆ ได้เลย)
    * จำเป็นสำหรับทุก dropdown ในระบบนี้ เพราะห้ามให้รายการที่ไม่ครบ
    * ขวางการกรอกเวชระเบียน (ถ้าขวาง คนจะเลิกใช้แล้วกลับไปเขียนมือ)
    */
@@ -101,9 +101,6 @@ export type FormField = {
 
 /** ตัวเลือกเพศ — LGBTQ ถือเป็นตัวเลือกตั้งต้น ไม่ใช่ "อื่นๆ" */
 export const GENDER_OPTIONS = ["ชาย", "หญิง", "LGBTQ"] as const;
-
-/** ข้อความที่ใช้แทน "ไม่อยู่ในรายการ" ใน dropdown */
-export const OTHER_OPTION_LABEL = "อื่นๆ (พิมพ์เอง)";
 
 export type FormSection = {
   key: string;
@@ -137,7 +134,7 @@ export const FORM_SECTIONS: FormSection[] = [
         kind: "select",
         optionsFrom: "departments",
         allowOther: true,
-        hint: "รายการมาจาก HOSxP — ถ้าไม่มีในรายการเลือก “อื่นๆ” แล้วพิมพ์เองได้",
+        hint: "พิมพ์เพื่อค้นหา หรือกดลูกศรลงเพื่อดูทั้งหมด — ไม่มีในรายการก็พิมพ์ลงไปได้เลย",
       },
       {
         name: "pttype",
@@ -145,7 +142,7 @@ export const FORM_SECTIONS: FormSection[] = [
         kind: "select",
         optionsFrom: "pttypes",
         allowOther: true,
-        hint: "รายการมาจาก HOSxP — ถ้าไม่มีในรายการเลือก “อื่นๆ” แล้วพิมพ์เองได้",
+        hint: "พิมพ์เพื่อค้นหา หรือกดลูกศรลงเพื่อดูทั้งหมด — ไม่มีในรายการก็พิมพ์ลงไปได้เลย",
       },
     ],
   },

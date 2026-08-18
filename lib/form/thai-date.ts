@@ -69,3 +69,20 @@ export function formatTime(value: string | null | undefined): string {
 
   return `${String(h).padStart(2, "0")}:${m[2]}`;
 }
+
+/**
+ * วันที่แบบสั้น dd/mm/yyyy พ.ศ. — ใช้ในช่องตารางที่แคบ
+ *
+ * ตารางของ สนย. มีคอลัมน์วันที่กว้างไม่ถึงนิ้ว "20 มกราคม 2558" จะตัดบรรทัด
+ * ต้นฉบับในคู่มือก็พิมพ์เป็น 20/01/2015 (แต่เราใช้ พ.ศ. ให้ตรงกับเอกสารอื่นในระบบ)
+ *
+ * ค่าที่ไม่ใช่ ISO ส่งผ่านไปตามเดิม ไม่แปลง ไม่ทิ้ง (ฟอร์มเก่าที่พิมพ์มือไว้)
+ */
+export function formatThaiDateShort(value: string | null | undefined): string {
+  const raw = (value ?? "").trim();
+  if (raw === "") return "";
+  if (!isIsoDate(raw)) return raw;
+
+  const [y, m, d] = raw.split("-");
+  return `${d}/${m}/${Number(y) + 543}`;
+}

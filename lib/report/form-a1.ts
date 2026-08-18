@@ -16,7 +16,7 @@
 // ⚠️ ไฟล์นี้ต้องไม่ import prisma — เทสต์และตัววาด DOCX เรียกใช้โดยไม่ต้องมีฐานข้อมูล
 //    ส่วนที่ query อยู่ที่ lib/report/form-a1-query.ts
 
-import { isIsoDate } from "@/lib/form/thai-date";
+import { formatThaiDateShort } from "@/lib/form/thai-date";
 
 /** ลำดับคอลัมน์คะแนนในฟอร์ม — ห้ามสลับ */
 export const A1_SCORE_COLUMNS = [
@@ -71,12 +71,7 @@ export type A1Report = {
  * ค่าที่ไม่ใช่ ISO (ฟอร์มเก่าที่พิมพ์มือไว้) ส่งผ่านไปตามเดิม ไม่แปลง ไม่ทิ้ง
  */
 export function a1Date(value: string | null | undefined): string {
-  const raw = (value ?? "").trim();
-  if (raw === "") return "";
-  if (!isIsoDate(raw)) return raw;
-
-  const [y, m, d] = raw.split("-");
-  return `${d}/${m}/${Number(y) + 543}`;
+  return formatThaiDateShort(value);
 }
 
 /** เวลา HH:mm — ตัดวินาทีทิ้งถ้ามี */

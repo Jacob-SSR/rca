@@ -31,8 +31,11 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
 
             {session ? (
               <div className="flex items-center gap-4">
+                <Link href="/sheets" className="link text-base whitespace-nowrap">
+                  แบบฟอร์ม
+                </Link>
                 <Link href="/reports" className="link text-base whitespace-nowrap">
-                  Form A1
+                  Form A1 อัตโนมัติ
                 </Link>
                 <UserBar name={session.name} role={session.role} />
               </div>

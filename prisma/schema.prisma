@@ -239,3 +239,36 @@ model ReviewItem {
   @@unique([reviewId, criterionId])
   @@index([criterionId])
 }
+
+/// แผ่นงานของแบบฟอร์มตรวจสอบคุณภาพในภาคผนวก ข ของคู่มือ สนย. (A1-A4, B1-B3, C1)
+///
+/// ⚠️ เก็บแถวเป็น JSON ก้อนเดียว ไม่แยกตาราง เพราะหนึ่งแผ่น = หนึ่งเอกสาร
+///    คนกรอกแก้ทั้งแผ่นแล้วเซฟทีเดียวเหมือนกรอกกระดาษ ไม่มีการ query รายแถว
+///    แยกตารางจะได้แค่ปัญหาเรื่องลำดับแถวกับ id ที่เปลี่ยนทุกครั้งที่เซฟ
+///
+/// โครงของแต่ละฟอร์มอยู่ใน lib/audit-forms/registry.ts ไม่ได้อยู่ใน schema
+/// เพราะคอลัมน์ของฟอร์มราชการเปลี่ยนตามคู่มือ ไม่ควรต้อง migrate ฐานทุกครั้ง
+model AuditSheet {
+  id String @id @default(cuid())
+
+  /// A1 | A2 | A3 | A4 | B1 | B2 | B3 | C1
+  formCode String @db.VarChar(10)
+
+  /// ชื่อที่ผู้ใช้ตั้งเองไว้หาแผ่นเจอ เช่น "ตรวจ OPD ไตรมาส 3/2569"
+  title String? @db.VarChar(200)
+
+  /// ค่าหัวฟอร์ม (รหัสสถานพยาบาล/จังหวัด/ช่วงวันที่/ผู้ตรวจ) ตาม meta ของฟอร์มนั้น
+  meta Json
+
+  /// แถวในตาราง — array ของ object ที่ key ตรงกับ column.key
+  rows Json
+
+  createdBy String? @db.VarChar(100)
+  updatedBy String? @db.VarChar(100)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([formCode])
+  @@index([createdAt])
+}

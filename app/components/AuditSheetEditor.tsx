@@ -19,10 +19,13 @@ import {
 import {
   NA,
   computedValue,
+  isEmptyRow,
   summarize,
   type CellValue,
   type SheetRow,
 } from "@/lib/audit-forms/compute";
+import { suggestIcdResult } from "@/lib/audit-forms/icd-compare";
+import IcdPullBar from "@/app/components/IcdPullBar";
 
 type Props = {
   form: AuditFormDef;
@@ -106,6 +109,28 @@ export default function AuditSheetEditor({
     }
   }
 
+  /**
+   * แถวที่ระบบเสนอสัญลักษณ์ผลการตรวจได้ แต่ยังไม่ได้เลือก
+   * ใช้ทั้งขึ้นปุ่ม "เติมผลที่เสนอ" และแสดงตัวเลขว่าเหลือกี่แถว
+   */
+  const pendingSuggestions = useMemo(() => {
+    if (form.summary !== "icdError") return [];
+    return rows
+      .map((r, i) => ({ i, s: suggestIcdResult(r.icd as string, r.auditIcd as string, r.icdType as string) }))
+      .filter(({ i, s }) => s.code !== null && String(rows[i].result ?? "").trim() === "");
+  }, [form, rows]);
+
+  function applySuggestions() {
+    setRows((prev) =>
+      prev.map((r) => {
+        if (String(r.result ?? "").trim() !== "") return r;
+        const s = suggestIcdResult(r.icd as string, r.auditIcd as string, r.icdType as string);
+        return s.code === null ? r : { ...r, result: s.code };
+      }),
+    );
+    setSaved(false);
+  }
+
   async function remove() {
     if (!sheetId) return;
     if (!confirm("ลบแผ่นงานนี้ทั้งแผ่น? ข้อมูลที่กรอกไว้จะหายถาวร")) return;
@@ -171,7 +196,12 @@ export default function AuditSheetEditor({
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 px-5 py-4 sm:px-6">
           <h2 className="text-lg font-semibold">ตารางบันทึกผล ({rows.length} แถว)</h2>
           {canEdit ? (
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
+              {pendingSuggestions.length > 0 ? (
+                <button type="button" className="btn btn-sm btn-primary" onClick={applySuggestions}>
+                  เติมผลที่ระบบเสนอ ({pendingSuggestions.length} แถว)
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="btn btn-sm"
@@ -191,6 +221,12 @@ export default function AuditSheetEditor({
             </div>
           ) : null}
         </div>
+
+        {canEdit ? <IcdPullBar form={form} onRows={(more) => {
+          // แทนที่แถวว่างที่ระบบใส่ไว้ตอนเปิดหน้า ไม่งั้นฟอร์มจะมีแถวว่างคั่นกลาง
+          setRows((prev) => [...prev.filter((r) => !isEmptyRow(form, r)), ...more]);
+          setSaved(false);
+        }} /> : null}
 
         <div className="overflow-x-auto">
           {/* min-w กันเบราว์เซอร์บีบคอลัมน์จนค่าที่เลือกไว้มองไม่เห็น
@@ -226,6 +262,13 @@ export default function AuditSheetEditor({
                         disabled={!canEdit}
                         onChange={(v) => setCell(i, c.key, v)}
                       />
+                      {c.key === "result" && form.summary === "icdError" ? (
+                        <ResultSuggestion
+                          row={row}
+                          disabled={!canEdit}
+                          onApply={(code) => setCell(i, "result", code)}
+                        />
+                      ) : null}
                     </td>
                   ))}
                   {canEdit ? (
@@ -293,7 +336,7 @@ export default function AuditSheetEditor({
                     key={c}
                     className={`badge ${summary.errorCounts[c] > 0 ? "badge-brand" : ""}`}
                   >
-                    {c} <span className="tabular">{summary.errorCounts[c] ?? 0}</span>
+                    {c}&nbsp;&nbsp;<span className="tabular">{summary.errorCounts[c] ?? 0}</span>
                   </span>
                 ))}
               </div>
@@ -378,11 +421,16 @@ function CellInput({
 
   // min-w กันช่องหดจนอ่านค่าที่กรอกไว้ไม่ออก — เคยเจอมาแล้วว่า na ที่เลือกไว้หายไปจากจอ
   // ช่องคะแนนใส่แค่เลขหลักเดียว/na จึงแคบได้ แต่ HN/AN/รหัส ICD ต้องเห็นครบทั้งค่า
-  const wide = ["text", "date", "time"].includes(column.kind);
-  const base =
-    `w-full rounded border border-zinc-300 px-2 py-1.5 text-base disabled:bg-zinc-50 ${
-      wide ? "min-w-[8.5rem]" : "min-w-[4.5rem]"
-    }`;
+  // ช่องคะแนนใส่แค่เลขหลักเดียว/na จึงแคบได้
+  // แต่ HN/AN/รหัส ICD ต้องเห็นครบทั้งค่า และ select ที่ป้ายยาว (ประเภท/ผลการตรวจ)
+  // ต้องกว้างพอให้อ่านออกว่าเลือกอะไรอยู่ ไม่ใช่เห็นแค่ "1 — "
+  const minW =
+    column.kind === "score"
+      ? "min-w-[4.5rem]"
+      : column.kind === "select"
+        ? "min-w-[11rem]"
+        : "min-w-[8.5rem]";
+  const base = `w-full rounded border border-zinc-300 px-2 py-1.5 text-base disabled:bg-zinc-50 ${minW}`;
 
   if (column.kind === "score") {
     const options: string[] = [];
@@ -463,5 +511,40 @@ function CellInput({
       aria-label={column.header}
       onChange={(e) => onChange(e.target.value)}
     />
+  );
+}
+
+/**
+ * คำเสนอสัญลักษณ์ผลการตรวจ ใต้ช่องเลือก
+ *
+ * ⚠️ เป็นข้อเสนอ ไม่ใช่คำตัดสิน — ต้องกด "ใช้" เอง ระบบไม่เติมให้เงียบๆ
+ *    เพราะช่องนี้คือผลการตรวจสอบที่ผู้ตรวจต้องรับผิดชอบ ไม่ใช่ผลที่เครื่องคำนวณ
+ *    (สัญลักษณ์ B และ C ตัดสินจากตัวรหัสไม่ได้ ระบบจะไม่เสนอเลย)
+ */
+function ResultSuggestion({
+  row,
+  disabled,
+  onApply,
+}: {
+  row: SheetRow;
+  disabled: boolean;
+  onApply: (code: string) => void;
+}) {
+  const s = suggestIcdResult(row.icd as string, row.auditIcd as string, row.icdType as string);
+  const current = String(row.result ?? "").trim().toUpperCase();
+
+  if (s.code === null || current === s.code) return null;
+
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      title={s.reason}
+      onClick={() => onApply(s.code!)}
+      className="mt-1 block w-full truncate rounded bg-brand-50 px-1.5 py-0.5 text-left text-xs
+                 text-brand-700 hover:bg-brand-100 disabled:opacity-50"
+    >
+      เสนอ {s.code} · {s.reason}
+    </button>
   );
 }

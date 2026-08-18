@@ -31,7 +31,7 @@ const SAFE_IDENT = /^[A-Za-z0-9_$]+$/;
  * คืนชื่อตารางแบบเต็ม เช่น `hos`.`kskdepartment`
  * เลือกฐานที่ตั้งไว้ใน HOSXP_DB_NAME ก่อน ถ้าตารางไม่ได้อยู่ที่นั่นก็เอาฐานแรกที่เจอ
  */
-async function qualify(table: string): Promise<string> {
+export async function qualify(table: string): Promise<string> {
   if (!SAFE_IDENT.test(table)) {
     throw new Error(`ชื่อตารางไม่ถูกต้อง: ${table}`);
   }

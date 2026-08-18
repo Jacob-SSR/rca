@@ -223,7 +223,13 @@ async function checkHosxp(): Promise<Result> {
 
       const depDb = await find("kskdepartment");
       const pttDb = await find("pttype");
-      if (!depDb || !pttDb) return { depDb, pttDb, dep: 0, ptt: 0, sample: [] as string[] };
+      // ตารางที่ฟอร์ม A2/A4 ใช้ดึงรหัส ICD ที่บันทึกไว้แล้ว
+      const icdTables = await Promise.all(
+        ["ovst", "ovstdiag", "ipt", "iptdiag", "icd101"].map(async (t) => [t, await find(t)] as const),
+      );
+      const missingIcd = icdTables.filter(([, db]) => !db).map(([t]) => t);
+      if (!depDb || !pttDb)
+        return { depDb, pttDb, dep: 0, ptt: 0, sample: [] as string[], missingIcd };
 
       const [dep] = await c.query<mysql.RowDataPacket[]>(
         `SELECT COUNT(*) AS n FROM \`${depDb}\`.kskdepartment`,
@@ -241,6 +247,7 @@ async function checkHosxp(): Promise<Result> {
         dep: Number(dep[0]?.n ?? 0),
         ptt: Number(ptt[0]?.n ?? 0),
         sample: sample.map((x) => String(x.department)),
+        missingIcd,
       };
     },
   );
@@ -276,7 +283,11 @@ async function checkHosxp(): Promise<Result> {
       `   ตัวอย่างแผนก: ${r.value.sample.join(", ") || "(ไม่มี)"}` +
       (r.value.sample.some((s) => /[^ -฀-๿]/.test(s))
         ? "\n   ⚠️ ชื่อแผนกดูเพี้ยน — charset อาจไม่ใช่ tis620"
-        : ""),
+        : "") +
+      (r.value.missingIcd.length > 0
+        ? `\n   ⚠️ อ่านตารางไม่ได้: ${r.value.missingIcd.join(", ")} — ` +
+          "ฟอร์ม A2/A4 จะดึงรหัส ICD มาให้ไม่ได้ ต้องพิมพ์เอง"
+        : "\n   ตารางวินิจฉัย (ovst/ovstdiag/ipt/iptdiag/icd101) อ่านได้ครบ — A2/A4 ดึงรหัสได้"),
   };
 }
 

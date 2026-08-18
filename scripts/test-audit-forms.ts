@@ -17,6 +17,7 @@ import {
   type SheetRow,
 } from "@/lib/audit-forms/compute";
 import { buildAuditSheetDocx, cellText } from "@/lib/audit-forms/to-docx";
+import { isExternalCause, normalizeIcd, suggestIcdResult } from "@/lib/audit-forms/icd-compare";
 
 let passed = 0;
 let failed = 0;
@@ -292,6 +293,83 @@ async function main() {
     // ใส่ gotScore ปลอมมาใน row — ต้องถูกมองข้าม
     const row: SheetRow = { cc: "2", gotScore: "999" };
     assert.equal(cellText(f, col, row), "2");
+  });
+
+  console.log("\n── เทียบรหัส ICD แล้วเสนอผลการตรวจ ──");
+
+  const sug = (icd: string, audit: string, type?: string) =>
+    suggestIcdResult(icd, audit, type).code;
+
+  await test("จุดกับตัวพิมพ์ไม่ทำให้รหัสเดียวกันกลายเป็นคนละรหัส", () => {
+    // HOSxP เก็บไม่มีจุด (J029) แต่คนพิมพ์ใส่จุด (J02.9)
+    assert.equal(normalizeIcd("j02.9"), "J029");
+    assert.equal(sug("J029", "J02.9"), "Y");
+    assert.equal(sug("j02.9", "J029"), "Y");
+  });
+
+  await test("ตรงกัน → Y", () => {
+    assert.equal(sug("J029", "J029"), "Y");
+  });
+
+  await test("รหัสในข้อมูลสั้นกว่าและเป็นต้นทาง → D (ไม่ครบหลัก)", () => {
+    assert.equal(sug("J06", "J069"), "D");
+    assert.equal(sug("M79", "M791"), "D");
+  });
+
+  await test("รหัสในข้อมูลยาวเกิน → F", () => {
+    assert.equal(sug("J0690", "J069"), "F");
+  });
+
+  await test("คนละรหัสกัน → A", () => {
+    assert.equal(sug("K811", "K800"), "A");
+  });
+
+  await test("ผู้ตรวจให้รหัสแต่ไม่มีในข้อมูล → G / มีในข้อมูลแต่ผู้ตรวจไม่ให้ → H", () => {
+    assert.equal(sug("", "J069"), "G");
+    assert.equal(sug("J069", ""), "H");
+  });
+
+  await test("ไม่มีรหัสทั้งสองฝั่ง → ไม่เสนออะไร", () => {
+    assert.equal(sug("", ""), null);
+    assert.equal(sug("  ", "  "), null);
+  });
+
+  await test("ใช้สาเหตุภายนอกเป็นโรคหลัก (ประเภท 1) → E", () => {
+    assert.ok(isExternalCause("W010"));
+    assert.ok(!isExternalCause("J069"));
+    assert.equal(sug("W010", "W010", "1"), "E");
+    // ประเภทอื่นไม่ใช่ E — สาเหตุภายนอกเป็นรหัสรองได้ตามปกติ
+    assert.equal(sug("W010", "W010", "5"), "Y");
+    assert.equal(sug("W010", "W010"), "Y");
+  });
+
+  await test("B และ C ต้องไม่ถูกเสนอเลย — ตัดสินจากตัวรหัสอย่างเดียวไม่ได้", () => {
+    const codes = new Set<string | null>();
+    const samples = ["", "J06", "J069", "J0690", "W010", "K811"];
+    for (const a of samples)
+      for (const b of samples)
+        for (const t of ["", "1", "4", "5", "P"]) codes.add(sug(a, b, t));
+    assert.ok(!codes.has("B"), "ไม่ควรเสนอ B");
+    assert.ok(!codes.has("C"), "ไม่ควรเสนอ C");
+  });
+
+  await test("ทุกสัญลักษณ์ที่เสนอต้องมีอยู่จริงในรายการของคู่มือ", () => {
+    const valid = new Set(form("A2").columns.find((c) => c.key === "result")!.options!.map((o) => o.code));
+    const samples = ["", "J06", "J069", "J0690", "W010", "K811"];
+    for (const a of samples)
+      for (const b of samples)
+        for (const t of ["", "1", "5"]) {
+          const c = sug(a, b, t);
+          if (c !== null) assert.ok(valid.has(c), `เสนอ ${c} ที่ไม่มีในคู่มือ`);
+        }
+  });
+
+  await test("A2/A4 ตั้งค่าให้ดึงรหัสจาก HOSxP ได้ ส่วนใบอื่นไม่ดึง", () => {
+    assert.deepEqual(form("A2").icdLookup, { kind: "opd", keyColumn: "hn", dateColumn: "date" });
+    assert.deepEqual(form("A4").icdLookup, { kind: "ipd", keyColumn: "an" });
+    for (const code of ["A1", "A3", "B1", "B2", "B3", "C1"]) {
+      assert.equal(form(code).icdLookup, undefined, code);
+    }
   });
 
   console.log("\n── สร้างไฟล์ DOCX ได้ทุกใบ ──");

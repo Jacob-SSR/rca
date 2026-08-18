@@ -88,6 +88,14 @@ export type AuditFormDef = {
   summary: SummaryKind;
   /** ข้อความกำกับท้ายฟอร์ม (กติกาการกรอกจากคู่มือ) */
   notes: string[];
+  /**
+   * ฟอร์มนี้ดึง "รหัสที่มีอยู่แล้ว" จาก HOSxP มาเติมได้
+   *
+   * ผู้ตรวจสอบไม่ได้เป็นคนคิดรหัสพวกนี้ขึ้นมา เขามาตรวจว่ารหัสที่คนอื่นให้ไว้
+   * ถูกหรือไม่ ตัวรหัสจึงมีอยู่ในระบบอยู่แล้ว — ให้พิมพ์ใหม่คือให้ทำงานซ้ำ
+   * และเสี่ยงพิมพ์ผิดจนตรวจผิดตัว
+   */
+  icdLookup?: { kind: "opd" | "ipd"; keyColumn: string; dateColumn?: string };
 };
 
 const HOSPITAL_META: FormMetaField[] = [
@@ -207,6 +215,7 @@ export const AUDIT_FORMS: AuditFormDef[] = [
     ],
     summary: "icdError",
     notes: ICD_NOTES,
+    icdLookup: { kind: "opd", keyColumn: "hn", dateColumn: "date" },
   },
 
   // ── A3 : IPD คุณภาพการบันทึก ──────────────────────────────────────────────
@@ -285,6 +294,7 @@ export const AUDIT_FORMS: AuditFormDef[] = [
     ],
     summary: "icdError",
     notes: ICD_NOTES,
+    icdLookup: { kind: "ipd", keyColumn: "an" },
   },
 
   // ── B1 : Data Center จังหวัด — ผลตรวจตามกฎ ────────────────────────────────

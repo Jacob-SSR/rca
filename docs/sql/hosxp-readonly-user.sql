@@ -1,31 +1,31 @@
 -- docs/sql/hosxp-readonly-user.sql
--- SQL ที่ DBA ต้องรันบนเซิร์ฟเวอร์ HOSxP ก่อนเปิด HOSXP_ENABLED=true
 --
--- ระบบ RCA อ่าน HOSxP อย่างเดียว ไม่มีโค้ดเขียนกลับแม้แต่บรรทัดเดียว
--- user นี้จึงต้องมีสิทธิ์ SELECT เท่านั้น
+-- ⚠️ ไฟล์นี้เป็น "ทางเลือก" ไม่ใช่ขั้นตอนบังคับ
 --
--- ⚠️ แทน <ip ของเครื่อง rca> ด้วย IP จริง — ห้ามใช้ '%'
---    ถ้ารหัสหลุด จะยังต่อจากเครื่องอื่นไม่ได้
+-- วิธีที่ง่ายที่สุดคือใช้ credential เดิมที่ ppc-hos-10667 ต่อ HOSxP อยู่แล้ว
+-- ก็อป DB_HOST / DB_PORT / DB_USER / DB_PASS / DB_NAME จาก .env ของ ppc-hos-10667
+-- ไปใส่เป็น HOSXP_DB_* ใน .env ของ RCA แล้วตั้ง HOSXP_ENABLED=true — จบ
+--
+-- RCA อ่านอย่างเดียวเสมอไม่ว่า user จะมีสิทธิ์อะไร เพราะ lib/hosxp/client.ts
+-- ปฏิเสธ SQL ที่ไม่ขึ้นต้นด้วย SELECT / มีคำสั่งเขียน / มี ; และไม่มีโค้ดเขียน
+-- HOSxP อยู่ในระบบนี้เลยแม้แต่บรรทัดเดียว (เทสต์ไว้ 13 เคส: npm run test:hosxp)
+--
+-- ────────────────────────────────────────────────────────────────────────────
+-- ใช้ไฟล์นี้เมื่อไร: ถ้าอยากลดผลกระทบกรณี .env ของ RCA หลุด
+-- user เฉพาะกิจที่มีสิทธิ์ SELECT แค่สองตาราง ทำอะไรอย่างอื่นกับ HOSxP ไม่ได้เลย
+-- ต่างจาก credential รวมที่เปิดทั้งฐานได้
+-- ────────────────────────────────────────────────────────────────────────────
 
+-- แทน <ip ของเครื่อง rca> ด้วย IP จริง — ห้ามใช้ '%'
 CREATE USER 'rca_readonly'@'<ip ของเครื่อง rca>'
   IDENTIFIED BY '<ตั้งรหัสผ่านที่สุ่มมา — openssl rand -hex 24>';
 
--- รอบนี้ระบบใช้แค่สองตาราง master (ไม่มีข้อมูลผู้ป่วย)
---   kskdepartment → รายการแผนก
---   pttype        → รายการสิทธิการรักษา
+-- ให้สิทธิ์เท่าที่ระบบใช้จริง (สองตาราง master ไม่มีข้อมูลผู้ป่วย)
 GRANT SELECT ON hos.kskdepartment TO 'rca_readonly'@'<ip ของเครื่อง rca>';
 GRANT SELECT ON hos.pttype        TO 'rca_readonly'@'<ip ของเครื่อง rca>';
 
--- ถ้าภายหลังจะทำ prefill จาก HN (Phase 2 ข้อ 7-12) ค่อยเพิ่มตารางที่ต้องใช้ทีละตัว
--- ให้สิทธิ์เท่าที่ใช้จริง ดีกว่า GRANT SELECT ON hos.* ทั้งฐาน
---   GRANT SELECT ON hos.ovst             TO ...
---   GRANT SELECT ON hos.opdscreen        TO ...
---   GRANT SELECT ON hos.ovst_doctor_diag TO ...
---   GRANT SELECT ON hos.opitemrece       TO ...
-
 FLUSH PRIVILEGES;
 
--- ── ตรวจว่า read-only จริง ──────────────────────────────────────────────────
--- ล็อกอินเป็น rca_readonly แล้วลองรันสองคำสั่งนี้ ต้องได้ error ทั้งคู่
+-- ตรวจว่า read-only จริง: ล็อกอินเป็น rca_readonly แล้วสองคำสั่งนี้ต้อง error
 --   INSERT INTO hos.kskdepartment (depcode) VALUES ('ZZZ');
---   SHOW GRANTS FOR CURRENT_USER();   -- ต้องเห็นแค่ SELECT
+--   SHOW GRANTS FOR CURRENT_USER();   -- ต้องเห็นแค่ SELECT บนสองตารางนั้น

@@ -46,6 +46,9 @@ COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
 COPY --from=builder /app/data/criteria ./data/criteria
 COPY --from=builder /app/lib ./lib
+# scripts/ ไว้ให้รันเครื่องมือตรวจในคอนเทนเนอร์ได้ (check:conn, inspect, test)
+COPY --from=builder /app/scripts ./scripts
+COPY --from=builder /app/data/samples ./data/samples
 COPY --from=builder /app/tsconfig.json ./tsconfig.json
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 # sed ตัด \r ทิ้ง — ถ้าไฟล์ถูก checkout/แตกไฟล์บน Windows แบบ CRLF

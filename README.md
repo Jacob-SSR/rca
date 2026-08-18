@@ -69,6 +69,16 @@ seed จะพิมพ์สรุปให้ตรวจ — ต้องไ�
 | `npm test` | รันทั้งห้าชุด |
 | `npm run make:samples` | สร้างเอกสาร OPD ตัวอย่าง 3 ฉบับใน `data/samples/` |
 | `npm run inspect -- <file.docx>` | ดูข้อความที่จะถูกส่งเข้า AI จริง (parse + mask แล้ว) |
+| `npm run check:conn` | ตรวจการเชื่อมต่อทั้ง 3 ฝั่ง (DB แอป / ฐานผู้ใช้ / HOSxP) |
+
+### ตั้งค่าเชื่อมต่อไม่ผ่าน ใช้ตัวนี้
+
+```bash
+docker compose exec rca npm run check:conn
+```
+
+บอกทีละฝั่งว่าผ่านหรือไม่ และถ้าไม่ผ่านต้องแก้ตัวแปรไหน — ไม่ต้องเดาจาก log
+(ไม่พิมพ์รหัสผ่านออกมา)
 
 ## เอกสารตัวอย่างสำหรับทดสอบ
 
@@ -240,18 +250,38 @@ COOKIE_SECURE=false     # true เมื่อเสิร์ฟผ่าน htt
 
 > ปิดอยู่เป็น default (`HOSXP_ENABLED=false`) ระบบทำงานได้ครบโดยไม่ต้องต่อ HOSxP
 
-### ความปลอดภัยสามชั้น
+### วิธีเปิด
 
-1. **user ใน MySQL มีสิทธิ์ `SELECT` เท่านั้น** และจำกัด host เป็น IP เดียว
-   — SQL ที่ DBA ต้องรันอยู่ใน `docs/sql/hosxp-readonly-user.sql`
-   ให้สิทธิ์เฉพาะ `kskdepartment` กับ `pttype` ไม่ใช่ `hos.*` ทั้งฐาน
-2. **pool แยกตัวจาก DB ของแอป** — คนละ credential, `connectionLimit: 4`,
-   `charset: tis620` (HOSxP เก็บภาษาไทยเป็น TIS-620 ต่อผิดแล้วเพี้ยนทั้งหมด)
-3. **guard ในโค้ด** (`lib/hosxp/client.ts`) — ปฏิเสธ SQL ที่ไม่ขึ้นต้นด้วย `SELECT`,
-   ที่มีคำสั่งเขียนอยู่ที่ไหนก็ตาม, และที่มี `;` (กัน stacked query)
-   เทสต์ไว้ 13 เคส ครอบ INSERT/UPDATE/DELETE/DROP/TRUNCATE/ALTER/CREATE/GRANT
+**ใช้ credential เดิมที่ `ppc-hos-10667` ต่อ HOSxP อยู่แล้ว ไม่ต้องสร้าง user ใหม่**
+ก็อปจาก `.env` ของ `ppc-hos-10667` มาใส่ `.env` ของ RCA:
 
-ชั้นที่ 3 ไม่ได้แทนชั้นที่ 1 — มีไว้ให้พังตั้งแต่ตอนเขียนโค้ด ไม่ใช่ไปพังตอน production
+| ppc-hos-10667 | RCA |
+|---|---|
+| `DB_HOST` | `HOSXP_DB_HOST` |
+| `DB_PORT` | `HOSXP_DB_PORT` |
+| `DB_USER` | `HOSXP_DB_USER` |
+| `DB_PASS` | `HOSXP_DB_PASS` |
+| `DB_NAME` | `HOSXP_DB_NAME` (= `hos`) |
+
+> ⚠️ **HOSxP กับฐานผู้ใช้เป็นเครื่องเดียวกันได้ แต่คนละ database**
+> ตาราง `users` อยู่ในฐาน **`ppchos`** ไม่ใช่ `hos`
+> (`ppc-hos-10667` query ว่า `FROM ppchos.users`) — ถ้าตั้ง `AUTH_DB_NAME=hos`
+> จะหาตาราง `users` ไม่เจอ ล็อกอินไม่ได้
+
+แล้วตั้ง `HOSXP_ENABLED=true` → `docker compose up -d` (ไม่ต้อง build ใหม่)
+
+### RCA อ่านอย่างเดียวเสมอ ไม่ขึ้นกับสิทธิ์ของ user
+
+`lib/hosxp/client.ts` ปฏิเสธ SQL ที่ไม่ขึ้นต้นด้วย `SELECT`, ที่มีคำสั่งเขียนอยู่ที่ไหน
+ก็ตาม, และที่มี `;` (กัน stacked query) — **ไม่มีโค้ดเขียน HOSxP อยู่ในระบบนี้เลย
+แม้แต่บรรทัดเดียว** เทสต์ไว้ 13 เคส ครอบ INSERT/UPDATE/DELETE/DROP/TRUNCATE/
+ALTER/CREATE/GRANT (`npm run test:hosxp`)
+
+pool ก็แยกจาก DB ของแอป — `connectionLimit: 4` (อย่าไปแย่ง connection ของ HOSxP)
+และ `charset: tis620` (HOSxP เก็บภาษาไทยเป็น TIS-620 ต่อผิดแล้วชื่อแผนกเพี้ยนหมด)
+
+> ถ้าอยากลดผลกระทบกรณี `.env` หลุด มี `docs/sql/hosxp-readonly-user.sql` ให้ DBA
+> สร้าง user เฉพาะกิจที่ `SELECT` ได้แค่สองตารางนั้น — **เป็นทางเลือก ไม่ใช่ขั้นตอนบังคับ**
 
 > ⚠️ ตารางที่มีข้อมูลผู้ป่วย (`ovst`, `opdscreen`, `ovst_doctor_diag` ฯลฯ) **ยังไม่แตะ**
 > ต้อง `DESCRIBE` schema จริงก่อนตามที่ระบุใน `docs/phase2-spec.md` ข้อ 7

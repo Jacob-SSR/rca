@@ -58,10 +58,27 @@ export type UserRecord = {
  * เพราะจะกลายเป็นช่องให้ไล่เดาว่ามีใครในระบบบ้าง)
  */
 export async function findUser(username: string): Promise<UserRecord | null> {
-  const [rows] = await authDb().query<mysql.RowDataPacket[]>(
-    "SELECT `user`, `name`, `role`, `passweb` FROM `users` WHERE `user` = ? LIMIT 1",
-    [username],
-  );
+  let rows: mysql.RowDataPacket[];
+
+  try {
+    [rows] = await authDb().query<mysql.RowDataPacket[]>(
+      "SELECT `user`, `name`, `role`, `passweb` FROM `users` WHERE `user` = ? LIMIT 1",
+      [username],
+    );
+  } catch (e) {
+    // ความผิดพลาดที่พบบ่อยที่สุดคือตั้ง AUTH_DB_NAME เป็น hos
+    // ทั้งที่ตาราง users อยู่ในฐาน ppchos (คนละ database บนเครื่องเดียวกัน)
+    const err = e as { code?: string };
+    if (err.code === "ER_NO_SUCH_TABLE") {
+      const cfg = authEnv();
+      throw new Error(
+        `ไม่พบตาราง users ในฐาน "${cfg.database}" ที่ ${cfg.host} — ` +
+          `ตาราง users อยู่ในฐาน ppchos ไม่ใช่ hos ` +
+          `(ตรวจด้วย npm run check:conn)`,
+      );
+    }
+    throw e;
+  }
 
   const row = rows[0];
   if (!row) return null;

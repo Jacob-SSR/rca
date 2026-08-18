@@ -19,7 +19,8 @@
     "inspect": "tsx scripts/inspect-docx.ts",
     "test:auth": "tsx scripts/test-auth.ts",
     "test:form": "tsx scripts/test-form-docx.ts",
-    "test:hosxp": "tsx scripts/test-hosxp.ts"
+    "test:hosxp": "tsx scripts/test-hosxp.ts",
+    "check:conn": "tsx scripts/check-connections.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

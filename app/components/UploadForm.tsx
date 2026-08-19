@@ -19,10 +19,15 @@ export default function UploadForm({ caseId }: Props) {
   const [busy, setBusy] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [warnings, setWarnings] = useState<string[]>([]);
+  const [reviewId, setReviewId] = useState<string | null>(null);
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
+
+    setWarnings([]);
+    setReviewId(null);
 
     const form = new FormData(e.currentTarget);
     const file = form.get("file");
@@ -39,6 +44,16 @@ export default function UploadForm({ caseId }: Props) {
 
       if (!res.ok) {
         setError(json?.error ?? `เกิดข้อผิดพลาด (${res.status})`);
+        return;
+      }
+
+      // ⚠️ มีคำเตือนตอนอ่านไฟล์ (เช่น PDF ที่ระบบต้องซ่อมวรรณยุกต์ให้) →
+      //    ไม่เด้งไปหน้าคะแนนทันที ให้ผู้ใช้อ่านคำเตือนก่อนแล้วค่อยกดเอง
+      //    ถ้าเด้งไปเลย คำเตือนจะหายไปพร้อมหน้านี้ แล้วคนจะเชื่อคะแนนโดยไม่รู้ที่มา
+      const warns: string[] = Array.isArray(json?.extractWarnings) ? json.extractWarnings : [];
+      if (warns.length > 0) {
+        setWarnings(warns);
+        setReviewId(json.reviewId);
         return;
       }
 
@@ -84,6 +99,20 @@ export default function UploadForm({ caseId }: Props) {
       </button>
 
       {error ? <p className="alert alert-error mt-4">{error}</p> : null}
+
+      {warnings.length > 0 && reviewId ? (
+        <div className="alert alert-info mt-4 space-y-2">
+          <p className="font-medium">ตรวจเสร็จแล้ว แต่มีเรื่องต้องรู้ก่อนดูคะแนน</p>
+          <ul className="list-inside list-disc space-y-1">
+            {warnings.map((w) => (
+              <li key={w}>{w}</li>
+            ))}
+          </ul>
+          <a href={`/reviews/${reviewId}`} className="btn btn-sm btn-primary">
+            ดูผลตรวจ
+          </a>
+        </div>
+      ) : null}
     </form>
   );
 }

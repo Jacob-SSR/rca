@@ -9,6 +9,13 @@
 // → เก็บไฟล์เสมอ, สกัดข้อความได้ก็ตรวจได้, สกัดไม่ได้ก็บอกเหตุผลตรงๆ
 
 import mammoth from "mammoth";
+import {
+  checkThaiReadability,
+  extractPdfText,
+  isUnreadableThai,
+  looksMissingToneMarks,
+  repairThaiPdfText,
+} from "@/lib/documents/pdf-text";
 
 export const DOCX_MIME =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -71,14 +78,21 @@ async function extractDocx(buffer: Buffer): Promise<{ text: string; warnings: st
 
 async function extractPdf(buffer: Buffer): Promise<{ text: string; warnings: string[] }> {
   try {
-    // ⚠️ ต้อง import จาก lib/pdf-parse.js ตรงๆ ห้าม import "pdf-parse" เฉยๆ
-    //    index.js ของ pkg นี้มี debug branch ที่เปิดไฟล์ทดสอบ
-    //    ./test/data/05-versions-space.pdf เมื่อ module.parent เป็น falsy
-    //    ซึ่งเป็นกรณีปกติภายใต้ ESM → พังทันทีด้วย ENOENT ที่อ่านไม่รู้เรื่องเลย
-    //    (เจอมาแล้วตอนทดสอบกับ PDF จริง)
-    const pdfParse = (await import("pdf-parse/lib/pdf-parse.js")).default;
-    const result = await pdfParse(buffer);
-    return { text: normalizeText(result.text ?? ""), warnings: [] };
+    const raw = await extractPdfText(buffer);
+    const fixed = repairThaiPdfText(raw);
+
+    const warnings: string[] = [];
+    if (fixed !== raw) {
+      warnings.push("PDF ฝังฟอนต์ไทยมา ToUnicode ไม่ครบ — ระบบซ่อมสระ/วรรณยุกต์ให้แล้ว");
+    }
+    if (looksMissingToneMarks(fixed)) {
+      warnings.push(
+        "ข้อความไทยที่อ่านได้แทบไม่มีวรรณยุกต์เลย — ฟอนต์ในไฟล์อาจทำให้วรรณยุกต์หายไป " +
+          "ตรวจทานข้อความก่อนเชื่อผลคะแนน",
+      );
+    }
+
+    return { text: normalizeText(fixed), warnings };
   } catch (e) {
     throw new DocumentParseError("อ่านไฟล์ PDF ไม่สำเร็จ — ไฟล์อาจเสียหายหรือถูกใส่รหัสผ่าน", {
       cause: e,
@@ -135,6 +149,22 @@ export async function extractDocument(
       : kind === "pdf"
         ? await extractPdf(buffer)
         : extractPlainText(buffer);
+
+  // ⚠️ อ่านออกมาแล้วแต่เป็นตัวมั่ว = อ่านไม่ออก ต้องไม่ปล่อยให้ตรวจคะแนน
+  //    คะแนนที่ได้จากข้อความที่อ่านผิดจะดูเหมือนผลตรวจจริง แต่ผิดทั้งใบ
+  if (text.trim() !== "" && isUnreadableThai(text)) {
+    const { ratio, samples } = checkThaiReadability(text);
+    return {
+      text: "",
+      reviewable: false,
+      reason:
+        `อ่านภาษาไทยจากไฟล์นี้ไม่ออก (${(ratio * 100).toFixed(1)}% เป็นตัวอักษรที่แปลไม่ได้ ` +
+        `เช่น ${samples.slice(0, 5).join(" ")}) — ฟอนต์ที่ฝังมาในไฟล์ไม่มีข้อมูลการแปลงตัวอักษร ` +
+        `ให้สั่งพิมพ์เป็น .docx แทน หรือเปิดไฟล์แล้ว Save as PDF ใหม่จาก Word`,
+      warnings,
+      kind,
+    };
+  }
 
   if (text.trim() === "") {
     return {

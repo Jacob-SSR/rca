@@ -40,6 +40,8 @@ export type ReviewResult = {
   maxScore: number;
   percentage: number | null;
   maskCounts: Record<string, number>;
+  /** คำเตือนจากตอนสกัดข้อความ (เช่น ซ่อมวรรณยุกต์จาก PDF ให้แล้ว) */
+  extractWarnings?: string[];
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -209,13 +211,17 @@ export async function runReviewPipeline(input: RunReviewInput): Promise<ReviewRe
     },
   });
 
-  return scoreDocument({
+  const result = await scoreDocument({
     caseId: input.caseId,
     documentId: document.id,
     text: parsed.text,
     criteriaSetCode,
     sourceType: "upload",
   });
+
+  // คำเตือนจากตัวสกัดข้อความ (เช่น ซ่อมวรรณยุกต์ให้ / วรรณยุกต์อาจหาย)
+  // ต้องเด้งถึงผู้ใช้ ไม่ใช่จมอยู่ใน log — มันคือเหตุผลให้ตรวจทานก่อนเชื่อคะแนน
+  return { ...result, extractWarnings: parsed.warnings };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -5,6 +5,12 @@
 import assert from "node:assert/strict";
 import { Document, Packer, Paragraph } from "docx";
 import { detectKind, extractDocument, normalizeText } from "@/lib/documents/extract";
+import {
+  checkThaiReadability,
+  isUnreadableThai,
+  looksMissingToneMarks,
+  repairThaiPdfText,
+} from "@/lib/documents/pdf-text";
 import { canModify, isOwner } from "@/lib/auth/ownership";
 import type { Session } from "@/lib/auth/session";
 
@@ -99,6 +105,48 @@ async function main() {
   await test("normalizeText ตัดบรรทัดว่างซ้อนและ no-break space", () => {
     assert.equal(normalizeText("a\r\n\n\n\nb"), "a\n\nb");
     assert.equal(normalizeText("ก ข"), "ก ข");
+  });
+
+  console.log("\n── อ่านภาษาไทยจาก PDF ──");
+  //
+  // ⚠️ ไม่มีไฟล์ PDF จริงเป็น fixture ในรีโป — ใบ OPD ที่ใช้ทดสอบมีชื่อผู้ป่วย
+  //    เลขบัตรประชาชน ที่อยู่ และเบอร์โทรจริง เอาเข้า git ไม่ได้
+  //    เทสต์ข้างล่างจึงคุมตัวซ่อม/ตัวตรวจซึ่งเป็นฟังก์ชันบริสุทธิ์
+  //    ส่วนการอ่านไฟล์จริงทดสอบด้วยมือแล้ว (ดูบันทึกใน lib/documents/pdf-text.ts)
+
+  await test("ซ่อมวรรณยุกต์ที่ ToUnicode ของ PDF ไม่ครอบคลุม", () => {
+    // ทุกคู่ยืนยันจากบริบทในไฟล์จริงของโรงพยาบาล (ดู lib/documents/pdf-text.ts)
+    assert.equal(repairThaiPdfText("เสงีÉยมศักดิÍ"), "เสงี่ยมศักดิ์");
+    assert.equal(repairThaiPdfText("ทัÊงสิÊน"), "ทั้งสิ้น");
+    assert.equal(repairThaiPdfText("ทัѷวไป"), "ทั่วไป");
+    assert.equal(repairThaiPdfText("ครัҟง"), "ครั้ง");
+  });
+
+  await test("ซ่อมตัวเลขที่กลายเป็นอักษรละตินขยาย", () => {
+    assert.equal(repairThaiPdfText("řŜŜ"), "144");
+    assert.equal(repairThaiPdfText("ŘšŝŞřśśśŜŞ"), "0956133346");
+    assert.equal(repairThaiPdfText("řŘ:śş:Śš"), "10:37:29");
+  });
+
+  await test("ข้อความที่ปกติอยู่แล้วต้องไม่ถูกแตะ", () => {
+    const ok = "ผู้ป่วยมีไข้ 38.5 องศา ครั้งที่ 2";
+    assert.equal(repairThaiPdfText(ok), ok);
+  });
+
+  await test("จับได้ว่าอ่านไม่ออก เมื่อยังเหลือตัวมั่วเกินเกณฑ์", () => {
+    assert.ok(isUnreadableThai("ผู้ป่วย" + "\u0250\u0251\u0252".repeat(40)));
+    assert.ok(!isUnreadableThai("ผู้ป่วยมีไข้ 38.5 องศา ครั้งที่ 2"));
+  });
+
+  await test("เครื่องหมายพิมพ์นิยม (– — “ ” …) ไม่ถูกนับว่าอ่านผิด", () => {
+    assert.equal(checkThaiReadability("ผู้ป่วย — “มีไข้” … 38–39 องศา").ratio, 0);
+  });
+
+  await test("จับได้ว่าวรรณยุกต์หายทั้งเอกสาร", () => {
+    // "ขอมูล" แทน "ข้อมูล" — ไม่มีตัวมั่วให้จับ ต้องดูจากสัดส่วนวรรณยุกต์แทน
+    assert.ok(looksMissingToneMarks("ขอมูลผูปวยนอก ".repeat(60)));
+    assert.ok(!looksMissingToneMarks("ข้อมูลผู้ป่วยนอก ".repeat(60)));
+    assert.ok(!looksMissingToneMarks("ขอมูล"), "เอกสารสั้นเกินไปไม่ควรสรุป");
   });
 
   console.log("\n── สิทธิ์เจ้าของ ──");

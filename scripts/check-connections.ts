@@ -223,13 +223,28 @@ async function checkHosxp(): Promise<Result> {
 
       const depDb = await find("kskdepartment");
       const pttDb = await find("pttype");
-      // ตารางที่ฟอร์ม A2/A4 ใช้ดึงรหัส ICD ที่บันทึกไว้แล้ว
-      const icdTables = await Promise.all(
-        ["ovst", "ovstdiag", "ipt", "iptdiag", "icd101"].map(async (t) => [t, await find(t)] as const),
-      );
-      const missingIcd = icdTables.filter(([, db]) => !db).map(([t]) => t);
+      // ตารางที่ระบบใช้ดึงข้อมูลมาเติมให้ — แยกเป็นกลุ่มตามงานที่จะเสียไปถ้าอ่านไม่ได้
+      const GROUPS: Record<string, string[]> = {
+        "ตรวจรหัส ICD (A2/A4)": ["ovst", "ovstdiag", "ipt", "iptdiag", "icd101"],
+        "เติมฟอร์มจาก HN — ข้อมูลผู้ป่วย/visit": ["patient", "ovst", "kskdepartment", "pttype"],
+        "เติมฟอร์มจาก HN — CC/สัญญาณชีพ": ["opdscreen"],
+        "เติมฟอร์มจาก HN — การรักษา": ["opitemrece", "drugitems"],
+        "เติมฟอร์มจาก HN — ผลแล็บ": ["lab_head", "lab_order", "lab_items"],
+        "เติมฟอร์มจาก HN — ผลเอกซเรย์": ["xray_head"],
+      };
+
+      const all = [...new Set(Object.values(GROUPS).flat())];
+      const found = new Map<string, string>();
+      for (const t of all) found.set(t, await find(t));
+
+      const groupStatus = Object.entries(GROUPS).map(([label, tables]) => ({
+        label,
+        missing: tables.filter((t) => !found.get(t)),
+      }));
+
+      const missingIcd = GROUPS["ตรวจรหัส ICD (A2/A4)"].filter((t) => !found.get(t));
       if (!depDb || !pttDb)
-        return { depDb, pttDb, dep: 0, ptt: 0, sample: [] as string[], missingIcd };
+        return { depDb, pttDb, dep: 0, ptt: 0, sample: [] as string[], missingIcd, groupStatus };
 
       const [dep] = await c.query<mysql.RowDataPacket[]>(
         `SELECT COUNT(*) AS n FROM \`${depDb}\`.kskdepartment`,
@@ -248,6 +263,7 @@ async function checkHosxp(): Promise<Result> {
         ptt: Number(ptt[0]?.n ?? 0),
         sample: sample.map((x) => String(x.department)),
         missingIcd,
+        groupStatus,
       };
     },
   );
@@ -284,10 +300,14 @@ async function checkHosxp(): Promise<Result> {
       (r.value.sample.some((s) => /[^ -฀-๿]/.test(s))
         ? "\n   ⚠️ ชื่อแผนกดูเพี้ยน — charset อาจไม่ใช่ tis620"
         : "") +
-      (r.value.missingIcd.length > 0
-        ? `\n   ⚠️ อ่านตารางไม่ได้: ${r.value.missingIcd.join(", ")} — ` +
-          "ฟอร์ม A2/A4 จะดึงรหัส ICD มาให้ไม่ได้ ต้องพิมพ์เอง"
-        : "\n   ตารางวินิจฉัย (ovst/ovstdiag/ipt/iptdiag/icd101) อ่านได้ครบ — A2/A4 ดึงรหัสได้"),
+      "\n" +
+      r.value.groupStatus
+        .map((g) =>
+          g.missing.length === 0
+            ? `   ✅ ${g.label}`
+            : `   ⚠️ ${g.label} — อ่านไม่ได้: ${g.missing.join(", ")} (ต้องกรอกเอง)`,
+        )
+        .join("\n"),
   };
 }
 

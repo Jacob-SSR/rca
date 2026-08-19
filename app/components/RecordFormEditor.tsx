@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { FORM_SECTIONS, type RecordFormInput } from "@/lib/form/schema";
 import FormFieldInput from "@/app/components/FormFieldInput";
+import HnPrefillBar from "@/app/components/HnPrefillBar";
 
 type Props = {
   formId?: string;
@@ -45,6 +46,11 @@ export default function RecordFormEditor({ formId, initial, caseNumber }: Props)
 
   function set(name: string, value: string) {
     setValues((prev) => ({ ...prev, [name]: value }));
+  }
+
+  /** เติมหลายช่องพร้อมกันจาก HOSxP — ช่องที่ไม่ได้ส่งมาไม่ถูกแตะ */
+  function fill(next: Record<string, string>) {
+    setValues((prev) => ({ ...prev, ...next }));
   }
 
   /** บันทึกฟอร์ม — คืน id ของฟอร์ม (สร้างใหม่ถ้ายังไม่มี) */
@@ -156,6 +162,8 @@ export default function RecordFormEditor({ formId, initial, caseNumber }: Props)
           ข้อ
         </span>
       </div>
+
+      <HnPrefillBar current={values} disabled={busy !== null} onFill={fill} />
 
       {FORM_SECTIONS.map((section) => (
         <section key={section.key} className="card">

@@ -227,7 +227,7 @@ async function checkHosxp(): Promise<Result> {
       const GROUPS: Record<string, string[]> = {
         "ตรวจรหัส ICD (A2/A4)": ["ovst", "ovstdiag", "ipt", "iptdiag", "icd101"],
         "เติมฟอร์มจาก HN — ข้อมูลผู้ป่วย/visit": ["patient", "ovst", "kskdepartment", "pttype"],
-        "เติมฟอร์มจาก HN — CC/สัญญาณชีพ": ["opdscreen"],
+        "เติมฟอร์มจาก HN — ประวัติ/ตรวจร่างกาย/สัญญาณชีพ": ["opdscreen"],
         "เติมฟอร์มจาก HN — การรักษา": ["opitemrece", "drugitems"],
         "เติมฟอร์มจาก HN — ผลแล็บ": ["lab_head", "lab_order", "lab_items"],
         "เติมฟอร์มจาก HN — ผลเอกซเรย์": ["xray_head"],

@@ -13,7 +13,13 @@ import { hosxpConfig, isHosxpEnabled } from "@/lib/hosxp/env";
 import { isOptionKind, loadOptions } from "@/lib/hosxp/queries";
 import { formatThaiDate, formatTime, isIsoDate } from "@/lib/form/thai-date";
 import {
+  formatAge,
+  formatChiefComplaint,
   formatDiagnosisLine,
+  formatDrugLine,
+  formatLabLine,
+  formatPersonalHistory,
+  formatPhysicalExam,
   formatVitalSigns,
   formatXrayBlock,
 } from "@/lib/hosxp/visit";
@@ -257,6 +263,16 @@ async function main() {
     assert.equal(formatVitalSigns({}), "");
   });
 
+  await test("สัญญาณชีพ: 0.000 = ไม่ได้วัด ต้องไม่กลายเป็น PR 0 /min", () => {
+    // ในไฟล์จริงของโรงพยาบาลมีแถวที่ pulse = 0.000 เพราะไม่ได้วัด
+    assert.equal(formatVitalSigns({ pulse: "0.000" }), "");
+    assert.equal(formatVitalSigns({ pulse: "124.000", bw: "62.500" }), "PR 124 /min  BW 62.5 kg");
+  });
+
+  await test("สัญญาณชีพ: NULL ที่มาเป็นตัวหนังสือต้องถูกตัดทิ้ง", () => {
+    assert.equal(formatVitalSigns({ pulse: "NULL", rr: "20" }), "RR 20 /min");
+  });
+
   await test("ความดันต้องมีครบทั้งบน-ล่างจึงเขียน", () => {
     // มีแค่ตัวบนแล้วเขียน "BP 120/" ออกไปคือข้อมูลผิด
     assert.equal(formatVitalSigns({ bps: 120 }), "");
@@ -293,6 +309,89 @@ async function main() {
   await test("ไม่มีรายการเอกซเรย์เลย → คืนค่าว่าง ไม่ใช่หัวข้อลอยๆ", () => {
     assert.equal(formatXrayBlock("", "อะไรก็ตาม", "ใครก็ตาม"), "");
     assert.equal(formatXrayBlock(null, null, null), "");
+  });
+
+  await test("อาการสำคัญ: ต่อระยะเวลาท้ายให้ (ตัวชี้ขาดคะแนน CC ข้อ 2)", () => {
+    assert.equal(formatChiefComplaint("ไข้ ไอ เจ็บคอ", "2:วัน"), "ไข้ ไอ เจ็บคอ (2 วัน)");
+    assert.equal(formatChiefComplaint("ปวดหัว", "2:สัปดาห์"), "ปวดหัว (2 สัปดาห์)");
+  });
+
+  await test("อาการสำคัญ: cc_duration = 0 ต้องไม่กลายเป็น (0 วัน)", () => {
+    // ในไฟล์จริงส่วนใหญ่เป็น "0:วัน" เพราะคนไม่ได้กรอกช่องนี้
+    assert.equal(formatChiefComplaint("มีฟันผุ", "0:วัน"), "มีฟันผุ");
+    assert.equal(formatChiefComplaint("ล้างแผล", ""), "ล้างแผล");
+    assert.equal(formatChiefComplaint("", "2:วัน"), "");
+  });
+
+  await test("อาการสำคัญ: ถ้าเขียนระยะเวลาไว้ใน cc แล้ว ไม่ต้องต่อซ้ำ", () => {
+    const cc = "แน่นหน้าอกขวา เป็นก่อนมา รพ. 4 วัน";
+    assert.equal(formatChiefComplaint(cc, "4:วัน"), cc);
+  });
+
+  await test("ตรวจร่างกาย: บรรทัดละระบบ (เกณฑ์นับจำนวนระบบ)", () => {
+    const out = formatPhysicalExam({
+      pe: "no drug allergy",
+      pe_heent_text: "Not pale, no jaundice",
+      pe_lung_text: "normal breath sound",
+    });
+    assert.deepEqual(out.split("\n"), [
+      "no drug allergy",
+      "HEENT: Not pale, no jaundice",
+      "ปอด: normal breath sound",
+    ]);
+  });
+
+  await test("ตรวจร่างกาย: ไม่มีอะไรเลยคืนค่าว่าง ไม่ใช่ป้ายลอยๆ", () => {
+    assert.equal(formatPhysicalExam({ pe: "NULL", pe_lung_text: "" }), "");
+  });
+
+  await test("ประวัติส่วนตัว: ติดป้ายกำกับแต่ละด้าน (เกณฑ์ HISTORY ข้อ 3)", () => {
+    const out = formatPersonalHistory({
+      sh: "ปฏิเสธการดื่มสุรา สูบบุหรี่",
+      fh: "บิดาเป็น Old CVA",
+      ros: "ปกติ",
+    });
+    assert.match(out, /^ประวัติส่วนตัว\/สังคม: ปฏิเสธการดื่มสุรา/);
+    assert.match(out, /ประวัติครอบครัว: บิดาเป็น Old CVA/);
+    assert.match(out, /ทบทวนตามระบบ \(ROS\): ปกติ/);
+  });
+
+  await test("ประวัติส่วนตัว: ธงแพ้ยาเตือนเฉพาะ Y เท่านั้น", () => {
+    // ไฟล์จริงมี N (857), V (40), U (16), Y (9) — มีแค่ Y ที่แปลว่าพบการแพ้
+    assert.match(formatPersonalHistory({ found_allergy: "Y" }), /มีประวัติแพ้/);
+    for (const flag of ["N", "V", "U", "NULL", ""]) {
+      assert.equal(formatPersonalHistory({ found_allergy: flag }), "", `flag=${flag}`);
+    }
+  });
+
+  await test("อายุ: ปีอย่างเดียว / ปีกับเดือน / เด็กต่ำกว่าหนึ่งขวบ", () => {
+    assert.equal(formatAge(52, 0), "52 ปี");
+    assert.equal(formatAge(1, 6), "1 ปี 6 เดือน");
+    assert.equal(formatAge(0, 9), "9 เดือน");
+    assert.equal(formatAge(0, 0), "");
+    assert.equal(formatAge("NULL", "NULL"), "");
+  });
+
+  await test("รายการยา: รวมชื่อ ขนาด จำนวน วิธีใช้", () => {
+    assert.equal(
+      formatDrugLine({ drug: "Paracetamol", strength: "500 mg", qty: "20", unit: "เม็ด", usage1: "รับประทานครั้งละ 1 เม็ด" }),
+      "Paracetamol · 500 mg · จำนวน 20 เม็ด · รับประทานครั้งละ 1 เม็ด",
+    );
+    assert.equal(formatDrugLine({ drug: "", qty: "5" }), "");
+  });
+
+  await test("ผลแล็บ: ติดธงผลผิดปกติให้เห็น", () => {
+    assert.equal(
+      formatLabLine({ name: "FBS", result: "180", unit: "mg/dL", ref: "70-100", abnormal: "Y" }),
+      "FBS 180 mg/dL (ค่าปกติ 70-100)  ← ผิดปกติ",
+    );
+    assert.equal(formatLabLine({ name: "FBS", result: "92", abnormal: "N" }), "FBS 92");
+  });
+
+  await test("ผลแล็บ: ไม่มีชื่อจาก lab_items ก็ใช้ชื่อที่ติดมากับ order", () => {
+    assert.equal(formatLabLine({ name: "", nameRef: "Hct", result: "38" }), "Hct 38");
+    // ไม่มีผลก็ไม่ต้องขึ้นบรรทัด
+    assert.equal(formatLabLine({ name: "Hct", result: "" }), "");
   });
 
   console.log(`\n${failed === 0 ? "✅" : "❌"} ผ่าน ${passed} / ${passed + failed} เทสต์\n`);

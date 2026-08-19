@@ -5,7 +5,6 @@
 // ⚠️ สิ่งที่เติมให้คือ "ข้อมูลดิบที่ HOSxP มี" ไม่ใช่ "บันทึกที่สมบูรณ์"
 //    ฟอร์มนี้ยังต้องให้คนอ่านและแก้ก่อนสร้างเอกสาร เพราะคะแนนตามเกณฑ์ สนย.
 //    ตัดสินที่รายละเอียดของข้อความ ไม่ใช่แค่มีข้อความ
-//    (เช่น CC ต้องระบุระยะเวลาด้วยจึงได้ 2 คะแนน — HOSxP มักเก็บมาแค่อาการ)
 //
 // ⚠️ อ่านอย่างเดียวเสมอ ผ่าน hosxpSelect ที่ปฏิเสธทุกอย่างที่ไม่ใช่ SELECT
 //
@@ -13,6 +12,18 @@
 // แต่ละโรงพยาบาลเปิดสิทธิ์ให้ user อ่านตารางไม่เท่ากัน และ HOSxP แต่ละเวอร์ชัน
 // มีตารางไม่ครบเหมือนกัน ถ้ารวบทุกตารางไว้ใน query เดียว พอมีตารางเดียวอ่านไม่ได้
 // จะกลายเป็นเติมไม่ได้เลยสักช่อง — แยกทีละส่วนแล้วส่วนที่อ่านได้ก็ยังได้ใช้
+//
+// ── โครงตารางยืนยันจากไฟล์จริงของโรงพยาบาลแล้ว ─────────────────────────────
+// ovst        vn hn vstdate vsttime pttype main_dep diag_text
+//             ⚠️ ไม่มี age_y/age_m — ต้องคิดอายุจาก patient.birthday
+// opdscreen   cc cc_duration hpi pmh fh sh ros found_allergy pe pe_*_text
+//             bps bpd pulse rr temperature bw height
+// opitemrece  vn icode qty drugusage sp_use
+// lab_head    lab_order_number vn hn result_note
+// lab_order   lab_order_number lab_items_code lab_order_result
+//             lab_items_name_ref lab_items_normal_value_ref abnormal_result
+// lab_items   lab_items_code lab_items_name lab_items_unit
+// xray_head   vn xray_list result_note reporter_name order_date
 
 import type { RowDataPacket } from "mysql2";
 import { hosxpSelect } from "@/lib/hosxp/client";
@@ -22,6 +33,12 @@ import { qualify } from "@/lib/hosxp/queries";
 type Row = RowDataPacket & Record<string, unknown>;
 
 const str = (v: unknown) => String(v ?? "").trim();
+
+/** ค่าที่แปลว่า "ไม่มีข้อมูล" — ไฟล์จริงมีทั้ง NULL ตัวหนังสือและค่าว่าง */
+function clean(v: unknown): string {
+  const s = str(v);
+  return s === "NULL" || s === "null" ? "" : s;
+}
 
 function isoDate(v: unknown): string {
   if (!v) return "";
@@ -50,12 +67,230 @@ async function soft<T>(label: string, fn: () => Promise<T>, fallback: T): Promis
 export type VisitPrefill = {
   /** ช่องที่เติมได้ — คีย์ตรงกับ field.name ใน lib/form/schema.ts */
   values: Record<string, string>;
-  /** ส่วนที่ดึงไม่ได้ ไว้บอกผู้ใช้ว่าต้องกรอกเองส่วนไหน */
+  /** ส่วนที่ไม่มีข้อมูลใน HOSxP ไว้บอกผู้ใช้ว่าต้องกรอกเองส่วนไหน */
   missing: string[];
   vn: string;
 };
 
-// ── visit ล่าสุด / ตามวันที่ ─────────────────────────────────────────────────
+// ═══ ตัวประกอบข้อความ (บริสุทธิ์ เทสต์ได้โดยไม่ต้องมีฐานข้อมูล) ═══════════════
+
+/**
+ * สัญญาณชีพเป็นบรรทัดเดียวแบบที่คนเขียนในเวชระเบียนจริง
+ *
+ * ⚠️ HOSxP เก็บค่าที่ไม่ได้วัดเป็น 0.000 ไม่ใช่ NULL — ต้องตัดศูนย์ทิ้งด้วย
+ *    ไม่งั้นจะได้ "PR 0 /min" ซึ่งไม่ใช่แค่รก แต่เป็นข้อมูลผิด
+ *    (ยืนยันจากไฟล์จริง: มีแถวที่ pulse = 0.000 เพราะไม่ได้วัด)
+ */
+export function formatVitalSigns(v: Record<string, unknown>): string {
+  const n = (key: string): string => {
+    const raw = clean(v[key]);
+    if (raw === "") return "";
+    const num = Number(raw);
+    if (!Number.isFinite(num) || num === 0) return "";
+    // 124.000 → 124 แต่ 36.8 ต้องคงทศนิยมไว้
+    return String(Number(num.toFixed(2)));
+  };
+
+  const parts: string[] = [];
+  const bps = n("bps");
+  const bpd = n("bpd");
+  // ความดันต้องมีครบทั้งบน-ล่าง มีแค่ตัวเดียวแล้วเขียน "BP 120/" คือข้อมูลผิด
+  if (bps && bpd) parts.push(`BP ${bps}/${bpd} mmHg`);
+  if (n("pulse")) parts.push(`PR ${n("pulse")} /min`);
+  if (n("rr")) parts.push(`RR ${n("rr")} /min`);
+  if (n("temperature")) parts.push(`BT ${n("temperature")} °C`);
+  const o2 = n("o2sat") || n("spo2");
+  if (o2) parts.push(`O2sat ${o2} %`);
+  if (n("bw")) parts.push(`BW ${n("bw")} kg`);
+  if (n("height")) parts.push(`Ht ${n("height")} cm`);
+
+  return parts.join("  ");
+}
+
+/**
+ * อาการสำคัญ + ระยะเวลา
+ *
+ * ⚠️ เกณฑ์ CC ให้ 2 คะแนนเมื่อ "บันทึกอาการสำคัญและระบุระยะเวลา" และให้ 1
+ *    ถ้าไม่ระบุระยะเวลา — ระยะเวลาจึงเป็นตัวชี้ขาดคะแนนข้อนี้
+ *
+ * HOSxP เก็บ cc_duration เป็น "จำนวน:หน่วย" เช่น "2:วัน" และใส่ "0:วัน" เมื่อ
+ * ไม่ได้ระบุ (ในไฟล์จริงส่วนใหญ่เป็น 0 คนมักเขียนระยะเวลาไว้ในตัว cc เองแล้ว
+ * เช่น "เจ็บหน้าอก เป็นก่อนมา รพ. 4 วัน") — ศูนย์ต้องไม่ถูกเขียนเป็น "0 วัน"
+ */
+export function formatChiefComplaint(cc: unknown, duration: unknown): string {
+  const text = clean(cc);
+  if (text === "") return "";
+
+  const m = /^([\d.]+)\s*:\s*(.+)$/.exec(clean(duration));
+  if (!m) return text;
+
+  const qty = Number(m[1]);
+  if (!Number.isFinite(qty) || qty === 0) return text;
+
+  const tail = `${Number(qty)} ${m[2].trim()}`;
+  // เขียนระยะเวลาไว้ใน cc แล้วก็ไม่ต้องต่อท้ายซ้ำ
+  return text.includes(tail) ? text : `${text} (${tail})`;
+}
+
+/** ระบบร่างกายที่ HOSxP แยกช่องไว้ — ป้ายไทยไว้ให้คนอ่านและ AI จับได้ว่าคนละระบบ */
+const PE_SYSTEMS: [string, string][] = [
+  ["pe_ga_text", "ลักษณะทั่วไป (GA)"],
+  ["pe_head_text", "ศีรษะ"],
+  ["pe_heent_text", "HEENT"],
+  ["pe_chest_text", "ทรวงอก"],
+  ["pe_heart_text", "หัวใจ"],
+  ["pe_lung_text", "ปอด"],
+  ["pe_ab_text", "ช่องท้อง"],
+  ["pe_gi_text", "ทางเดินอาหาร"],
+  ["pe_gu_text", "ทางเดินปัสสาวะ"],
+  ["pe_gy_text", "นรีเวช"],
+  ["pe_pv_text", "PV"],
+  ["pe_pr_text", "PR"],
+  ["pe_gen_text", "อวัยวะเพศ"],
+  ["pe_ext_text", "แขนขา"],
+  ["pe_neuro_text", "ระบบประสาท"],
+  ["pe_skin_text", "ผิวหนัง"],
+];
+
+/**
+ * ผลตรวจร่างกาย — บรรทัดละระบบ
+ *
+ * ⚠️ เกณฑ์ PHYSICAL_EXAM นับ "จำนวนระบบที่บันทึก" (1 ระบบ = 1, 2 ระบบ = 2,
+ *    มากกว่าสองระบบ = 3/4) การแยกบรรทัดจึงไม่ใช่แค่ความสวยงาม
+ *    แต่คือสิ่งที่ทำให้นับระบบได้ถูก
+ *
+ * ในไฟล์จริงคนส่วนใหญ่เขียนรวมในช่อง pe ช่องเดียว (57%) ส่วนช่องแยกระบบ
+ * ใช้กันน้อยมาก (1-3%) จึงต้องเอามาทั้งสองทาง ไม่ใช่เลือกอย่างใดอย่างหนึ่ง
+ */
+export function formatPhysicalExam(r: Record<string, unknown>): string {
+  const lines: string[] = [];
+
+  const free = clean(r.pe);
+  if (free !== "") lines.push(free);
+
+  for (const [key, label] of PE_SYSTEMS) {
+    const v = clean(r[key]);
+    if (v !== "") lines.push(`${label}: ${v}`);
+  }
+
+  return lines.join("\n");
+}
+
+/**
+ * ประวัติส่วนตัว / ครอบครัว / ปัจจัยเสี่ยง
+ *
+ * เกณฑ์ HISTORY ให้ 3 คะแนน (เต็ม) เมื่อมีครบทั้งประวัติปัจจุบัน + อดีต +
+ * "ประวัติส่วนตัว ปัจจัยเสี่ยงต่างๆ" — ช่องนี้คือส่วนที่สาม
+ * ติดป้ายกำกับไว้เพื่อให้เห็นชัดว่าแต่ละท่อนคือประวัติด้านไหน
+ */
+export function formatPersonalHistory(r: Record<string, unknown>): string {
+  const parts: string[] = [];
+
+  const sh = clean(r.sh);
+  if (sh !== "") parts.push(`ประวัติส่วนตัว/สังคม: ${sh}`);
+
+  const fh = clean(r.fh);
+  if (fh !== "") parts.push(`ประวัติครอบครัว: ${fh}`);
+
+  const ros = clean(r.ros);
+  if (ros !== "") parts.push(`ทบทวนตามระบบ (ROS): ${ros}`);
+
+  // แพ้ยาเป็นข้อมูลที่คู่มือระบุตรงๆ ว่าต้องบันทึก (หน้า 3 ข้อ ข.)
+  // ⚠️ ธงเป็น Y เท่านั้นที่แปลว่าพบการแพ้ — ในไฟล์จริงมีทั้ง N, V, U ปนมาด้วย
+  if (clean(r.found_allergy).toUpperCase() === "Y") {
+    parts.push("⚠️ ระบบแจ้งว่าผู้ป่วยรายนี้มีประวัติแพ้ — ตรวจสอบและระบุรายละเอียดการแพ้");
+  }
+
+  return parts.join("\n");
+}
+
+/**
+ * บรรทัดคำวินิจฉัย — ชื่อโรคขึ้นก่อน รหัสอยู่ในวงเล็บเสมอ
+ *
+ * ⚠️ คู่มือ สนย. หน้า 5 เตือนตรงๆ ว่าห้ามใช้รหัส ICD แทนคำวินิจฉัย
+ *    และเกณฑ์ DIAGNOSIS ให้ 0 คะแนนถ้าใช้รหัสแทนคำวินิจฉัย
+ *    ถ้าเติมมาเป็นรหัสล้วน ฟอร์มจะถูกตัดคะแนนทันทีทั้งที่ยังไม่ได้ตรวจ
+ */
+export function formatDiagnosisLine(name: unknown, code: unknown): string {
+  const n = clean(name);
+  const c = clean(code);
+  if (!n) return c ? `(${c})` : "";
+  return c ? `${n} (${c})` : n;
+}
+
+/**
+ * บรรทัดรายการยา
+ * เกณฑ์ TREATMENT ให้คะแนนเต็มเมื่อมี ชื่อยา + ขนาด + รูปแบบ + วิธีใช้ + ปริมาณ
+ * ดึงมาให้ครบเท่าที่ HOSxP มี ส่วนที่ขาดคนกรอกต้องเติมเอง
+ */
+export function formatDrugLine(r: Record<string, unknown>): string {
+  const name = clean(r.drug);
+  if (name === "") return "";
+
+  const bits = [name];
+
+  const strength = clean(r.strength);
+  if (strength !== "") bits.push(strength);
+
+  const qty = clean(r.qty);
+  if (qty !== "" && Number(qty) !== 0) {
+    const unit = clean(r.unit);
+    bits.push(`จำนวน ${Number(qty)}${unit ? ` ${unit}` : ""}`);
+  }
+
+  const usage = [clean(r.usage1), clean(r.usage2), clean(r.usage3), clean(r.spUse)]
+    .filter((s) => s !== "")
+    .join(" ");
+  if (usage !== "") bits.push(usage);
+
+  return bits.join(" · ");
+}
+
+/**
+ * บรรทัดผลแล็บ
+ * ⚠️ ติดธง "ผิดปกติ" ให้เห็น — ผลที่ผิดปกติคือสิ่งที่ต้องมีการแปลผลและการรักษาต่อ
+ *    ถ้าคนกรอกมองข้ามจะเสียคะแนนทั้งข้อชันสูตรและข้อการรักษา
+ */
+export function formatLabLine(r: Record<string, unknown>): string {
+  const name = clean(r.name) || clean(r.nameRef);
+  const result = clean(r.result);
+  if (name === "" || result === "") return "";
+
+  const unit = clean(r.unit);
+  const ref = clean(r.ref);
+  const abnormal = clean(r.abnormal).toUpperCase() === "Y";
+
+  return (
+    `${name} ${result}${unit ? ` ${unit}` : ""}` +
+    `${ref ? ` (ค่าปกติ ${ref})` : ""}${abnormal ? "  ← ผิดปกติ" : ""}`
+  );
+}
+
+/**
+ * บล็อกผลเอกซเรย์หนึ่งรายการ
+ *
+ * ⚠️ ไม่มีผลอ่าน = ยังไม่ได้บันทึกผล ต้องเขียนให้ชัด ไม่ใช่ปล่อยว่าง
+ *    เกณฑ์ "ผลการตรวจร่างกาย และผลการตรวจชันสูตร" ให้ 3 คะแนน (ไม่ใช่ 4)
+ *    เมื่อมีผลการตรวจชันสูตรแต่ไม่บันทึกผล — คนกรอกต้องเห็นว่ามีรายการค้างอยู่
+ */
+export function formatXrayBlock(items: unknown, note: unknown, reporter: unknown): string {
+  const list = clean(items);
+  if (!list) return "";
+  const body = clean(note) !== "" ? clean(note) : "— ยังไม่มีผลอ่านฟิล์มในระบบ —";
+  const who = clean(reporter);
+  return `X-ray: ${list}\n${body}${who ? ` (ผู้รายงาน: ${who})` : ""}`;
+}
+
+/** อายุ ณ วันที่มารับบริการ — "52 ปี" หรือ "1 ปี 6 เดือน" ตาม hint ของช่องอายุ */
+export function formatAge(years: unknown, months: unknown): string {
+  const y = Number(clean(years));
+  const m = Number(clean(months));
+  if (!Number.isFinite(y) || y < 0) return "";
+  if (y === 0) return Number.isFinite(m) && m > 0 ? `${m} เดือน` : "";
+  return Number.isFinite(m) && m > 0 ? `${y} ปี ${m} เดือน` : `${y} ปี`;
+}
+
+// ═══ ส่วนที่คุยกับฐานข้อมูล ══════════════════════════════════════════════════
 
 type VisitCore = {
   vn: string;
@@ -63,7 +298,7 @@ type VisitCore = {
   time: string;
   department: string;
   pttype: string;
-  age: string;
+  diagText: string;
 };
 
 async function findVisit(hn: string, date?: string | null): Promise<VisitCore | null> {
@@ -76,8 +311,8 @@ async function findVisit(hn: string, date?: string | null): Promise<VisitCore | 
   const hasDate = !!date && /^\d{4}-\d{2}-\d{2}$/.test(date);
 
   const rows = await hosxpSelect<Row>(
-    `SELECT o.vn, o.vstdate AS date, o.vsttime AS time,
-            k.department AS department, p.name AS pttype, o.age_y AS ageY, o.age_m AS ageM
+    `SELECT o.vn, o.vstdate AS date, o.vsttime AS time, o.diag_text AS diagText,
+            k.department AS department, p.name AS pttype
        FROM ${ovst} o
        LEFT JOIN ${ksk} k ON k.depcode = o.main_dep
        LEFT JOIN ${ptt} p ON p.pttype = o.pttype
@@ -91,110 +326,109 @@ async function findVisit(hn: string, date?: string | null): Promise<VisitCore | 
   const r = rows[0];
   if (!r) return null;
 
-  // "52 ปี" หรือ "1 ปี 6 เดือน" ตามที่ hint ของช่องอายุบอกไว้
-  const y = Number(r.ageY);
-  const m = Number(r.ageM);
-  const age =
-    Number.isFinite(y) && y > 0
-      ? Number.isFinite(m) && m > 0
-        ? `${y} ปี ${m} เดือน`
-        : `${y} ปี`
-      : "";
-
   return {
     vn: str(r.vn),
     date: isoDate(r.date),
     time: hhmm(r.time),
-    department: str(r.department),
-    pttype: str(r.pttype),
-    age,
+    department: clean(r.department),
+    pttype: clean(r.pttype),
+    diagText: clean(r.diagText),
   };
 }
 
-// ── ข้อมูลผู้ป่วย ────────────────────────────────────────────────────────────
-
-async function findPatient(hn: string): Promise<{ name: string; gender: string }> {
+/**
+ * ข้อมูลผู้ป่วย + อายุ ณ วันที่มารับบริการ
+ *
+ * ⚠️ ovst ไม่มีคอลัมน์อายุ (ยืนยันจากโครงจริง 53 คอลัมน์) ต้องคิดจากวันเกิด
+ *    เทียบกับวันที่ visit — คิดจากวันนี้แทนจะผิดทันทีเมื่อย้อนไปตรวจ visit เก่า
+ */
+async function findPatient(
+  hn: string,
+  visitDate: string,
+): Promise<{ name: string; gender: string; age: string }> {
   const patient = await qualify("patient");
+  const useDate = /^\d{4}-\d{2}-\d{2}$/.test(visitDate);
+  const at = useDate ? "?" : "CURDATE()";
+
   const rows = await hosxpSelect<Row>(
-    `SELECT CONCAT_WS(' ', pname, fname, lname) AS name, sex
+    `SELECT CONCAT_WS(' ', pname, fname, lname) AS name, sex,
+            TIMESTAMPDIFF(YEAR, birthday, ${at}) AS ageY,
+            TIMESTAMPDIFF(MONTH, birthday, ${at}) % 12 AS ageM
        FROM ${patient} WHERE hn = ? LIMIT 1`,
-    [hn],
+    useDate ? [visitDate, visitDate, hn] : [hn],
   );
 
   const r = rows[0];
-  if (!r) return { name: "", gender: "" };
+  if (!r) return { name: "", gender: "", age: "" };
 
   // HOSxP: sex 1 = ชาย, 2 = หญิง
-  const sex = str(r.sex);
+  const sex = clean(r.sex);
+
   return {
-    name: str(r.name),
+    name: clean(r.name),
     gender: sex === "1" ? "ชาย" : sex === "2" ? "หญิง" : "",
+    age: formatAge(r.ageY, r.ageM),
   };
 }
 
-// ── CC + สัญญาณชีพ (opdscreen) ───────────────────────────────────────────────
+type ScreenData = {
+  chiefComplaint: string;
+  vitalSigns: string;
+  presentIllness: string;
+  pastHistory: string;
+  personalHistory: string;
+  physicalExam: string;
+};
 
-/**
- * ประกอบสัญญาณชีพเป็นบรรทัดเดียวแบบที่คนเขียนในเวชระเบียนจริง
- * ค่าที่ไม่มีให้ข้ามไป ไม่ต้องเขียน "BP: -" ให้รก
- */
-export function formatVitalSigns(v: Record<string, unknown>): string {
-  const parts: string[] = [];
-  const bps = str(v.bps);
-  const bpd = str(v.bpd);
-  if (bps && bpd) parts.push(`BP ${bps}/${bpd} mmHg`);
-  if (str(v.pulse)) parts.push(`PR ${str(v.pulse)} /min`);
-  if (str(v.rr)) parts.push(`RR ${str(v.rr)} /min`);
-  if (str(v.temperature)) parts.push(`BT ${str(v.temperature)} °C`);
-  if (str(v.o2sat)) parts.push(`O2sat ${str(v.o2sat)} %`);
-  if (str(v.bw)) parts.push(`BW ${str(v.bw)} kg`);
-  if (str(v.height)) parts.push(`Ht ${str(v.height)} cm`);
-  return parts.join("  ");
-}
+const EMPTY_SCREEN: ScreenData = {
+  chiefComplaint: "",
+  vitalSigns: "",
+  presentIllness: "",
+  pastHistory: "",
+  personalHistory: "",
+  physicalExam: "",
+};
 
-/**
- * บรรทัดคำวินิจฉัย — ชื่อโรคขึ้นก่อน รหัสต่อท้ายในวงเล็บเสมอ
- *
- * ⚠️ คู่มือ สนย. หน้า 5 เตือนตรงๆ ว่าห้ามใช้รหัส ICD แทนคำวินิจฉัย
- *    และเกณฑ์ DIAGNOSIS ให้ 0 คะแนนถ้าใช้รหัสแทนคำวินิจฉัย
- *    ถ้าเติมมาเป็นรหัสล้วน ฟอร์มจะถูกตัดคะแนนทันทีทั้งที่ยังไม่ได้ตรวจ
- */
-export function formatDiagnosisLine(name: unknown, code: unknown): string {
-  const n = str(name);
-  const c = str(code);
-  if (!n) return c ? `(${c})` : "";
-  return c ? `${n} (${c})` : n;
-}
-
-/**
- * บล็อกผลเอกซเรย์หนึ่งรายการ
- *
- * ⚠️ ไม่มีผลอ่าน = ยังไม่ได้บันทึกผล ต้องเขียนให้ชัด ไม่ใช่ปล่อยว่าง
- *    เกณฑ์ "ผลการตรวจร่างกาย และผลการตรวจชันสูตร" ให้ 3 คะแนน (ไม่ใช่ 4)
- *    เมื่อมีผลการตรวจชันสูตรแต่ไม่บันทึกผล — คนกรอกต้องเห็นว่ามีรายการค้างอยู่
- */
-export function formatXrayBlock(items: unknown, note: unknown, reporter: unknown): string {
-  const list = str(items);
-  if (!list) return "";
-  const body = str(note) !== "" ? str(note) : "— ยังไม่มีผลอ่านฟิล์มในระบบ —";
-  const who = str(reporter);
-  return `X-ray: ${list}\n${body}${who ? ` (ผู้รายงาน: ${who})` : ""}`;
-}
-
-async function findScreen(vn: string): Promise<{ cc: string; vitalSigns: string }> {
+async function findScreen(vn: string): Promise<ScreenData> {
   const opdscreen = await qualify("opdscreen");
-  const rows = await hosxpSelect<Row>(
-    `SELECT cc, bps, bpd, temperature, pulse, rr, bw, height, o2sat
-       FROM ${opdscreen} WHERE vn = ? LIMIT 1`,
-    [vn],
-  );
+
+  const cols = [
+    "cc",
+    "cc_duration",
+    "hpi",
+    "pmh",
+    "fh",
+    "sh",
+    "ros",
+    "found_allergy",
+    "pe",
+    ...PE_SYSTEMS.map(([k]) => k),
+    "bps",
+    "bpd",
+    "pulse",
+    "rr",
+    "temperature",
+    "bw",
+    "height",
+    "o2sat",
+  ].join(", ");
+
+  const rows = await hosxpSelect<Row>(`SELECT ${cols} FROM ${opdscreen} WHERE vn = ? LIMIT 1`, [
+    vn,
+  ]);
 
   const r = rows[0];
-  if (!r) return { cc: "", vitalSigns: "" };
-  return { cc: str(r.cc), vitalSigns: formatVitalSigns(r) };
-}
+  if (!r) return EMPTY_SCREEN;
 
-// ── การวินิจฉัย ──────────────────────────────────────────────────────────────
+  return {
+    chiefComplaint: formatChiefComplaint(r.cc, r.cc_duration),
+    vitalSigns: formatVitalSigns(r),
+    presentIllness: clean(r.hpi),
+    pastHistory: clean(r.pmh),
+    personalHistory: formatPersonalHistory(r),
+    physicalExam: formatPhysicalExam(r),
+  };
+}
 
 async function findDiagnosis(vn: string): Promise<string> {
   const [ovstdiag, icd101] = await Promise.all([qualify("ovstdiag"), qualify("icd101")]);
@@ -214,37 +448,35 @@ async function findDiagnosis(vn: string): Promise<string> {
     .join("\n");
 }
 
-// ── การรักษา (ยาที่สั่ง) ─────────────────────────────────────────────────────
-
 async function findTreatment(vn: string): Promise<string> {
   const [opitemrece, drugitems] = await Promise.all([
     qualify("opitemrece"),
     qualify("drugitems"),
   ]);
 
+  // drugusage เป็นตารางแปลรหัสวิธีใช้ยา (opitemrece.drugusage เก็บเป็นรหัส เช่น "0157")
+  // อ่านไม่ได้ก็ยังได้ชื่อยากับจำนวน ไม่ต้องล้มทั้งส่วน
+  const usage = await soft("ตารางวิธีใช้ยา", () => qualify("drugusage"), "");
+
   const rows = await hosxpSelect<Row>(
-    `SELECT d.name AS drug, o.qty, o.unit_price, d.units AS unit, o.doctor_usage_line1 AS usage1
-       FROM ${opitemrece} o
-       JOIN ${drugitems} d ON d.icode = o.icode
-      WHERE o.vn = ?
-      ORDER BY d.name
-      LIMIT 50`,
+    `SELECT d.name AS drug, d.strength, d.units AS unit, o.qty, o.sp_use AS spUse` +
+      (usage
+        ? `, u.name AS usage1, u.usageline1 AS usage2, u.usageline2 AS usage3`
+        : `, '' AS usage1, '' AS usage2, '' AS usage3`) +
+      ` FROM ${opitemrece} o
+        JOIN ${drugitems} d ON d.icode = o.icode` +
+      (usage ? ` LEFT JOIN ${usage} u ON u.drugusage = o.drugusage` : "") +
+      ` WHERE o.vn = ?
+        ORDER BY d.name
+        LIMIT 50`,
     [vn],
   );
 
   return rows
-    .map((r) => {
-      const bits = [str(r.drug)];
-      const qty = str(r.qty);
-      if (qty) bits.push(`${qty} ${str(r.unit) || ""}`.trim());
-      if (str(r.usage1)) bits.push(str(r.usage1));
-      return bits.filter(Boolean).join(" — ");
-    })
+    .map((r) => formatDrugLine(r))
     .filter(Boolean)
     .join("\n");
 }
-
-// ── ผลชันสูตร: แล็บ + เอกซเรย์ ──────────────────────────────────────────────
 
 async function findLab(vn: string): Promise<string> {
   const [labHead, labOrder, labItems] = await Promise.all([
@@ -254,8 +486,9 @@ async function findLab(vn: string): Promise<string> {
   ]);
 
   const rows = await hosxpSelect<Row>(
-    `SELECT i.lab_items_name AS name, o.lab_order_result AS result,
-            o.lab_items_normal_value_ref AS ref, i.lab_items_unit AS unit
+    `SELECT i.lab_items_name AS name, o.lab_items_name_ref AS nameRef,
+            o.lab_order_result AS result, o.lab_items_normal_value_ref AS ref,
+            i.lab_items_unit AS unit, o.abnormal_result AS abnormal
        FROM ${labHead} h
        JOIN ${labOrder} o ON o.lab_order_number = h.lab_order_number
        LEFT JOIN ${labItems} i ON i.lab_items_code = o.lab_items_code
@@ -266,32 +499,15 @@ async function findLab(vn: string): Promise<string> {
   );
 
   return rows
-    .map((r) => {
-      const name = str(r.name);
-      const result = str(r.result);
-      if (!name || result === "") return "";
-      const unit = str(r.unit);
-      const ref = str(r.ref);
-      return `${name} ${result}${unit ? ` ${unit}` : ""}${ref ? ` (ค่าปกติ ${ref})` : ""}`;
-    })
+    .map((r) => formatLabLine(r))
     .filter(Boolean)
     .join("\n");
 }
 
-/**
- * เอกซเรย์ — จาก xray_head
- *
- * xray_list คือรายการที่ถ่าย (ข้อความอ่านออกอยู่แล้ว เช่น "Chest X-ray(Pacs)")
- * result_note คือผลอ่านฟิล์ม ซึ่งเป็นตัวที่เกณฑ์ PHYSICAL_EXAM ต้องการ
- *
- * ⚠️ เกณฑ์ข้อ "ผลการตรวจร่างกาย และผลการตรวจชันสูตร" ให้ 3 คะแนน (ไม่ใช่ 4)
- *    เมื่อ "มีผลการตรวจชันสูตร แต่ไม่บันทึกผล" — การส่งเอกซเรย์แล้วไม่บันทึกผล
- *    จึงเสียคะแนน ดึงมาให้เห็นตั้งแต่แรกจะได้รู้ว่ามีอะไรที่ต้องบันทึก
- */
 async function findXray(vn: string): Promise<string> {
   const xrayHead = await qualify("xray_head");
   const rows = await hosxpSelect<Row>(
-    `SELECT xray_list, result_note, report_date, reporter_name, order_date
+    `SELECT xray_list, result_note, reporter_name
        FROM ${xrayHead} WHERE vn = ? ORDER BY order_date DESC LIMIT 20`,
     [vn],
   );
@@ -302,7 +518,7 @@ async function findXray(vn: string): Promise<string> {
     .join("\n\n");
 }
 
-// ── รวมทุกส่วน ───────────────────────────────────────────────────────────────
+// ═══ รวมทุกส่วน ══════════════════════════════════════════════════════════════
 
 export type VisitLookup =
   | { available: true; prefill: VisitPrefill }
@@ -342,40 +558,57 @@ export async function lookupVisit(hn: string, date?: string | null): Promise<Vis
     };
   }
 
-  // ที่เหลือดึงพร้อมกัน ส่วนไหนพังก็ปล่อยว่างไว้ให้กรอกเอง
+  const found = visit;
+
   const [patient, screen, diagnosis, treatment, lab, xray] = await Promise.all([
-    soft("ข้อมูลผู้ป่วย", () => findPatient(id), { name: "", gender: "" }),
-    soft("CC/สัญญาณชีพ", () => findScreen(visit.vn), { cc: "", vitalSigns: "" }),
-    soft("การวินิจฉัย", () => findDiagnosis(visit.vn), ""),
-    soft("รายการยา", () => findTreatment(visit.vn), ""),
-    soft("ผลแล็บ", () => findLab(visit.vn), ""),
-    soft("ผลเอกซเรย์", () => findXray(visit.vn), ""),
+    soft("ข้อมูลผู้ป่วย", () => findPatient(id, found.date), {
+      name: "",
+      gender: "",
+      age: "",
+    }),
+    soft("ประวัติ/ตรวจร่างกาย", () => findScreen(found.vn), EMPTY_SCREEN),
+    soft("การวินิจฉัย", () => findDiagnosis(found.vn), ""),
+    soft("รายการยา", () => findTreatment(found.vn), ""),
+    soft("ผลแล็บ", () => findLab(found.vn), ""),
+    soft("ผลเอกซเรย์", () => findXray(found.vn), ""),
   ]);
 
   // ผลชันสูตรรวมแล็บกับเอกซเรย์ไว้ช่องเดียว ตามที่เกณฑ์ สนย. นับรวมกัน
   const labResult = [lab, xray].filter((s) => s !== "").join("\n\n");
 
+  // diag_text ที่หมอพิมพ์เองมาก่อนรหัส ICD เพราะเป็น "คำวินิจฉัย" ตัวจริง
+  // มีทั้งคู่ก็เอามาทั้งคู่ ให้คนตรวจเห็นว่าตรงกันหรือไม่
+  const diagnosisText = [found.diagText, diagnosis].filter((s) => s !== "").join("\n");
+
   const values: Record<string, string> = {
     hn: id,
     patientName: patient.name,
-    age: visit.age,
+    age: patient.age,
     gender: patient.gender,
-    department: visit.department,
-    pttype: visit.pttype,
-    serviceDate: visit.date,
-    serviceTime: visit.time,
-    chiefComplaint: screen.cc,
+    department: found.department,
+    pttype: found.pttype,
+    serviceDate: found.date,
+    serviceTime: found.time,
+    chiefComplaint: screen.chiefComplaint,
+    presentIllness: screen.presentIllness,
+    pastHistory: screen.pastHistory,
+    personalHistory: screen.personalHistory,
     vitalSigns: screen.vitalSigns,
+    physicalExam: screen.physicalExam,
     labResult,
-    diagnosis,
+    diagnosis: diagnosisText,
     treatment,
   };
 
   const missing = Object.entries({
     "ชื่อผู้ป่วย": patient.name,
-    "อาการสำคัญ": screen.cc,
+    "อาการสำคัญ": screen.chiefComplaint,
+    "ประวัติปัจจุบัน": screen.presentIllness,
+    "ประวัติอดีต": screen.pastHistory,
+    "ประวัติส่วนตัว": screen.personalHistory,
     "สัญญาณชีพ": screen.vitalSigns,
-    "การวินิจฉัย": diagnosis,
+    "ตรวจร่างกาย": screen.physicalExam,
+    "การวินิจฉัย": diagnosisText,
     "การรักษา": treatment,
     "ผลชันสูตร/เอกซเรย์": labResult,
   })
@@ -387,7 +620,7 @@ export async function lookupVisit(hn: string, date?: string | null): Promise<Vis
     prefill: {
       values: Object.fromEntries(Object.entries(values).filter(([, v]) => v !== "")),
       missing,
-      vn: visit.vn,
+      vn: found.vn,
     },
   };
 }

@@ -14,7 +14,7 @@
     "db:seed": "prisma db seed",
     "test:rules": "tsx scripts/test-rule-engine.ts",
     "test:phi": "tsx scripts/test-phi.ts",
-    "test": "npm run test:rules && npm run test:phi && npm run test:auth && npm run test:form && npm run test:hosxp && npm run test:a1 && npm run test:forms",
+    "test": "npm run test:rules && npm run test:phi && npm run test:auth && npm run test:form && npm run test:hosxp && npm run test:a1 && npm run test:forms && npm run test:upload",
     "make:samples": "tsx scripts/make-sample-docs.ts",
     "inspect": "tsx scripts/inspect-docx.ts",
     "test:auth": "tsx scripts/test-auth.ts",
@@ -22,6 +22,7 @@
     "test:hosxp": "tsx scripts/test-hosxp.ts",
     "test:a1": "tsx scripts/test-form-a1.ts",
     "test:forms": "tsx scripts/test-audit-forms.ts",
+    "test:upload": "tsx scripts/test-upload.ts",
     "check:conn": "tsx scripts/check-connections.ts"
   },
   "prisma": {
@@ -38,6 +39,7 @@
     "mammoth": "^1.12.1",
     "mysql2": "^3.23.3",
     "next": "16.3.1",
+    "pdf-parse": "^1.1.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "zod": "^4.4.3"
@@ -46,6 +48,7 @@
     "@tailwindcss/postcss": "^4",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",
+    "@types/pdf-parse": "^1.1.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",

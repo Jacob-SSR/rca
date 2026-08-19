@@ -1,17 +1,18 @@
 // lib/docx/parse.ts
-// อ่าน DOCX → plain text ด้วย mammoth (สเปกข้อ 3 / 9)
+// ตัวห่อบางๆ ของ lib/documents/extract.ts สำหรับเส้นทางที่รับ .docx เท่านั้น
+// (เอกสารที่ระบบ generate เองจากฟอร์ม + สคริปต์ตรวจ)
+//
+// ตัวสกัดจริงย้ายไป lib/documents/extract.ts แล้ว เพราะตอนนี้อัปได้ทุกชนิดไฟล์
+// ไฟล์นี้คงไว้เพื่อไม่ต้องไล่แก้ทุกจุดที่เรียก และเพื่อให้เส้นทางที่ "ต้องเป็น
+// .docx เท่านั้น" ยังบังคับได้เหมือนเดิม (ไฟล์เสีย = throw ไม่ใช่คืนค่าว่าง)
 
-import mammoth from "mammoth";
+import { DocumentParseError, extractDocument } from "@/lib/documents/extract";
 
-export const DOCX_MIME =
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+export { DOCX_MIME } from "@/lib/documents/extract";
 
-export class DocxParseError extends Error {
-  constructor(message: string, options?: { cause?: unknown }) {
-    super(message, options);
-    this.name = "DocxParseError";
-  }
-}
+/** ชื่อเดิม — ยังมีที่เรียกอยู่หลายจุด */
+export const DocxParseError = DocumentParseError;
+export type DocxParseError = DocumentParseError;
 
 export type ParsedDocx = {
   text: string;
@@ -19,31 +20,12 @@ export type ParsedDocx = {
   warnings: string[];
 };
 
-/**
- * แปลง DOCX buffer เป็น plain text
- * - normalize CRLF → LF และตัดบรรทัดว่างซ้อนเกิน 2 บรรทัด (กัน token บวมโดยเปล่าประโยชน์)
- * - ไม่ตัดช่องว่างต้นบรรทัด เพราะการเยื้องมีความหมายกับฟอร์มบันทึกผู้ป่วย
- */
 export async function parseDocx(buffer: Buffer): Promise<ParsedDocx> {
-  let result: Awaited<ReturnType<typeof mammoth.extractRawText>>;
-  try {
-    result = await mammoth.extractRawText({ buffer });
-  } catch (e) {
-    throw new DocxParseError("อ่านไฟล์ DOCX ไม่สำเร็จ — ไฟล์อาจเสียหายหรือไม่ใช่ .docx", {
-      cause: e,
-    });
+  const result = await extractDocument(buffer, "document.docx", "");
+
+  if (result.text.trim() === "") {
+    throw new DocumentParseError("ไฟล์ DOCX ไม่มีข้อความที่อ่านได้");
   }
 
-  const text = result.value
-    .replace(/\r\n?/g, "\n")
-    .replace(/ /g, " ")
-    .replace(/[ \t]+$/gm, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-
-  if (!text) {
-    throw new DocxParseError("ไฟล์ DOCX ไม่มีข้อความที่อ่านได้");
-  }
-
-  return { text, warnings: result.messages.map((m) => m.message) };
+  return { text: result.text, warnings: result.warnings };
 }

@@ -50,6 +50,8 @@ COPY --from=builder /app/lib ./lib
 COPY --from=builder /app/scripts ./scripts
 COPY --from=builder /app/data/samples ./data/samples
 COPY --from=builder /app/tsconfig.json ./tsconfig.json
+# types/ ต้องมาด้วย ไม่งั้นสคริปต์ที่รันด้วย tsx ในคอนเทนเนอร์จะหา declaration ไม่เจอ
+COPY --from=builder /app/types ./types
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 # sed ตัด \r ทิ้ง — ถ้าไฟล์ถูก checkout/แตกไฟล์บน Windows แบบ CRLF
 # บรรทัด shebang จะกลายเป็น "#!/bin/sh\r" เคอร์เนลจะไปหา interpreter ชื่อ

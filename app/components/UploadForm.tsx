@@ -1,6 +1,10 @@
 "use client";
 
-// ฟอร์มอัปโหลด DOCX → เรียก POST /api/review → เด้งไปหน้าผลตรวจ
+// ฟอร์มอัปโหลดเอกสาร → เรียก POST /api/review → เด้งไปหน้าผลตรวจ
+//
+// เลือกไฟล์ได้ทุกชนิด แต่ตรวจคะแนนได้เฉพาะไฟล์ที่สกัดข้อความออกมาได้
+// ถ้าเลือกชนิดที่อ่านไม่ได้ ฝั่งเซิร์ฟเวอร์จะตอบกลับมาว่าต้องแปลงเป็นอะไรก่อน
+// — บอกตอนกดส่งดีกว่าไปกรองที่ accept แล้วผู้ใช้งงว่าทำไมเลือกไฟล์ไม่ได้
 
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
@@ -23,7 +27,7 @@ export default function UploadForm({ caseId }: Props) {
     const form = new FormData(e.currentTarget);
     const file = form.get("file");
     if (!(file instanceof File) || file.size === 0) {
-      setError("กรุณาเลือกไฟล์ .docx ก่อน");
+      setError("กรุณาเลือกไฟล์ก่อน");
       return;
     }
     if (caseId) form.set("caseId", caseId);
@@ -53,21 +57,25 @@ export default function UploadForm({ caseId }: Props) {
     <form onSubmit={onSubmit} className="card card-pad flex flex-col">
       <h2 className="text-xl font-semibold">อัปโหลดเอกสารที่มีอยู่แล้ว</h2>
       <p className="mt-2 text-zinc-600">
-        มีไฟล์ .docx อยู่แล้วก็ส่งตรวจได้เลย ระบบจะปิดบังข้อมูลระบุตัวบุคคล
-        (ชื่อ, HN, เลขบัตรประชาชน, ที่อยู่, เบอร์โทร) ก่อนส่งเข้าประมวลผลเสมอ
+        เลือกไฟล์อะไรก็ได้ ระบบจะปิดบังข้อมูลระบุตัวบุคคล (ชื่อ, HN,
+        เลขบัตรประชาชน, ที่อยู่, เบอร์โทร) ก่อนส่งเข้าประมวลผลเสมอ
+      </p>
+      <p className="hint mt-1">
+        ตรวจคะแนนอัตโนมัติได้กับ <strong>.docx</strong>, <strong>.pdf ที่มีข้อความ</strong>{" "}
+        และไฟล์ข้อความ · ไฟล์รูปหรือ PDF ที่สแกนเป็นรูปยังอ่านไม่ได้ (ระบบไม่มี OCR)
       </p>
 
       <label className="mt-4 flex cursor-pointer items-center justify-center gap-3 rounded-lg border-2 border-dashed border-zinc-300 px-4 py-6 text-center transition hover:border-brand-500 hover:bg-brand-50/40">
         <input
           type="file"
           name="file"
-          accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          // ไม่จำกัดชนิดที่นี่ — ให้เลือกได้ทุกไฟล์แล้วไปบอกเหตุผลตอนส่ง
           className="sr-only"
           disabled={busy}
           onChange={(e) => setFileName(e.target.files?.[0]?.name ?? null)}
         />
         <span className={fileName ? "font-medium text-zinc-800" : "text-zinc-500"}>
-          {fileName ?? "คลิกเพื่อเลือกไฟล์ .docx"}
+          {fileName ?? "คลิกเพื่อเลือกไฟล์"}
         </span>
       </label>
 

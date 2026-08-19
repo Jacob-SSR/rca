@@ -68,6 +68,12 @@ model Case {
   hosxpPatientRef String? @db.VarChar(20)
   hosxpVisitRef   String? @db.VarChar(20)
 
+  /// ใครเป็นคนสร้างเคสนี้ — username จากตาราง users ของ ppc-hos-10667
+  /// ใช้ตัดสินสิทธิ์แก้/ลบ: เจ้าของเท่านั้น (หรือคนที่มีสิทธิ์ manage)
+  createdBy String? @db.VarChar(100)
+  /// ชื่อที่แสดง — เก็บซ้ำไว้เพื่อไม่ต้อง join ข้ามเซิร์ฟเวอร์ทุกครั้งที่แสดงรายการ
+  createdByName String? @db.VarChar(200)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -78,6 +84,7 @@ model Case {
 
   @@index([hosxpPatientRef])
   @@index([hosxpVisitRef])
+  @@index([createdBy])
 }
 
 /// ฟอร์มบันทึกเวชระเบียน — ตัวที่ CRUD และ generate DOCX ออกมา (Phase 2)
@@ -169,6 +176,12 @@ model Document {
   mimeType String
   fileSize Int
 
+  /// ใครเป็นคนอัปไฟล์นี้ — ใช้ตัดสินสิทธิ์ลบ/แทนที่ไฟล์
+  createdBy     String? @db.VarChar(100)
+  createdByName String? @db.VarChar(200)
+
+  /// ข้อความที่สกัดได้ — ว่าง = ชนิดไฟล์นี้อ่านข้อความอัตโนมัติไม่ได้
+  /// (เก็บไฟล์ไว้ได้ แต่ส่งให้ AI ตรวจไม่ได้ ต้องแปลงเป็น .docx/.pdf ก่อน)
   extractedText String? @db.LongText
 
   version Int @default(1)

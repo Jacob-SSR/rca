@@ -13,7 +13,7 @@
 
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { parseDocx } from "@/lib/docx/parse";
+import { extractDocument } from "@/lib/documents/extract";
 import { sanitizePHI, totalMasked, isUsableEvidence } from "@/lib/phi/sanitize";
 import { storeDocument } from "@/lib/storage/documents";
 import { getAIProvider } from "@/lib/ai";
@@ -169,6 +169,8 @@ export type RunReviewInput = {
   mimeType: string;
   data: Buffer;
   criteriaSetCode?: string;
+  /** ผู้อัปโหลด — ใช้ตัดสินสิทธิ์ลบ/แทนที่ไฟล์ทีหลัง */
+  actor?: { username: string; name: string } | null;
 };
 
 export async function runReviewPipeline(input: RunReviewInput): Promise<ReviewResult> {
@@ -182,8 +184,16 @@ export async function runReviewPipeline(input: RunReviewInput): Promise<ReviewRe
   // ตรวจว่าเกณฑ์มีอยู่ก่อนจะไปเขียนไฟล์ — จะได้ไม่ทิ้งขยะไว้บน volume
   await loadCriteriaSet(criteriaSetCode);
 
+  // สกัดข้อความก่อนเก็บไฟล์ — ชนิดที่อ่านไม่ได้จะรู้ตั้งแต่ตรงนี้
+  const parsed = await extractDocument(input.data, input.fileName, input.mimeType);
+
+  if (!parsed.reviewable) {
+    // ⚠️ ยังไม่เก็บไฟล์ — เส้นทางนี้คือ "อัปแล้วตรวจเลย" ถ้าตรวจไม่ได้ก็ไม่ควร
+    //    สร้าง Document ค้างไว้แบบไม่มี Review ผูก ผู้เรียกต้องไปใช้เส้นทางแนบไฟล์
+    throw new PipelineError(parsed.reason ?? "ไฟล์นี้ตรวจอัตโนมัติไม่ได้", "extract");
+  }
+
   const stored = await storeDocument(input.caseId, input.fileName, input.data);
-  const parsed = await parseDocx(input.data);
 
   const document = await prisma.document.create({
     data: {
@@ -193,6 +203,8 @@ export async function runReviewPipeline(input: RunReviewInput): Promise<ReviewRe
       mimeType: input.mimeType,
       fileSize: stored.fileSize,
       extractedText: parsed.text,
+      createdBy: input.actor?.username ?? null,
+      createdByName: input.actor?.name ?? null,
       version: (await prisma.document.count({ where: { caseId: input.caseId } })) + 1,
     },
   });

@@ -2,7 +2,7 @@
 // เก็บไฟล์ที่อัปโหลดลง volume (สเปกข้อ 3: ./data/documents:/app/data/documents)
 // ไม่เก็บ binary ใน DB — DB เก็บแค่ filePath
 
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { env } from "@/lib/env";
@@ -57,4 +57,13 @@ export function absolutePathFor(filePath: string): string {
     throw new Error("filePath escapes the storage root");
   }
   return abs;
+}
+
+/**
+ * ลบไฟล์ที่เก็บไว้ — ใช้ตอนลบเคส/เอกสาร
+ * ⚠️ ต้องผ่าน absolutePathFor เสมอ เพื่อกัน filePath ที่ชี้ออกนอก storage root
+ *    (ค่าที่มาจากฐานก็ไม่ควรเชื่อ ถ้าวันหนึ่งมีใครเขียนค่าแปลกๆ ลงไปได้)
+ */
+export async function deleteStoredDocument(filePath: string): Promise<void> {
+  await rm(absolutePathFor(filePath), { force: true });
 }

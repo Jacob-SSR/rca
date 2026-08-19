@@ -6,6 +6,9 @@ import { prisma } from "@/lib/prisma";
 import UploadForm from "@/app/components/UploadForm";
 import TimelineEditor from "@/app/components/TimelineEditor";
 import ScoreBadge from "@/app/components/ScoreBadge";
+import CaseActions from "@/app/components/CaseActions";
+import { getSession } from "@/lib/auth/session";
+import { canModify } from "@/lib/auth/ownership";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +37,9 @@ export default async function CasePage({ params }: PageProps<"/cases/[id]">) {
 
   if (!c) notFound();
 
+  const session = await getSession();
+  const mine = canModify(session, c);
+
   return (
     <div className="space-y-6">
       <div>
@@ -42,7 +48,19 @@ export default async function CasePage({ params }: PageProps<"/cases/[id]">) {
         </Link>
         <h1 className="tabular mt-3 text-2xl font-semibold">{c.caseNumber}</h1>
         {c.title ? <p className="mt-1 text-zinc-600">{c.title}</p> : null}
-        <p className="mt-1 text-sm text-zinc-500">สร้างเมื่อ {thaiDate(c.createdAt)}</p>
+        <p className="mt-1 text-sm text-zinc-500">
+          สร้างโดย {c.createdByName || c.createdBy || "ไม่ทราบ"} · {thaiDate(c.createdAt)}
+        </p>
+
+        {mine ? (
+          <div className="mt-4">
+            <CaseActions caseId={c.id} caseNumber={c.caseNumber} initialTitle={c.title ?? ""} />
+          </div>
+        ) : (
+          <p className="alert alert-info mt-4">
+            เคสนี้สร้างโดยผู้ใช้คนอื่น — ดูได้อย่างเดียว แก้ไขหรือลบได้เฉพาะเจ้าของ
+          </p>
+        )}
       </div>
 
       {/* ── ฟอร์มในเคสนี้ ──────────────────────────────────────────────────── */}
@@ -139,7 +157,7 @@ export default async function CasePage({ params }: PageProps<"/cases/[id]">) {
         }))}
       />
 
-      <UploadForm caseId={c.id} />
+      {mine ? <UploadForm caseId={c.id} /> : null}
     </div>
   );
 }

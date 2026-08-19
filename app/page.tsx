@@ -4,6 +4,8 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import UploadForm from "@/app/components/UploadForm";
 import ScoreBadge from "@/app/components/ScoreBadge";
+import { getSession } from "@/lib/auth/session";
+import { isOwner } from "@/lib/auth/ownership";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +18,8 @@ function thaiDate(d: Date): string {
 }
 
 export default async function Home() {
+  const session = await getSession();
+
   const cases = await prisma.case.findMany({
     orderBy: { createdAt: "desc" },
     take: 30,
@@ -64,6 +68,7 @@ export default async function Home() {
               <thead>
                 <tr>
                   <th>เลขที่เคส</th>
+                  <th>ผู้สร้าง</th>
                   <th>วันที่สร้าง</th>
                   <th className="text-center">ฟอร์ม</th>
                   <th className="text-center">เอกสาร</th>
@@ -81,6 +86,14 @@ export default async function Home() {
                         </Link>
                         {c.title ? (
                           <div className="text-sm text-zinc-500">{c.title}</div>
+                        ) : null}
+                      </td>
+                      <td className="whitespace-nowrap text-zinc-600">
+                        {c.createdByName || c.createdBy || (
+                          <span className="text-zinc-400">— ไม่ทราบ —</span>
+                        )}
+                        {isOwner(session, c) ? (
+                          <span className="badge badge-brand ml-2">ของฉัน</span>
                         ) : null}
                       </td>
                       <td className="tabular whitespace-nowrap text-zinc-600">

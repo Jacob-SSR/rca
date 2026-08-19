@@ -1,30 +1,43 @@
 // app/api/review/route.ts
-// POST /api/review — อัปโหลด DOCX แล้วรัน pipeline ทั้งเส้น (สเปกข้อ 10.11)
+// POST /api/review — อัปโหลดเอกสารแล้วรัน pipeline ทั้งเส้น (สเปกข้อ 10.11)
+//
+// รับไฟล์ได้ทุกชนิด แต่จะตรวจคะแนนได้เฉพาะไฟล์ที่สกัดข้อความออกมาได้
+// (.docx / .pdf ที่มีข้อความ / ไฟล์ข้อความ) — ชนิดอื่นตอบ 422 พร้อมบอกเหตุผล
+// ว่าต้องแปลงเป็นอะไรก่อน ไม่ใช่ปฏิเสธลอยๆ ว่า "รับเฉพาะ .docx"
 //
 // multipart/form-data:
-//   file          (required) ไฟล์ .docx
+//   file          (required) ไฟล์เอกสาร
 //   caseId        (optional) ถ้าไม่ส่ง จะสร้างเคสใหม่ให้
 //   criteriaSet   (optional) default A1_OPD_2015
 
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { env } from "@/lib/env";
-import { DOCX_MIME, DocxParseError } from "@/lib/docx/parse";
+import { DocumentParseError, detectKind } from "@/lib/documents/extract";
 import { AIProviderError } from "@/lib/ai";
 import { RuleEngineError } from "@/lib/review/rule-engine";
 import { PipelineError, runReviewPipeline, DEFAULT_CRITERIA_SET_CODE } from "@/lib/review/pipeline";
 import { requireCapability } from "@/lib/auth/session";
 import { authErrorResponse } from "@/lib/auth/api";
+import { canModify, NotOwnerError } from "@/lib/auth/ownership";
+import type { Session } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
 // pipeline มีการเรียก AI — ต้องรันบน Node runtime (mammoth/prisma ใช้ node built-in)
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
-async function ensureCase(caseId: string | null): Promise<string> {
+async function ensureCase(caseId: string | null, session: Session): Promise<string> {
   if (caseId) {
-    const found = await prisma.case.findUnique({ where: { id: caseId }, select: { id: true } });
+    const found = await prisma.case.findUnique({
+      where: { id: caseId },
+      select: { id: true, createdBy: true },
+    });
     if (!found) throw new PipelineError(`ไม่พบ Case id=${caseId}`, "case-lookup");
+
+    // อัปไฟล์เข้าเคสของคนอื่นไม่ได้ — เอกสารในเคสเดียวกันคือเรื่องเดียวกัน
+    // ถ้าใครก็เติมได้ เจ้าของจะควบคุมเนื้อหาในเคสตัวเองไม่ได้
+    if (!canModify(session, found)) throw new NotOwnerError("เคสนี้");
     return found.id;
   }
 
@@ -33,14 +46,19 @@ async function ensureCase(caseId: string | null): Promise<string> {
     now.getDate(),
   ).padStart(2, "0")}`;
   const created = await prisma.case.create({
-    data: { caseNumber: `RCA-${ymd}-${now.getTime().toString().slice(-6)}` },
+    data: {
+      caseNumber: `RCA-${ymd}-${now.getTime().toString().slice(-6)}`,
+      createdBy: session.username,
+      createdByName: session.name,
+    },
   });
   return created.id;
 }
 
 export async function POST(req: NextRequest) {
+  let session;
   try {
-    await requireCapability("review");
+    session = await requireCapability("review");
   } catch (e) {
     return authErrorResponse(e) ?? NextResponse.json({ error: "Internal" }, { status: 500 });
   }
@@ -68,29 +86,28 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Phase 1 รับเฉพาะ DOCX — เช็คทั้ง mimeType และนามสกุล (browser บางตัวส่ง mime ว่าง)
-  const isDocx = file.type === DOCX_MIME || file.name.toLowerCase().endsWith(".docx");
-  if (!isDocx) {
-    return NextResponse.json({ error: "รับเฉพาะไฟล์ .docx เท่านั้น" }, { status: 415 });
-  }
-
   const criteriaSetCode = (form.get("criteriaSet") as string | null) || DEFAULT_CRITERIA_SET_CODE;
 
   try {
-    const caseId = await ensureCase((form.get("caseId") as string | null) || null);
+    const caseId = await ensureCase((form.get("caseId") as string | null) || null, session);
     const data = Buffer.from(await file.arrayBuffer());
 
     const result = await runReviewPipeline({
       caseId,
       fileName: file.name,
-      mimeType: file.type || DOCX_MIME,
+      // เบราว์เซอร์บางตัวส่ง mime ว่าง — เดาจากนามสกุลแทนที่จะเก็บค่าว่าง
+      mimeType: file.type || `application/x-${detectKind(file.name, "")}`,
       data,
       criteriaSetCode,
+      actor: { username: session.username, name: session.name },
     });
 
     return NextResponse.json({ caseId, ...result }, { status: 201 });
   } catch (e) {
-    if (e instanceof DocxParseError) {
+    if (e instanceof NotOwnerError) {
+      return NextResponse.json({ error: e.message }, { status: e.status });
+    }
+    if (e instanceof DocumentParseError) {
       return NextResponse.json({ error: e.message }, { status: 422 });
     }
     if (e instanceof AIProviderError) {
@@ -101,6 +118,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: `Rule Engine: ${e.message}` }, { status: 500 });
     }
     if (e instanceof PipelineError) {
+      // "extract" = ไฟล์อ่านข้อความไม่ได้ ไม่ใช่ระบบพัง — 422 ให้ผู้ใช้แก้ที่ไฟล์
+      if (e.step === "extract") {
+        return NextResponse.json({ error: e.message, step: e.step }, { status: 422 });
+      }
       const status = e.step === "case-lookup" || e.step === "criteria-lookup" ? 400 : 500;
       return NextResponse.json({ error: e.message, step: e.step }, { status });
     }

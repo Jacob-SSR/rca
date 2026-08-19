@@ -8,10 +8,25 @@
 //
 // ⚠️ ค่าที่กรอกไว้แล้วจะไม่ถูกทับ ต้องกดยืนยันก่อน
 //    คนกรอกไปครึ่งฟอร์มแล้วเผลอกดดึง ข้อมูลที่พิมพ์เองหายหมดคือความเสียหายจริง
+//
+// ── ทำไมต้องมีรายการ visit ให้กด ────────────────────────────────────────────
+// ผู้ป่วยคนเดียวกันมาหลายครั้งในวันเดียวได้ (เห็นได้จากหน้าจอ Visit List ของ
+// HOSxP เอง) การเลือกด้วย "วันที่" อย่างเดียวจึงกำกวม — ต้องเลือกถึงระดับ VN
+// แต่ยังคงช่องเลือกวันที่เองไว้ ใช้เมื่อยังไม่อยากดูรายการหรือ HOSxP ต่อไม่ได้
 
 import { useState } from "react";
+import { formatThaiDateShort } from "@/lib/form/thai-date";
 
 type Prefill = { values: Record<string, string>; missing: string[]; vn: string };
+
+type Visit = {
+  vn: string;
+  date: string;
+  time: string;
+  department: string;
+  pttype: string;
+  diagText: string;
+};
 
 type Props = {
   /** ค่าที่กรอกอยู่ตอนนี้ — ใช้เช็คว่าจะทับของเดิมไหม */
@@ -48,30 +63,67 @@ export default function HnPrefillBar({ current, disabled, onFill }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Prefill | null>(null);
   const [conflicts, setConflicts] = useState<string[]>([]);
+  const [pending, setPending] = useState<Prefill | null>(null);
+
+  const [visits, setVisits] = useState<Visit[] | null>(null);
+  const [pickedVn, setPickedVn] = useState<string | null>(null);
 
   function apply(prefill: Prefill, overwrite: boolean) {
     const next = overwrite
       ? prefill.values
       : Object.fromEntries(
-          Object.entries(prefill.values).filter(
-            ([k]) => (current[k] ?? "").trim() === "",
-          ),
+          Object.entries(prefill.values).filter(([k]) => (current[k] ?? "").trim() === ""),
         );
 
     onFill(next);
     setConflicts([]);
+    setPending(null);
     setResult(prefill);
   }
 
-  async function pull() {
+  /** ดึงรายการ visit ของ HN นี้มาให้กดเลือก */
+  async function loadVisits() {
+    setBusy(true);
+    setError(null);
+    setVisits(null);
+    setResult(null);
+
+    try {
+      const res = await fetch(
+        `/api/hosxp/visit?list=1&hn=${encodeURIComponent(hn.trim())}`,
+      );
+      const json = await res.json().catch(() => ({}));
+
+      if (!json?.available) {
+        setError(json?.reason ?? json?.error ?? "ดึงรายการ visit ไม่สำเร็จ");
+        return;
+      }
+
+      setVisits(json.visits ?? []);
+      if ((json.visits ?? []).length === 0) {
+        setError(json?.reason ?? `ไม่พบ visit ของ HN ${hn.trim()}`);
+      }
+    } catch {
+      setError("ติดต่อเซิร์ฟเวอร์ไม่ได้");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** เติมฟอร์ม — ระบุ vn เมื่อกดเลือกจากรายการ ไม่งั้นใช้ HN + วันที่ */
+  async function pull(vn?: string) {
     setBusy(true);
     setError(null);
     setResult(null);
     setConflicts([]);
+    setPending(null);
+    setPickedVn(vn ?? null);
 
     try {
-      const params = new URLSearchParams({ hn: hn.trim() });
-      if (date) params.set("date", date);
+      const params = new URLSearchParams();
+      if (hn.trim()) params.set("hn", hn.trim());
+      if (vn) params.set("vn", vn);
+      else if (date) params.set("date", date);
 
       const res = await fetch(`/api/hosxp/visit?${params.toString()}`);
       const json = await res.json().catch(() => ({}));
@@ -90,7 +142,7 @@ export default function HnPrefillBar({ current, disabled, onFill }: Props) {
 
       if (clash.length > 0) {
         setConflicts(clash);
-        setResult(prefill);
+        setPending(prefill);
         return;
       }
 
@@ -101,6 +153,8 @@ export default function HnPrefillBar({ current, disabled, onFill }: Props) {
       setBusy(false);
     }
   }
+
+  const noHn = hn.trim() === "";
 
   return (
     <section className="card card-pad bg-brand-50/40">
@@ -114,20 +168,37 @@ export default function HnPrefillBar({ current, disabled, onFill }: Props) {
             className="input tabular w-48"
             value={hn}
             disabled={disabled || busy}
-            onChange={(e) => setHn(e.target.value)}
+            onChange={(e) => {
+              setHn(e.target.value);
+              // เปลี่ยน HN แล้วรายการเดิมใช้ไม่ได้อีก ต้องล้างทิ้ง
+              // ไม่งั้นจะกดเลือก visit ของคนไข้คนก่อนโดยไม่รู้ตัว
+              setVisits(null);
+              setPickedVn(null);
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
-                if (hn.trim()) pull();
+                if (!noHn) loadVisits();
               }
             }}
             placeholder="HN"
           />
         </div>
 
+        <button
+          type="button"
+          className="btn btn-primary"
+          disabled={disabled || busy || noHn}
+          onClick={() => loadVisits()}
+        >
+          {busy ? "กำลังดึง…" : "ดูรายการที่มารับบริการ"}
+        </button>
+
+        <span className="pb-2.5 text-zinc-400">หรือ</span>
+
         <div>
           <label className="label" htmlFor="prefill-date">
-            วันที่มารับบริการ
+            ระบุวันที่เอง
           </label>
           <input
             id="prefill-date"
@@ -141,33 +212,84 @@ export default function HnPrefillBar({ current, disabled, onFill }: Props) {
 
         <button
           type="button"
-          className="btn btn-primary"
-          disabled={disabled || busy || hn.trim() === ""}
-          onClick={pull}
+          className="btn"
+          disabled={disabled || busy || noHn}
+          onClick={() => pull()}
         >
-          {busy ? "กำลังดึง…" : "ดึงข้อมูล"}
+          ดึงตามวันที่
         </button>
       </div>
 
       <p className="hint">
-        ไม่ใส่วันที่ = เอา visit ล่าสุดของ HN นั้น · ทุกช่องที่ดึงมาแก้ต่อได้
+        ไม่ใส่วันที่ = เอาครั้งล่าสุดของ HN นั้น · ทุกช่องที่ดึงมาแก้ต่อได้
       </p>
 
       {error ? <p className="alert alert-error mt-4">{error}</p> : null}
 
-      {conflicts.length > 0 && result ? (
+      {/* ── รายการ visit จริงจาก HOSxP ────────────────────────────────────── */}
+      {visits && visits.length > 0 ? (
+        <div className="mt-4 overflow-hidden rounded-lg border border-zinc-300 bg-white">
+          <div className="border-b border-zinc-200 px-4 py-2.5 text-base font-medium">
+            ครั้งที่มารับบริการของ HN {hn.trim()} ({visits.length} ครั้ง) — กดเลือกครั้งที่จะตรวจ
+          </div>
+          <div className="max-h-80 overflow-y-auto">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th className="w-12 text-center">#</th>
+                  <th>วันที่ / เวลา</th>
+                  <th>แผนก</th>
+                  <th>สิทธิ</th>
+                  <th>คำวินิจฉัย</th>
+                  <th className="w-24" />
+                </tr>
+              </thead>
+              <tbody>
+                {visits.map((v, i) => (
+                  <tr key={v.vn} className={pickedVn === v.vn ? "bg-brand-50" : undefined}>
+                    <td className="tabular text-center text-sm text-zinc-400">{i + 1}</td>
+                    <td className="tabular whitespace-nowrap">
+                      {formatThaiDateShort(v.date)}
+                      {v.time ? ` ${v.time}` : ""}
+                    </td>
+                    <td className="text-zinc-600">{v.department || "—"}</td>
+                    <td className="text-zinc-600">{v.pttype || "—"}</td>
+                    <td className="max-w-xs truncate text-zinc-600" title={v.diagText}>
+                      {v.diagText || "—"}
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-primary"
+                        disabled={disabled || busy}
+                        onClick={() => pull(v.vn)}
+                      >
+                        เลือก
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
+
+      {/* ── ถามก่อนทับของที่กรอกไว้แล้ว ───────────────────────────────────── */}
+      {conflicts.length > 0 && pending ? (
         <div className="alert alert-info mt-4 space-y-3">
           <p>
-            ช่องเหล่านี้กรอกไว้แล้ว: <strong>{conflicts.map((k) => LABEL[k] ?? k).join(", ")}</strong>
+            ช่องเหล่านี้กรอกไว้แล้ว:{" "}
+            <strong>{conflicts.map((k) => LABEL[k] ?? k).join(", ")}</strong>
           </p>
           <div className="flex flex-wrap gap-2">
-            <button type="button" className="btn btn-sm" onClick={() => apply(result, false)}>
+            <button type="button" className="btn btn-sm" onClick={() => apply(pending, false)}>
               เติมเฉพาะช่องที่ยังว่าง
             </button>
             <button
               type="button"
               className="btn btn-sm btn-danger"
-              onClick={() => apply(result, true)}
+              onClick={() => apply(pending, true)}
             >
               ทับของเดิมทั้งหมด
             </button>
@@ -176,7 +298,7 @@ export default function HnPrefillBar({ current, disabled, onFill }: Props) {
               className="btn btn-sm"
               onClick={() => {
                 setConflicts([]);
-                setResult(null);
+                setPending(null);
               }}
             >
               ยกเลิก
@@ -185,7 +307,7 @@ export default function HnPrefillBar({ current, disabled, onFill }: Props) {
         </div>
       ) : null}
 
-      {result && conflicts.length === 0 ? (
+      {result ? (
         <div className="alert alert-ok mt-4 space-y-1">
           <p>
             ดึงข้อมูลมาแล้ว (VN {result.vn}) — <strong>ตรวจทานทุกช่องก่อนสร้างเอกสาร</strong>{" "}

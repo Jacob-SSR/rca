@@ -292,7 +292,7 @@ export function formatAge(years: unknown, months: unknown): string {
 
 // ═══ ส่วนที่คุยกับฐานข้อมูล ══════════════════════════════════════════════════
 
-type VisitCore = {
+export type VisitCore = {
   vn: string;
   date: string;
   time: string;
@@ -301,18 +301,73 @@ type VisitCore = {
   diagText: string;
 };
 
+const VISIT_SELECT = `o.vn, o.vstdate AS date, o.vsttime AS time, o.diag_text AS diagText,
+            k.department AS department, p.name AS pttype`;
+
+function toVisitCore(r: Row): VisitCore {
+  return {
+    vn: str(r.vn),
+    date: isoDate(r.date),
+    time: hhmm(r.time),
+    department: clean(r.department),
+    pttype: clean(r.pttype),
+    diagText: clean(r.diagText),
+  };
+}
+
+async function visitTables() {
+  return Promise.all([qualify("ovst"), qualify("kskdepartment"), qualify("pttype")]);
+}
+
+/**
+ * รายการ visit ของผู้ป่วยรายนี้ — ไล่จากใหม่ไปเก่า
+ *
+ * มีไว้ให้กดเลือกวันที่มาจริงจาก HOSxP แทนการนั่งพิมพ์วันที่เอง
+ * ⚠️ ผู้ป่วยคนเดียวกันมาหลายครั้งในวันเดียวได้ (เห็นได้จากหน้าจอ Visit List
+ *    ของ HOSxP เอง) การเลือกด้วย "วันที่" อย่างเดียวจึงกำกวม
+ *    ต้องให้เลือกถึงระดับ VN — เวลาที่ต่างกันคือคนละครั้งที่มา
+ */
+export async function listVisits(hn: string, limit = 30): Promise<VisitCore[]> {
+  const [ovst, ksk, ptt] = await visitTables();
+
+  const rows = await hosxpSelect<Row>(
+    `SELECT ${VISIT_SELECT}
+       FROM ${ovst} o
+       LEFT JOIN ${ksk} k ON k.depcode = o.main_dep
+       LEFT JOIN ${ptt} p ON p.pttype = o.pttype
+      WHERE o.hn = ?
+      ORDER BY o.vstdate DESC, o.vsttime DESC
+      LIMIT ${Math.max(1, Math.min(100, Math.trunc(limit)))}`,
+    [hn],
+  );
+
+  return rows.map(toVisitCore);
+}
+
+/** visit เดียวตาม VN — แม่นกว่าเลือกด้วยวันที่เพราะวันเดียวมีได้หลาย visit */
+async function findVisitByVn(vn: string): Promise<VisitCore | null> {
+  const [ovst, ksk, ptt] = await visitTables();
+
+  const rows = await hosxpSelect<Row>(
+    `SELECT ${VISIT_SELECT}
+       FROM ${ovst} o
+       LEFT JOIN ${ksk} k ON k.depcode = o.main_dep
+       LEFT JOIN ${ptt} p ON p.pttype = o.pttype
+      WHERE o.vn = ?
+      LIMIT 1`,
+    [vn],
+  );
+
+  return rows[0] ? toVisitCore(rows[0]) : null;
+}
+
 async function findVisit(hn: string, date?: string | null): Promise<VisitCore | null> {
-  const [ovst, ksk, ptt] = await Promise.all([
-    qualify("ovst"),
-    qualify("kskdepartment"),
-    qualify("pttype"),
-  ]);
+  const [ovst, ksk, ptt] = await visitTables();
 
   const hasDate = !!date && /^\d{4}-\d{2}-\d{2}$/.test(date);
 
   const rows = await hosxpSelect<Row>(
-    `SELECT o.vn, o.vstdate AS date, o.vsttime AS time, o.diag_text AS diagText,
-            k.department AS department, p.name AS pttype
+    `SELECT ${VISIT_SELECT}
        FROM ${ovst} o
        LEFT JOIN ${ksk} k ON k.depcode = o.main_dep
        LEFT JOIN ${ptt} p ON p.pttype = o.pttype
@@ -323,17 +378,7 @@ async function findVisit(hn: string, date?: string | null): Promise<VisitCore | 
     hasDate ? [hn, date] : [hn],
   );
 
-  const r = rows[0];
-  if (!r) return null;
-
-  return {
-    vn: str(r.vn),
-    date: isoDate(r.date),
-    time: hhmm(r.time),
-    department: clean(r.department),
-    pttype: clean(r.pttype),
-    diagText: clean(r.diagText),
-  };
+  return rows[0] ? toVisitCore(rows[0]) : null;
 }
 
 /**
@@ -524,17 +569,23 @@ export type VisitLookup =
   | { available: true; prefill: VisitPrefill }
   | { available: false; reason: string };
 
-export async function lookupVisit(hn: string, date?: string | null): Promise<VisitLookup> {
+export async function lookupVisit(opts: {
+  hn: string;
+  date?: string | null;
+  /** เลือก visit เจาะจงจากรายการ — แม่นกว่าวันที่ เพราะวันเดียวมีได้หลาย visit */
+  vn?: string | null;
+}): Promise<VisitLookup> {
   if (!isHosxpEnabled()) {
     return { available: false, reason: "ยังไม่ได้ตั้งค่าเชื่อมต่อ HOSxP — กรอกเองได้ตามปกติ" };
   }
 
-  const id = hn.trim();
-  if (id === "") return { available: false, reason: "ยังไม่ได้ใส่ HN" };
+  const id = opts.hn.trim();
+  const vn = (opts.vn ?? "").trim();
+  if (id === "" && vn === "") return { available: false, reason: "ยังไม่ได้ใส่ HN" };
 
   let visit: VisitCore | null;
   try {
-    visit = await findVisit(id, date);
+    visit = vn !== "" ? await findVisitByVn(vn) : await findVisit(id, opts.date);
   } catch (e) {
     console.error("hosxp: หา visit ไม่สำเร็จ:", e);
     const code = (e as { code?: string }).code;
@@ -552,16 +603,21 @@ export async function lookupVisit(hn: string, date?: string | null): Promise<Vis
   if (!visit) {
     return {
       available: false,
-      reason: date
-        ? `ไม่พบ visit ของ HN ${id} วันที่ ${date}`
-        : `ไม่พบ visit ของ HN ${id} ในระบบ`,
+      reason:
+        vn !== ""
+          ? `ไม่พบ visit เลขที่ ${vn}`
+          : opts.date
+            ? `ไม่พบ visit ของ HN ${id} วันที่ ${opts.date}`
+            : `ไม่พบ visit ของ HN ${id} ในระบบ`,
     };
   }
 
   const found = visit;
+  // เลือกด้วย VN จะยังไม่รู้ HN จนกว่าจะอ่าน visit มาได้ — ใช้ที่ผู้ใช้กรอกก่อน
+  const patientHn = id !== "" ? id : "";
 
   const [patient, screen, diagnosis, treatment, lab, xray] = await Promise.all([
-    soft("ข้อมูลผู้ป่วย", () => findPatient(id, found.date), {
+    soft("ข้อมูลผู้ป่วย", () => findPatient(patientHn, found.date), {
       name: "",
       gender: "",
       age: "",
@@ -581,7 +637,7 @@ export async function lookupVisit(hn: string, date?: string | null): Promise<Vis
   const diagnosisText = [found.diagText, diagnosis].filter((s) => s !== "").join("\n");
 
   const values: Record<string, string> = {
-    hn: id,
+    hn: patientHn,
     patientName: patient.name,
     age: patient.age,
     gender: patient.gender,

@@ -5,7 +5,7 @@
 
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { FORM_SECTIONS, type RecordFormInput } from "@/lib/form/schema";
+import { FORM_SECTIONS, blankFormValues, type RecordFormInput } from "@/lib/form/schema";
 import FormFieldInput from "@/app/components/FormFieldInput";
 import HnPrefillBar from "@/app/components/HnPrefillBar";
 
@@ -17,16 +17,7 @@ type Props = {
 
 type Values = Record<string, string>;
 
-function toValues(initial: Partial<RecordFormInput>): Values {
-  const v: Values = {};
-  for (const section of FORM_SECTIONS) {
-    for (const field of section.fields) {
-      const raw = initial[field.name];
-      v[field.name] = typeof raw === "string" ? raw : "";
-    }
-  }
-  return v;
-}
+const toValues = (initial: Partial<RecordFormInput>): Values => blankFormValues(initial);
 
 export default function RecordFormEditor({ formId, initial, caseNumber }: Props) {
   const router = useRouter();
@@ -51,6 +42,18 @@ export default function RecordFormEditor({ formId, initial, caseNumber }: Props)
   /** เติมหลายช่องพร้อมกันจาก HOSxP — ช่องที่ไม่ได้ส่งมาไม่ถูกแตะ */
   function fill(next: Record<string, string>) {
     setValues((prev) => ({ ...prev, ...next }));
+  }
+
+  /**
+   * ล้างทุกช่อง เพื่อเปลี่ยนไปตรวจ HN อื่นในหน้าเดิม
+   *
+   * ⚠️ ล้างแค่ในหน้า ยังไม่แตะฐานข้อมูล — ของที่บันทึกไว้จะหายก็ต่อเมื่อกดบันทึกซ้ำ
+   *    (ตัวถามยืนยันอยู่ใน HnPrefillBar ที่รู้ว่ากรอกไปกี่ช่องแล้ว)
+   */
+  function clearAll() {
+    setValues(toValues({}));
+    setMessage(null);
+    setError(null);
   }
 
   /** บันทึกฟอร์ม — คืน id ของฟอร์ม (สร้างใหม่ถ้ายังไม่มี) */
@@ -163,7 +166,12 @@ export default function RecordFormEditor({ formId, initial, caseNumber }: Props)
         </span>
       </div>
 
-      <HnPrefillBar current={values} disabled={busy !== null} onFill={fill} />
+      <HnPrefillBar
+        current={values}
+        disabled={busy !== null}
+        onFill={fill}
+        onClear={clearAll}
+      />
 
       {FORM_SECTIONS.map((section) => (
         <section key={section.key} className="card">

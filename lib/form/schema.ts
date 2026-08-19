@@ -254,3 +254,21 @@ export const FORM_SECTIONS: FormSection[] = [
 
 /** ชื่อช่องทั้งหมดตามลำดับในฟอร์ม */
 export const FORM_FIELD_NAMES = FORM_SECTIONS.flatMap((s) => s.fields.map((f) => f.name));
+
+/**
+ * ค่าเริ่มต้นของทุกช่อง — ใช้ตอนเปิดฟอร์มใหม่และตอนกด "ล้างข้อมูลในฟอร์ม"
+ *
+ * ⚠️ ต้องมีคีย์ครบทุกช่องเสมอ ไม่ใช่ object ว่าง
+ *    ถ้าล้างด้วยการใส่ {} ค่าเดิมของช่องที่ไม่ได้ระบุจะค้างอยู่ใน state
+ *    แล้ว HN ใหม่จะได้ข้อมูลของคนไข้คนก่อนติดไปด้วยโดยไม่มีใครเห็น
+ */
+export function blankFormValues(
+  initial: Partial<Record<string, unknown>> = {},
+): Record<string, string> {
+  const values: Record<string, string> = {};
+  for (const name of FORM_FIELD_NAMES) {
+    const raw = initial[name];
+    values[name] = typeof raw === "string" ? raw : "";
+  }
+  return values;
+}

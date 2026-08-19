@@ -9,7 +9,13 @@ import assert from "node:assert/strict";
 import { buildRecordDocx, recordDocxFileName } from "@/lib/form/to-docx";
 import { parseDocx } from "@/lib/docx/parse";
 import { sanitizePHI } from "@/lib/phi/sanitize";
-import { FORM_SECTIONS, recordFormSchema, type RecordFormInput } from "@/lib/form/schema";
+import {
+  FORM_FIELD_NAMES,
+  FORM_SECTIONS,
+  blankFormValues,
+  recordFormSchema,
+  type RecordFormInput,
+} from "@/lib/form/schema";
 
 const HOSPITAL = { name: "โรงพยาบาลพลับพลาชัย", code: "10667" };
 
@@ -204,6 +210,32 @@ async function main() {
     assert.ok(!name.includes("สมชาย"));
     assert.ok(name.includes("RCA-20260814-001"));
     assert.ok(name.endsWith(".docx"));
+  });
+
+  console.log("\n── ล้างข้อมูลในฟอร์ม (เปลี่ยน HN ในหน้าเดิม) ──");
+
+  await test("ล้างแล้วต้องมีคีย์ครบทุกช่อง และว่างทุกช่อง", () => {
+    // ⚠️ ถ้าล้างด้วย {} ค่าเดิมของช่องที่ไม่ได้ระบุจะค้างใน state ของหน้า
+    //    แล้วคนไข้รายใหม่จะได้ข้อมูลของรายก่อนติดไปโดยไม่มีใครเห็น
+    const blank = blankFormValues();
+    assert.equal(Object.keys(blank).length, FORM_FIELD_NAMES.length);
+    for (const name of FORM_FIELD_NAMES) {
+      assert.equal(blank[name], "", `ช่อง ${name} ไม่ถูกล้าง`);
+    }
+  });
+
+  await test("ค่าที่ล้างแล้วทับของเดิมได้จริงเมื่อ spread ทับ state เดิม", () => {
+    const dirty = { ...blankFormValues(), patientName: "นายสมชาย ใจดี", hn: "0056321" };
+    const cleared = { ...dirty, ...blankFormValues() };
+    assert.equal(cleared.patientName, "");
+    assert.equal(cleared.hn, "");
+  });
+
+  await test("ค่าเริ่มต้นที่ส่งเข้ามาไม่ถูกทิ้ง และค่าที่ไม่ใช่ string กลายเป็นว่าง", () => {
+    const v = blankFormValues({ hn: "0056321", age: 52, patientName: null });
+    assert.equal(v.hn, "0056321");
+    assert.equal(v.age, "");
+    assert.equal(v.patientName, "");
   });
 
   console.log(`\n${failed === 0 ? "✅" : "❌"} ผ่าน ${passed} / ${passed + failed} เทสต์\n`);

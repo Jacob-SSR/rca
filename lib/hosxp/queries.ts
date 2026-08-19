@@ -175,3 +175,34 @@ function hintFor(e: unknown): string {
       return e instanceof Error && !code ? e.message : "อ่านข้อมูลจาก HOSxP ไม่สำเร็จ";
   }
 }
+
+// ── รู้ว่าตารางมีคอลัมน์อะไรบ้าง ───────────────────────────────────────────────
+// HOSxP แต่ละเวอร์ชันตั้งชื่อคอลัมน์ไม่เหมือนกันเป๊ะ (drugitems.units / unit,
+// drugusage.name / usageline1 ฯลฯ) เดาชื่อผิดทีเดียว query ทั้งก้อนก็ล้ม
+// แล้วผู้ใช้เห็นแค่ช่องว่างโดยไม่รู้ว่าพังตรงไหน
+// → ถามชื่อคอลัมน์จริงก่อน แล้วค่อยประกอบ SELECT จากที่มีอยู่
+
+const columnCache = new Map<string, Set<string>>();
+
+/** ชื่อคอลัมน์ทั้งหมดของตาราง (ตัวพิมพ์เล็ก) — คืน set ว่างถ้าอ่านไม่ได้ */
+export async function columnsOf(table: string): Promise<Set<string>> {
+  const cached = columnCache.get(table);
+  if (cached) return cached;
+
+  const rows = await hosxpSelect<RowDataPacket & { c: unknown; db: unknown }>(
+    `SELECT column_name AS c, table_schema AS db
+       FROM information_schema.columns
+      WHERE table_name = ?`,
+    [table],
+  );
+
+  const cols = new Set(rows.map((r) => String(r.c).toLowerCase()));
+  columnCache.set(table, cols);
+  return cols;
+}
+
+/** เลือกคอลัมน์แรกที่มีอยู่จริงจากรายชื่อที่เป็นไปได้ — ไม่มีสักตัวคืน null */
+export function pickColumn(cols: Set<string>, candidates: string[]): string | null {
+  for (const c of candidates) if (cols.has(c.toLowerCase())) return c;
+  return null;
+}

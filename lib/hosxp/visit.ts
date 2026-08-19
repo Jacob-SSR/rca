@@ -28,7 +28,7 @@
 import type { RowDataPacket } from "mysql2";
 import { hosxpSelect } from "@/lib/hosxp/client";
 import { isHosxpEnabled } from "@/lib/hosxp/env";
-import { qualify } from "@/lib/hosxp/queries";
+import { columnsOf, pickColumn, qualify } from "@/lib/hosxp/queries";
 
 type Row = RowDataPacket & Record<string, unknown>;
 
@@ -54,12 +54,33 @@ function hhmm(v: unknown): string {
   return m ? `${m[1].padStart(2, "0")}:${m[2]}` : "";
 }
 
-/** ทำงานให้ได้เท่าที่ได้ — ส่วนที่พังคืนค่าว่างแทนที่จะล้มทั้งคำขอ */
-async function soft<T>(label: string, fn: () => Promise<T>, fallback: T): Promise<T> {
+/**
+ * ทำงานให้ได้เท่าที่ได้ — ส่วนที่พังคืนค่าว่างแทนที่จะล้มทั้งคำขอ
+ *
+ * ⚠️ ต้องเก็บไว้ด้วยว่าพังเพราะอะไร แล้วส่งกลับไปให้ผู้ใช้เห็น
+ *    ก่อนหน้านี้กลืน error ลง log อย่างเดียว ผู้ใช้เห็นแค่ช่องว่าง
+ *    แล้วไม่มีทางรู้ว่าต้องไปขอสิทธิ์ตารางไหน
+ */
+async function soft<T>(
+  label: string,
+  fn: () => Promise<T>,
+  fallback: T,
+  issues?: string[],
+): Promise<T> {
   try {
     return await fn();
   } catch (e) {
     console.error(`hosxp: ดึง ${label} ไม่สำเร็จ:`, e);
+    if (issues) {
+      const code = (e as { code?: string }).code;
+      const why =
+        code === "ER_ACCESS_DENIED_ERROR" || code === "ER_DBACCESS_DENIED_ERROR"
+          ? "ไม่มีสิทธิ์อ่านตาราง"
+          : e instanceof Error && !code
+            ? e.message
+            : "อ่านตารางไม่สำเร็จ";
+      issues.push(`${label}: ${why}`);
+    }
     return fallback;
   }
 }
@@ -69,6 +90,8 @@ export type VisitPrefill = {
   values: Record<string, string>;
   /** ส่วนที่ไม่มีข้อมูลใน HOSxP ไว้บอกผู้ใช้ว่าต้องกรอกเองส่วนไหน */
   missing: string[];
+  /** ส่วนที่ "อ่านไม่ได้" พร้อมชื่อตารางและเหตุผล — ต่างจาก missing ที่แปลว่าไม่มีข้อมูล */
+  issues: string[];
   vn: string;
 };
 
@@ -244,6 +267,22 @@ export function formatDrugLine(r: Record<string, unknown>): string {
   if (usage !== "") bits.push(usage);
 
   return bits.join(" · ");
+}
+
+/**
+ * บรรทัดหัตถการ/ผ่าตัด
+ *
+ * ⚠️ เกณฑ์ TREATMENT นับ "การผ่าตัด การทำหัตถการ การให้ยาทุกขนานพร้อมขนาดยา"
+ *    ดึงแต่ยาอย่างเดียวจึงไม่ครบเกณฑ์ — หัตถการที่ทำแล้วแต่ไม่ได้บันทึกคือคะแนนที่หาย
+ *
+ * บันทึกไว้แต่รหัสโดยไม่มีชื่อก็ยังต้องขึ้นบรรทัดให้เห็น เพราะคนตรวจต้องรู้ว่า
+ * มีหัตถการเกิดขึ้นจริง แล้วไปเติมชื่อเอง — ไม่ใช่เงียบไปเหมือนไม่มีอะไรเกิดขึ้น
+ */
+export function formatProcedureLine(name: unknown, code: unknown): string {
+  const n = clean(name);
+  const c = clean(code);
+  if (n === "" && c === "") return "";
+  return `หัตถการ: ${n || "(ไม่ระบุชื่อ)"}${c ? ` (${c})` : ""}`;
 }
 
 /**
@@ -493,32 +532,98 @@ async function findDiagnosis(vn: string): Promise<string> {
     .join("\n");
 }
 
-async function findTreatment(vn: string): Promise<string> {
+/**
+ * การรักษา = ยาที่สั่ง + หัตถการ/ผ่าตัด
+ *
+ * เกณฑ์ TREATMENT ของ สนย. นับ "การผ่าตัด การทำหัตถการ การให้ยาทุกขนาน
+ * พร้อมขนาดยา" — ดึงแค่ยาอย่างเดียวจึงไม่ครบ
+ *
+ * ⚠️ ไม่ hardcode ชื่อคอลัมน์ — HOSxP แต่ละเวอร์ชันตั้งไม่เหมือนกัน
+ *    (units / unit, name / drugname) เดาผิดทีเดียว query ล้มทั้งก้อน
+ *    แล้วผู้ใช้เห็นแค่ช่องว่างโดยไม่รู้ว่าพังตรงไหน → ถามชื่อคอลัมน์จริงก่อน
+ */
+async function findDrugs(vn: string): Promise<string> {
   const [opitemrece, drugitems] = await Promise.all([
     qualify("opitemrece"),
     qualify("drugitems"),
   ]);
 
-  // drugusage เป็นตารางแปลรหัสวิธีใช้ยา (opitemrece.drugusage เก็บเป็นรหัส เช่น "0157")
+  const dCols = await columnsOf("drugitems");
+  const oCols = await columnsOf("opitemrece");
+
+  const nameCol = pickColumn(dCols, ["name", "drugname", "generic_name"]);
+  if (!nameCol) throw new Error("ตาราง drugitems ไม่มีคอลัมน์ชื่อยาที่รู้จัก");
+
+  const strengthCol = pickColumn(dCols, ["strength", "dose", "drug_strength"]);
+  const unitCol = pickColumn(dCols, ["units", "unit", "packqty_unit"]);
+  const qtyCol = pickColumn(oCols, ["qty", "quantity"]);
+  const spUseCol = pickColumn(oCols, ["sp_use", "spuse"]);
+  const usageCodeCol = pickColumn(oCols, ["drugusage", "drug_usage"]);
+
+  // drugusage เป็นตารางแปลรหัสวิธีใช้ยา ("0157" → "รับประทานครั้งละ 1 เม็ด")
   // อ่านไม่ได้ก็ยังได้ชื่อยากับจำนวน ไม่ต้องล้มทั้งส่วน
-  const usage = await soft("ตารางวิธีใช้ยา", () => qualify("drugusage"), "");
+  let usageJoin = "";
+  let usageSelect = ", '' AS usage1, '' AS usage2, '' AS usage3";
+
+  if (usageCodeCol) {
+    const usageTable = await soft("ตารางวิธีใช้ยา", () => qualify("drugusage"), "");
+    if (usageTable) {
+      const uCols = await columnsOf("drugusage");
+      const u1 = pickColumn(uCols, ["name", "usageline1"]);
+      const u2 = pickColumn(uCols, ["usageline1", "usage_line1"]);
+      const u3 = pickColumn(uCols, ["usageline2", "usage_line2"]);
+      const key = pickColumn(uCols, ["drugusage", "code"]);
+
+      if (u1 && key) {
+        usageJoin = ` LEFT JOIN ${usageTable} u ON u.${key} = o.${usageCodeCol}`;
+        usageSelect =
+          `, u.${u1} AS usage1` +
+          (u2 && u2 !== u1 ? `, u.${u2} AS usage2` : ", '' AS usage2") +
+          (u3 ? `, u.${u3} AS usage3` : ", '' AS usage3");
+      }
+    }
+  }
 
   const rows = await hosxpSelect<Row>(
-    `SELECT d.name AS drug, d.strength, d.units AS unit, o.qty, o.sp_use AS spUse` +
-      (usage
-        ? `, u.name AS usage1, u.usageline1 AS usage2, u.usageline2 AS usage3`
-        : `, '' AS usage1, '' AS usage2, '' AS usage3`) +
+    `SELECT d.${nameCol} AS drug` +
+      (strengthCol ? `, d.${strengthCol} AS strength` : ", '' AS strength") +
+      (unitCol ? `, d.${unitCol} AS unit` : ", '' AS unit") +
+      (qtyCol ? `, o.${qtyCol} AS qty` : ", '' AS qty") +
+      (spUseCol ? `, o.${spUseCol} AS spUse` : ", '' AS spUse") +
+      usageSelect +
       ` FROM ${opitemrece} o
         JOIN ${drugitems} d ON d.icode = o.icode` +
-      (usage ? ` LEFT JOIN ${usage} u ON u.drugusage = o.drugusage` : "") +
+      usageJoin +
       ` WHERE o.vn = ?
-        ORDER BY d.name
+        ORDER BY d.${nameCol}
         LIMIT 50`,
     [vn],
   );
 
   return rows
     .map((r) => formatDrugLine(r))
+    .filter(Boolean)
+    .join("\n");
+}
+
+/** หัตถการ/ผ่าตัดที่ทำในวันนั้น — doctor_operation ของ HOSxP */
+async function findProcedures(vn: string): Promise<string> {
+  const table = await qualify("doctor_operation");
+  const cols = await columnsOf("doctor_operation");
+
+  const nameCol = pickColumn(cols, ["operation_name", "name", "oper_name"]);
+  const codeCol = pickColumn(cols, ["icd9", "icd9cm", "er_oper_code"]);
+  if (!nameCol && !codeCol) return "";
+
+  const rows = await hosxpSelect<Row>(
+    `SELECT ${nameCol ? `${nameCol} AS name` : "'' AS name"},` +
+      ` ${codeCol ? `${codeCol} AS code` : "'' AS code"}` +
+      ` FROM ${table} WHERE vn = ? LIMIT 30`,
+    [vn],
+  );
+
+  return rows
+    .map((r) => formatProcedureLine(r.name, r.code))
     .filter(Boolean)
     .join("\n");
 }
@@ -613,24 +718,33 @@ export async function lookupVisit(opts: {
   }
 
   const found = visit;
+
+  /** ส่วนที่ดึงไม่สำเร็จ พร้อมเหตุผล — ส่งกลับให้ผู้ใช้รู้ว่าต้องแก้อะไร */
+  const issues: string[] = [];
   // เลือกด้วย VN จะยังไม่รู้ HN จนกว่าจะอ่าน visit มาได้ — ใช้ที่ผู้ใช้กรอกก่อน
   const patientHn = id !== "" ? id : "";
 
-  const [patient, screen, diagnosis, treatment, lab, xray] = await Promise.all([
-    soft("ข้อมูลผู้ป่วย", () => findPatient(patientHn, found.date), {
-      name: "",
-      gender: "",
-      age: "",
-    }),
-    soft("ประวัติ/ตรวจร่างกาย", () => findScreen(found.vn), EMPTY_SCREEN),
-    soft("การวินิจฉัย", () => findDiagnosis(found.vn), ""),
-    soft("รายการยา", () => findTreatment(found.vn), ""),
-    soft("ผลแล็บ", () => findLab(found.vn), ""),
-    soft("ผลเอกซเรย์", () => findXray(found.vn), ""),
+  const [patient, screen, diagnosis, drugs, lab, xray, procedures] = await Promise.all([
+    soft(
+      "ข้อมูลผู้ป่วย (patient)",
+      () => findPatient(patientHn, found.date),
+      { name: "", gender: "", age: "" },
+      issues,
+    ),
+    soft("ประวัติ/ตรวจร่างกาย (opdscreen)", () => findScreen(found.vn), EMPTY_SCREEN, issues),
+    soft("การวินิจฉัย (ovstdiag/icd101)", () => findDiagnosis(found.vn), "", issues),
+    soft("รายการยา (opitemrece/drugitems)", () => findDrugs(found.vn), "", issues),
+    soft("ผลแล็บ (lab_head/lab_order/lab_items)", () => findLab(found.vn), "", issues),
+    soft("ผลเอกซเรย์ (xray_head)", () => findXray(found.vn), "", issues),
+    // หัตถการไม่ใช่ทุกโรงพยาบาลที่บันทึก ไม่พบก็ไม่ต้องรายงานว่าพัง
+    soft("หัตถการ (doctor_operation)", () => findProcedures(found.vn), ""),
   ]);
 
   // ผลชันสูตรรวมแล็บกับเอกซเรย์ไว้ช่องเดียว ตามที่เกณฑ์ สนย. นับรวมกัน
   const labResult = [lab, xray].filter((s) => s !== "").join("\n\n");
+
+  // การรักษา = ยา + หัตถการ ตามที่เกณฑ์ TREATMENT ระบุไว้
+  const treatment = [drugs, procedures].filter((s) => s !== "").join("\n");
 
   // diag_text ที่หมอพิมพ์เองมาก่อนรหัส ICD เพราะเป็น "คำวินิจฉัย" ตัวจริง
   // มีทั้งคู่ก็เอามาทั้งคู่ ให้คนตรวจเห็นว่าตรงกันหรือไม่
@@ -676,6 +790,7 @@ export async function lookupVisit(opts: {
     prefill: {
       values: Object.fromEntries(Object.entries(values).filter(([, v]) => v !== "")),
       missing,
+      issues,
       vn: found.vn,
     },
   };

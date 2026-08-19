@@ -10,7 +10,7 @@ import {
   hosxpSelect,
 } from "@/lib/hosxp/client";
 import { hosxpConfig, isHosxpEnabled } from "@/lib/hosxp/env";
-import { isOptionKind, loadOptions } from "@/lib/hosxp/queries";
+import { isOptionKind, loadOptions, pickColumn } from "@/lib/hosxp/queries";
 import { formatThaiDate, formatTime, isIsoDate } from "@/lib/form/thai-date";
 import {
   formatAge,
@@ -20,6 +20,7 @@ import {
   formatLabLine,
   formatPersonalHistory,
   formatPhysicalExam,
+  formatProcedureLine,
   formatVitalSigns,
   formatXrayBlock,
 } from "@/lib/hosxp/visit";
@@ -392,6 +393,49 @@ async function main() {
     assert.equal(formatLabLine({ name: "", nameRef: "Hct", result: "38" }), "Hct 38");
     // ไม่มีผลก็ไม่ต้องขึ้นบรรทัด
     assert.equal(formatLabLine({ name: "Hct", result: "" }), "");
+  });
+
+  await test("การรักษา: หัตถการขึ้นบรรทัดของตัวเอง พร้อมรหัสในวงเล็บ", () => {
+    // เกณฑ์ TREATMENT นับหัตถการ/ผ่าตัดด้วย ไม่ใช่แค่ยา
+    assert.equal(
+      formatProcedureLine("Wound dressing", "96.59"),
+      "หัตถการ: Wound dressing (96.59)",
+    );
+    assert.equal(formatProcedureLine("เย็บแผล", ""), "หัตถการ: เย็บแผล");
+  });
+
+  await test("การรักษา: มีแต่รหัสหัตถการก็ยังต้องขึ้นให้เห็น", () => {
+    // ⚠️ เงียบไปเท่ากับบอกว่า "ไม่มีหัตถการ" ทั้งที่ทำจริง — คนตรวจต้องเห็นแล้วเติมชื่อเอง
+    assert.equal(formatProcedureLine("", "86.28"), "หัตถการ: (ไม่ระบุชื่อ) (86.28)");
+    assert.equal(formatProcedureLine("NULL", "NULL"), "");
+    assert.equal(formatProcedureLine("", ""), "");
+  });
+
+  console.log("\n── เลือกชื่อคอลัมน์ตามที่ตารางมีจริง ──");
+
+  await test("เลือกตัวแรกที่มีอยู่จริง ตามลำดับที่ให้มา", () => {
+    // HOSxP แต่ละเวอร์ชันตั้งชื่อไม่เหมือนกัน (units / unit, name / drugname)
+    // เดาผิดทีเดียว query ล้มทั้งก้อน แล้วช่องการรักษาว่างโดยไม่บอกสาเหตุ
+    const cols = new Set(["icode", "name", "strength", "units"]);
+    assert.equal(pickColumn(cols, ["name", "drugname", "generic_name"]), "name");
+    assert.equal(pickColumn(cols, ["units", "unit", "packqty_unit"]), "units");
+    // ตัวที่ตารางไม่มีต้องถูกข้ามไป ไม่ใช่หยุดแล้วคืน null
+    assert.equal(pickColumn(cols, ["drug_strength", "dose", "strength"]), "strength");
+  });
+
+  await test("ลำดับใน candidates เป็นตัวตัดสิน ไม่ใช่ลำดับในตาราง", () => {
+    const cols = new Set(["name", "drugname"]);
+    assert.equal(pickColumn(cols, ["drugname", "name"]), "drugname");
+    assert.equal(pickColumn(cols, ["name", "drugname"]), "name");
+  });
+
+  await test("ไม่มีสักตัวคืน null เพื่อให้ผู้เรียกเลือกได้ว่าจะข้ามหรือแจ้งเตือน", () => {
+    assert.equal(pickColumn(new Set(["icode"]), ["units", "unit"]), null);
+    assert.equal(pickColumn(new Set(), ["name"]), null);
+  });
+
+  await test("ชื่อคอลัมน์เทียบแบบไม่สนตัวพิมพ์ (information_schema คืนมาไม่เหมือนกันทุกเครื่อง)", () => {
+    assert.equal(pickColumn(new Set(["name"]), ["NAME"]), "NAME");
   });
 
   console.log(`\n${failed === 0 ? "✅" : "❌"} ผ่าน ${passed} / ${passed + failed} เทสต์\n`);

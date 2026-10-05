@@ -16,6 +16,8 @@
 // ── โครงตารางยืนยันจากไฟล์จริงของโรงพยาบาลแล้ว ─────────────────────────────
 // ovst        vn hn vstdate vsttime pttype main_dep diag_text
 //             ⚠️ ไม่มี age_y/age_m — ต้องคิดอายุจาก patient.birthday
+// ovst_doctor_diag  vn diag_text  ← คำวินิจฉัยที่หมอพิมพ์เองในหน้าจอแพทย์
+//             (ใช้ตารางเดียวกับรายงาน incomplete-visit ของ ppc-hos-10667)
 // opdscreen   cc cc_duration hpi pmh fh sh ros found_allergy pe pe_*_text
 //             bps bpd pulse rr temperature bw height
 // opitemrece  vn icode qty drugusage sp_use
@@ -333,19 +335,23 @@ export function formatAge(years: unknown, months: unknown): string {
 
 export type VisitCore = {
   vn: string;
+  hn: string;
   date: string;
   time: string;
   department: string;
   pttype: string;
   diagText: string;
+  /** มีเฉพาะรายการแบบเลือกตามวันที่ (ไม่ได้ใส่ HN) — ต้องรู้ว่าแถวนี้คือใคร */
+  patientName?: string;
 };
 
-const VISIT_SELECT = `o.vn, o.vstdate AS date, o.vsttime AS time, o.diag_text AS diagText,
+const VISIT_SELECT = `o.vn, o.hn, o.vstdate AS date, o.vsttime AS time, o.diag_text AS diagText,
             k.department AS department, p.name AS pttype`;
 
 function toVisitCore(r: Row): VisitCore {
   return {
     vn: str(r.vn),
+    hn: clean(r.hn),
     date: isoDate(r.date),
     time: hhmm(r.time),
     department: clean(r.department),
@@ -359,15 +365,94 @@ async function visitTables() {
 }
 
 /**
+ * วันที่ที่ผู้ใช้ระบุเอง → `YYYY-MM-DD` แบบ ค.ศ. หรือ null ถ้าใช้ไม่ได้
+ *
+ * ⚠️ เครื่องที่ตั้งภาษาไทยมักให้คนพิมพ์ปี พ.ศ. ลงในช่องปฏิทิน (วว/ดด/ปปปป)
+ *    ได้ค่าเป็น "2569-10-05" ซึ่งไม่มี visit ไหนตรงเลย — นี่คือสาเหตุที่
+ *    "ระบุวันที่เอง" เคยหาไม่เจอทั้งที่คนไข้มาจริง จึงแปลงปีที่เกิน 2400 ให้
+ */
+export function normalizeVisitDate(input: unknown): string | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(str(input));
+  if (!m) return null;
+
+  let y = Number(m[1]);
+  if (y > 2400) y -= 543;
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+
+  const date = new Date(Date.UTC(y, mo - 1, d));
+  if (
+    y < 1900 ||
+    date.getUTCFullYear() !== y ||
+    date.getUTCMonth() !== mo - 1 ||
+    date.getUTCDate() !== d
+  ) {
+    return null;
+  }
+  return `${y}-${m[2]}-${m[3]}`;
+}
+
+/**
+ * รวมคำวินิจฉัยที่หมอพิมพ์ (diag_text) — ตัดบรรทัดซ้ำ ตัดค่าว่าง
+ *
+ * HOSxP มีที่เก็บสองที่: ovst.diag_text กับ ovst_doctor_diag.diag_text
+ * หลายโรงพยาบาลใช้แค่ที่ใดที่หนึ่ง ดึงทั้งคู่แล้วรวมจึงไม่พลาด
+ */
+export function mergeDiagText(...texts: unknown[]): string {
+  const seen = new Set<string>();
+  const lines: string[] = [];
+  for (const t of texts) {
+    for (const line of clean(t).split(/\r?\n/)) {
+      const l = line.trim();
+      const key = l.toLowerCase().replace(/\s+/g, " ");
+      if (l === "" || seen.has(key)) continue;
+      seen.add(key);
+      lines.push(l);
+    }
+  }
+  return lines.join("\n");
+}
+
+/**
+ * diag_text จาก ovst_doctor_diag ของหลาย VN ในคราวเดียว
+ * ตารางนี้อาจไม่มี/ไม่มีสิทธิ์อ่านในบางโรงพยาบาล — ผู้เรียกต้องห่อด้วย soft()
+ */
+async function findDoctorDiagText(vns: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  const ids = [...new Set(vns.filter((v) => v !== ""))];
+  if (ids.length === 0) return out;
+
+  const table = await qualify("ovst_doctor_diag");
+  const rows = await hosxpSelect<Row>(
+    `SELECT vn, diag_text FROM ${table}
+      WHERE vn IN (${ids.map(() => "?").join(", ")})
+      LIMIT 500`,
+    ids,
+  );
+
+  for (const r of rows) {
+    const vn = str(r.vn);
+    out.set(vn, mergeDiagText(out.get(vn), r.diag_text));
+  }
+  return out;
+}
+
+/**
  * รายการ visit ของผู้ป่วยรายนี้ — ไล่จากใหม่ไปเก่า
  *
  * มีไว้ให้กดเลือกวันที่มาจริงจาก HOSxP แทนการนั่งพิมพ์วันที่เอง
  * ⚠️ ผู้ป่วยคนเดียวกันมาหลายครั้งในวันเดียวได้ (เห็นได้จากหน้าจอ Visit List
  *    ของ HOSxP เอง) การเลือกด้วย "วันที่" อย่างเดียวจึงกำกวม
  *    ต้องให้เลือกถึงระดับ VN — เวลาที่ต่างกันคือคนละครั้งที่มา
+ *    ระบุวันที่ = กรองรายการให้เหลือเฉพาะวันนั้น แล้วยังต้องกดเลือกเหมือนเดิม
  */
-export async function listVisits(hn: string, limit = 30): Promise<VisitCore[]> {
+export async function listVisits(
+  hn: string,
+  opts: { date?: string | null; limit?: number } = {},
+): Promise<VisitCore[]> {
   const [ovst, ksk, ptt] = await visitTables();
+  const date = opts.date ? normalizeVisitDate(opts.date) : null;
+  const limit = Math.max(1, Math.min(100, Math.trunc(opts.limit ?? 30)));
 
   const rows = await hosxpSelect<Row>(
     `SELECT ${VISIT_SELECT}
@@ -375,12 +460,54 @@ export async function listVisits(hn: string, limit = 30): Promise<VisitCore[]> {
        LEFT JOIN ${ksk} k ON k.depcode = o.main_dep
        LEFT JOIN ${ptt} p ON p.pttype = o.pttype
       WHERE o.hn = ?
+        ${date ? "AND o.vstdate = ?" : ""}
       ORDER BY o.vstdate DESC, o.vsttime DESC
-      LIMIT ${Math.max(1, Math.min(100, Math.trunc(limit)))}`,
-    [hn],
+      LIMIT ${limit}`,
+    date ? [hn, date] : [hn],
   );
 
-  return rows.map(toVisitCore);
+  const visits = rows.map(toVisitCore);
+
+  // คอลัมน์ "คำวินิจฉัย" ในรายการต้องเห็นข้อความของหมอด้วย ไม่งั้นเลือก visit ยาก
+  const doctor = await soft(
+    "คำวินิจฉัยของแพทย์ (ovst_doctor_diag)",
+    () => findDoctorDiagText(visits.map((v) => v.vn)),
+    new Map<string, string>(),
+  );
+  return visits.map((v) => ({ ...v, diagText: mergeDiagText(doctor.get(v.vn), v.diagText) }));
+}
+
+/**
+ * ทุก visit ในวันที่เลือก — ใช้เมื่อผู้ใช้รู้แค่วันที่แต่ยังไม่รู้ HN
+ * จำกัด 200 แถว เรียงตามเวลา ให้กดเลือกได้เหมือนรายการของ HN เดียว
+ */
+export async function listVisitsByDate(date: string, limit = 200): Promise<VisitCore[]> {
+  const iso = normalizeVisitDate(date);
+  if (!iso) return [];
+
+  const [ovst, ksk, ptt] = await visitTables();
+  const patient = await soft("ข้อมูลผู้ป่วย (patient)", () => qualify("patient"), "");
+
+  const rows = await hosxpSelect<Row>(
+    `SELECT ${VISIT_SELECT}` +
+      (patient ? `, CONCAT_WS(' ', pt.pname, pt.fname, pt.lname) AS patientName` : "") +
+      ` FROM ${ovst} o
+       LEFT JOIN ${ksk} k ON k.depcode = o.main_dep
+       LEFT JOIN ${ptt} p ON p.pttype = o.pttype` +
+      (patient ? ` LEFT JOIN ${patient} pt ON pt.hn = o.hn` : "") +
+      ` WHERE o.vstdate = ?
+      ORDER BY o.vsttime
+      LIMIT ${Math.max(1, Math.min(500, Math.trunc(limit)))}`,
+    [iso],
+  );
+
+  const visits = rows.map((r) => ({ ...toVisitCore(r), patientName: clean(r.patientName) }));
+  const doctor = await soft(
+    "คำวินิจฉัยของแพทย์ (ovst_doctor_diag)",
+    () => findDoctorDiagText(visits.map((v) => v.vn)),
+    new Map<string, string>(),
+  );
+  return visits.map((v) => ({ ...v, diagText: mergeDiagText(doctor.get(v.vn), v.diagText) }));
 }
 
 /** visit เดียวตาม VN — แม่นกว่าเลือกด้วยวันที่เพราะวันเดียวมีได้หลาย visit */
@@ -401,23 +528,8 @@ async function findVisitByVn(vn: string): Promise<VisitCore | null> {
 }
 
 async function findVisit(hn: string, date?: string | null): Promise<VisitCore | null> {
-  const [ovst, ksk, ptt] = await visitTables();
-
-  const hasDate = !!date && /^\d{4}-\d{2}-\d{2}$/.test(date);
-
-  const rows = await hosxpSelect<Row>(
-    `SELECT ${VISIT_SELECT}
-       FROM ${ovst} o
-       LEFT JOIN ${ksk} k ON k.depcode = o.main_dep
-       LEFT JOIN ${ptt} p ON p.pttype = o.pttype
-      WHERE o.hn = ?
-        ${hasDate ? "AND o.vstdate = ?" : ""}
-      ORDER BY o.vstdate DESC, o.vsttime DESC
-      LIMIT 1`,
-    hasDate ? [hn, date] : [hn],
-  );
-
-  return rows[0] ? toVisitCore(rows[0]) : null;
+  const visits = await listVisits(hn, { date, limit: 1 });
+  return visits[0] ?? null;
 }
 
 /**
@@ -688,9 +800,14 @@ export async function lookupVisit(opts: {
   const vn = (opts.vn ?? "").trim();
   if (id === "" && vn === "") return { available: false, reason: "ยังไม่ได้ใส่ HN" };
 
+  const date = opts.date ? normalizeVisitDate(opts.date) : null;
+  if (opts.date && !date) {
+    return { available: false, reason: `วันที่ "${opts.date}" ไม่ถูกต้อง` };
+  }
+
   let visit: VisitCore | null;
   try {
-    visit = vn !== "" ? await findVisitByVn(vn) : await findVisit(id, opts.date);
+    visit = vn !== "" ? await findVisitByVn(vn) : await findVisit(id, date);
   } catch (e) {
     console.error("hosxp: หา visit ไม่สำเร็จ:", e);
     const code = (e as { code?: string }).code;
@@ -711,8 +828,8 @@ export async function lookupVisit(opts: {
       reason:
         vn !== ""
           ? `ไม่พบ visit เลขที่ ${vn}`
-          : opts.date
-            ? `ไม่พบ visit ของ HN ${id} วันที่ ${opts.date}`
+          : date
+            ? `ไม่พบ visit ของ HN ${id} วันที่ ${date}`
             : `ไม่พบ visit ของ HN ${id} ในระบบ`,
     };
   }
@@ -721,10 +838,10 @@ export async function lookupVisit(opts: {
 
   /** ส่วนที่ดึงไม่สำเร็จ พร้อมเหตุผล — ส่งกลับให้ผู้ใช้รู้ว่าต้องแก้อะไร */
   const issues: string[] = [];
-  // เลือกด้วย VN จะยังไม่รู้ HN จนกว่าจะอ่าน visit มาได้ — ใช้ที่ผู้ใช้กรอกก่อน
-  const patientHn = id !== "" ? id : "";
+  // HN ของ visit ที่อ่านได้จริงมาก่อน — กันกรณีเลือก VN แล้ว HN ในช่องเป็นของคนอื่น
+  const patientHn = found.hn !== "" ? found.hn : id;
 
-  const [patient, screen, diagnosis, drugs, lab, xray, procedures] = await Promise.all([
+  const [patient, screen, diagnosis, drugs, lab, xray, procedures, doctorDiag] = await Promise.all([
     soft(
       "ข้อมูลผู้ป่วย (patient)",
       () => findPatient(patientHn, found.date),
@@ -738,6 +855,12 @@ export async function lookupVisit(opts: {
     soft("ผลเอกซเรย์ (xray_head)", () => findXray(found.vn), "", issues),
     // หัตถการไม่ใช่ทุกโรงพยาบาลที่บันทึก ไม่พบก็ไม่ต้องรายงานว่าพัง
     soft("หัตถการ (doctor_operation)", () => findProcedures(found.vn), ""),
+    // หมอบางคนพิมพ์คำวินิจฉัยไว้ที่นี่แทน ovst.diag_text — อ่านไม่ได้ก็ยังมีของ ovst
+    soft(
+      "คำวินิจฉัยของแพทย์ (ovst_doctor_diag)",
+      () => findDoctorDiagText([found.vn]).then((m) => m.get(found.vn) ?? ""),
+      "",
+    ),
   ]);
 
   // ผลชันสูตรรวมแล็บกับเอกซเรย์ไว้ช่องเดียว ตามที่เกณฑ์ สนย. นับรวมกัน
@@ -747,8 +870,9 @@ export async function lookupVisit(opts: {
   const treatment = [drugs, procedures].filter((s) => s !== "").join("\n");
 
   // diag_text ที่หมอพิมพ์เองมาก่อนรหัส ICD เพราะเป็น "คำวินิจฉัย" ตัวจริง
-  // มีทั้งคู่ก็เอามาทั้งคู่ ให้คนตรวจเห็นว่าตรงกันหรือไม่
-  const diagnosisText = [found.diagText, diagnosis].filter((s) => s !== "").join("\n");
+  // (ทั้ง ovst_doctor_diag และ ovst.diag_text) มีทั้งคู่ก็เอามาทั้งคู่
+  // ให้คนตรวจเห็นว่าข้อความของหมอกับรหัสที่ให้ไว้ตรงกันหรือไม่
+  const diagnosisText = mergeDiagText(doctorDiag, found.diagText, diagnosis);
 
   const values: Record<string, string> = {
     hn: patientHn,

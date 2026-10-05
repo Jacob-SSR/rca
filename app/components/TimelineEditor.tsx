@@ -5,6 +5,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import TimelineChart from "@/app/components/TimelineChart";
 
 type Row = { eventTime: string; title: string; source: string };
 
@@ -66,6 +67,12 @@ export default function TimelineEditor({ caseId, initialEvents }: Props) {
   return (
     <section className="card overflow-hidden">
       <h2 className="card-title">ลำดับเหตุการณ์ (แก้ไขได้)</h2>
+
+      {/* กราฟตามชั่วโมง — วาดจากแถวที่กำลังแก้อยู่ ไม่ต้องกดบันทึกก่อนก็เห็น */}
+      <div className="border-b border-zinc-200 px-5 py-5 sm:px-6">
+        <h3 className="mb-3 text-base font-semibold text-zinc-800">กราฟลำดับเหตุการณ์ตามเวลา</h3>
+        <TimelineChart events={rows} />
+      </div>
 
       <div className="px-5 py-5 sm:px-6">
         {rows.length === 0 ? (

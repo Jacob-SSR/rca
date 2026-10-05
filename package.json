@@ -14,7 +14,7 @@
     "db:seed": "prisma db seed",
     "test:rules": "tsx scripts/test-rule-engine.ts",
     "test:phi": "tsx scripts/test-phi.ts",
-    "test": "npm run test:rules && npm run test:phi && npm run test:auth && npm run test:form && npm run test:hosxp && npm run test:a1 && npm run test:forms && npm run test:upload",
+    "test": "npm run test:rules && npm run test:phi && npm run test:auth && npm run test:form && npm run test:hosxp && npm run test:a1 && npm run test:forms && npm run test:upload && npm run test:auto",
     "make:samples": "tsx scripts/make-sample-docs.ts",
     "inspect": "tsx scripts/inspect-docx.ts",
     "test:auth": "tsx scripts/test-auth.ts",
@@ -23,7 +23,8 @@
     "test:a1": "tsx scripts/test-form-a1.ts",
     "test:forms": "tsx scripts/test-audit-forms.ts",
     "test:upload": "tsx scripts/test-upload.ts",
-    "check:conn": "tsx scripts/check-connections.ts"
+    "check:conn": "tsx scripts/check-connections.ts",
+    "test:auto": "tsx scripts/test-auto-audit.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

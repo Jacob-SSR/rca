@@ -1,18 +1,21 @@
 "use client";
 
-// แถบ "กรอก HN แล้วดึงข้อมูลมาให้" ของฟอร์มบันทึกเวชระเบียน
+// ขั้นที่ 1–2 ของฟอร์มบันทึกเวชระเบียน: ค้นหาการมารับบริการใน HOSxP → เลือกครั้งที่จะตรวจ
 //
 // ⚠️ สิ่งที่ดึงมาคือข้อมูลดิบที่ HOSxP มี ไม่ใช่บันทึกที่สมบูรณ์
 //    ยังต้องอ่านและแก้ก่อนสร้างเอกสาร เพราะเกณฑ์ สนย. ตัดสินที่รายละเอียด
-//    ของข้อความ ไม่ใช่แค่มีข้อความ — จึงเขียนเตือนไว้ใต้ปุ่มตลอด
+//    ของข้อความ ไม่ใช่แค่มีข้อความ
 //
 // ⚠️ ค่าที่กรอกไว้แล้วจะไม่ถูกทับ ต้องกดยืนยันก่อน
 //    คนกรอกไปครึ่งฟอร์มแล้วเผลอกดดึง ข้อมูลที่พิมพ์เองหายหมดคือความเสียหายจริง
 //
-// ── ทำไมต้องมีรายการ visit ให้กด ────────────────────────────────────────────
-// ผู้ป่วยคนเดียวกันมาหลายครั้งในวันเดียวได้ (เห็นได้จากหน้าจอ Visit List ของ
-// HOSxP เอง) การเลือกด้วย "วันที่" อย่างเดียวจึงกำกวม — ต้องเลือกถึงระดับ VN
-// แต่ยังคงช่องเลือกวันที่เองไว้ ใช้เมื่อยังไม่อยากดูรายการหรือ HOSxP ต่อไม่ได้
+// ── ค้นหาได้สามแบบด้วยปุ่มเดียว ──────────────────────────────────────────────
+//   HN อย่างเดียว      → ทุกครั้งที่ HN นี้มา (ใหม่ → เก่า)
+//   วันที่อย่างเดียว    → ทุกคนที่มาวันนั้น (รู้วันแต่ยังไม่รู้ HN)
+//   HN + วันที่        → เฉพาะวันนั้นของ HN นั้น
+// ทุกแบบจบที่ "กดเลือกจากรายการ" เสมอ เพราะวันเดียวมาได้หลายครั้ง (ต้องเลือกถึงระดับ VN)
+// ก่อนหน้านี้มีปุ่ม "ดึงตามวันที่" แยก ซึ่งกดไม่ได้ถ้ายังไม่ใส่ HN และไม่บอกเหตุผล
+// ผู้ใช้จึงเข้าใจว่าใช้งานไม่ได้ — รวมเป็นปุ่มเดียวแล้วบอกเหตุผลทุกครั้งที่กดไม่ได้
 
 import { useState } from "react";
 import { formatThaiDateShort } from "@/lib/form/thai-date";
@@ -27,11 +30,13 @@ type Prefill = {
 
 type Visit = {
   vn: string;
+  hn: string;
   date: string;
   time: string;
   department: string;
   pttype: string;
   diagText: string;
+  patientName?: string;
 };
 
 type Props = {
@@ -64,9 +69,29 @@ const LABEL: Record<string, string> = {
   treatment: "การรักษา",
 };
 
+const HN_RE = /^[A-Za-z0-9-]{1,20}$/;
+
+function todayIso(): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok" }).format(new Date());
+}
+
+function StepBadge({ n, done }: { n: number; done: boolean }) {
+  return (
+    <span
+      aria-hidden
+      className={`inline-flex size-7 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${
+        done ? "bg-emerald-600 text-white" : "bg-brand-600 text-white"
+      }`}
+    >
+      {done ? "✓" : n}
+    </span>
+  );
+}
+
 export default function HnPrefillBar({ current, disabled, onFill, onClear }: Props) {
   const [hn, setHn] = useState("");
   const [date, setDate] = useState("");
+  const [touched, setTouched] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Prefill | null>(null);
@@ -74,7 +99,28 @@ export default function HnPrefillBar({ current, disabled, onFill, onClear }: Pro
   const [pending, setPending] = useState<Prefill | null>(null);
 
   const [visits, setVisits] = useState<Visit[] | null>(null);
-  const [pickedVn, setPickedVn] = useState<string | null>(null);
+  /** ค้นด้วยอะไร — ใช้เลือกคอลัมน์ในตาราง (ค้นตามวันที่ต้องเห็น HN/ชื่อ) */
+  const [searchedBy, setSearchedBy] = useState<"hn" | "date">("hn");
+  const [picked, setPicked] = useState<Visit | null>(null);
+  const [showList, setShowList] = useState(true);
+
+  // ── validate ช่องค้นหา ─────────────────────────────────────────────────────
+  const hnTrim = hn.trim();
+  const hnError = hnTrim !== "" && !HN_RE.test(hnTrim) ? "HN ต้องเป็นตัวเลข/ตัวอักษร ไม่เกิน 20 ตัว" : null;
+  const dateError = date !== "" && date > todayIso() ? "วันที่อยู่ในอนาคต" : null;
+  const nothing = hnTrim === "" && date === "";
+  const searchBlocker = nothing
+    ? "ใส่ HN หรือเลือกวันที่อย่างน้อยหนึ่งอย่าง"
+    : (hnError ?? dateError);
+
+  const searchHint =
+    hnTrim !== "" && date !== ""
+      ? "จะแสดงเฉพาะครั้งที่ HN นี้มาในวันที่เลือก"
+      : hnTrim !== ""
+        ? "จะแสดงทุกครั้งที่ HN นี้มา (ใหม่ → เก่า) — เลือกวันที่ด้วยถ้าอยากกรองให้เหลือวันเดียว"
+        : date !== ""
+          ? "จะแสดงผู้มารับบริการทุกคนในวันที่เลือก"
+          : "ใส่ HN เพื่อดูทุกครั้งที่มา หรือเลือกแค่วันที่เพื่อดูผู้ป่วยทั้งหมดของวันนั้น";
 
   function apply(prefill: Prefill, overwrite: boolean) {
     const next = overwrite
@@ -87,53 +133,61 @@ export default function HnPrefillBar({ current, disabled, onFill, onClear }: Pro
     setConflicts([]);
     setPending(null);
     setResult(prefill);
+    setShowList(false);
   }
 
   /**
-   * ล้างทุกช่องเพื่อเปลี่ยนไปตรวจ HN อื่นในหน้าเดิม
+   * ล้างทุกช่องเพื่อเปลี่ยนไปตรวจผู้ป่วยรายอื่นในหน้าเดิม
    *
    * ⚠️ ถามก่อนเสมอเมื่อมีข้อมูลอยู่ — กดพลาดแล้วสิ่งที่พิมพ์เองหายหมด
-   *    และตัวปุ่มเองไม่ได้บันทึกอะไร กด "บันทึกฟอร์ม" ทีหลังจึงจะทับของเดิมจริง
+   *    และตัวปุ่มเองไม่ได้บันทึกอะไร กด "บันทึก" ทีหลังจึงจะทับของเดิมจริง
    */
   function reset() {
     const filled = Object.values(current).filter((v) => (v ?? "").trim() !== "").length;
-    if (filled > 0 && !confirm(`ล้างข้อมูลในฟอร์มทั้งหมด ${filled} ช่อง เพื่อเริ่มกรอก HN ใหม่?`)) {
+    if (filled > 0 && !confirm(`ล้างข้อมูลในฟอร์มทั้งหมด ${filled} ช่อง เพื่อเริ่มผู้ป่วยรายใหม่?`)) {
       return;
     }
 
     onClear();
     setHn("");
     setDate("");
+    setTouched(false);
     setVisits(null);
-    setPickedVn(null);
+    setPicked(null);
+    setShowList(true);
     setResult(null);
     setError(null);
     setConflicts([]);
     setPending(null);
   }
 
-  /** ดึงรายการ visit ของ HN นี้มาให้กดเลือก */
-  async function loadVisits() {
+  /** ค้นหารายการ visit ตาม HN และ/หรือวันที่ */
+  async function search() {
+    setTouched(true);
+    if (searchBlocker) return;
+
     setBusy(true);
     setError(null);
     setVisits(null);
-    setResult(null);
+    setShowList(true);
 
     try {
-      const res = await fetch(
-        `/api/hosxp/visit?list=1&hn=${encodeURIComponent(hn.trim())}`,
-      );
+      const params = new URLSearchParams({ list: "1" });
+      if (hnTrim) params.set("hn", hnTrim);
+      if (date) params.set("date", date);
+
+      const res = await fetch(`/api/hosxp/visit?${params.toString()}`);
       const json = await res.json().catch(() => ({}));
 
       if (!json?.available) {
-        setError(json?.reason ?? json?.error ?? "ดึงรายการ visit ไม่สำเร็จ");
+        setError(json?.reason ?? json?.error ?? "ค้นหาไม่สำเร็จ");
         return;
       }
 
-      setVisits(json.visits ?? []);
-      if ((json.visits ?? []).length === 0) {
-        setError(json?.reason ?? `ไม่พบ visit ของ HN ${hn.trim()}`);
-      }
+      const list = (json.visits ?? []) as Visit[];
+      setSearchedBy(hnTrim ? "hn" : "date");
+      setVisits(list);
+      if (list.length === 0) setError(json?.reason ?? "ไม่พบการมารับบริการ");
     } catch {
       setError("ติดต่อเซิร์ฟเวอร์ไม่ได้");
     } finally {
@@ -141,20 +195,18 @@ export default function HnPrefillBar({ current, disabled, onFill, onClear }: Pro
     }
   }
 
-  /** เติมฟอร์ม — ระบุ vn เมื่อกดเลือกจากรายการ ไม่งั้นใช้ HN + วันที่ */
-  async function pull(vn?: string) {
+  /** เติมฟอร์มจาก visit ที่เลือก */
+  async function pull(v: Visit) {
     setBusy(true);
     setError(null);
     setResult(null);
     setConflicts([]);
     setPending(null);
-    setPickedVn(vn ?? null);
+    setPicked(v);
 
     try {
-      const params = new URLSearchParams();
-      if (hn.trim()) params.set("hn", hn.trim());
-      if (vn) params.set("vn", vn);
-      else if (date) params.set("date", date);
+      const params = new URLSearchParams({ vn: v.vn });
+      if (v.hn) params.set("hn", v.hn);
 
       const res = await fetch(`/api/hosxp/visit?${params.toString()}`);
       const json = await res.json().catch(() => ({}));
@@ -185,198 +237,269 @@ export default function HnPrefillBar({ current, disabled, onFill, onClear }: Pro
     }
   }
 
-  const noHn = hn.trim() === "";
+  const step1Done = visits !== null && visits.length > 0;
+  const step2Done = result !== null;
 
   return (
-    <section className="card card-pad bg-brand-50/40">
-      <div className="flex flex-wrap items-end gap-3">
-        <div>
-          <label className="label" htmlFor="prefill-hn">
-            กรอก HN แล้วดึงข้อมูลจาก HOSxP มาให้
-          </label>
-          <input
-            id="prefill-hn"
-            className="input tabular w-48"
-            value={hn}
-            disabled={disabled || busy}
-            onChange={(e) => {
-              setHn(e.target.value);
-              // เปลี่ยน HN แล้วรายการเดิมใช้ไม่ได้อีก ต้องล้างทิ้ง
-              // ไม่งั้นจะกดเลือก visit ของคนไข้คนก่อนโดยไม่รู้ตัว
-              setVisits(null);
-              setPickedVn(null);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                if (!noHn) loadVisits();
-              }
-            }}
-            placeholder="HN"
-          />
-        </div>
-
-        <button
-          type="button"
-          className="btn btn-primary"
-          disabled={disabled || busy || noHn}
-          onClick={() => loadVisits()}
-        >
-          {busy ? "กำลังดึง…" : "ดูรายการที่มารับบริการ"}
-        </button>
-
-        <span className="pb-2.5 text-zinc-400">หรือ</span>
-
-        <div>
-          <label className="label" htmlFor="prefill-date">
-            ระบุวันที่เอง
-          </label>
-          <input
-            id="prefill-date"
-            type="date"
-            className="input tabular w-48"
-            value={date}
-            disabled={disabled || busy}
-            onChange={(e) => setDate(e.target.value)}
-          />
-        </div>
-
-        <button
-          type="button"
-          className="btn"
-          disabled={disabled || busy || noHn}
-          onClick={() => pull()}
-        >
-          ดึงตามวันที่
-        </button>
-
-        <span className="ms-auto">
+    <section className="card overflow-hidden">
+      {/* ── ขั้นที่ 1 : ค้นหา ─────────────────────────────────────────────── */}
+      <div className="card-pad bg-brand-50/40">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="flex items-center gap-2.5 text-lg font-semibold">
+            <StepBadge n={1} done={step1Done} />
+            ค้นหาการมารับบริการใน HOSxP
+          </h2>
           <button
             type="button"
-            className="btn btn-danger"
+            className="btn btn-sm btn-danger"
             disabled={disabled || busy}
             onClick={reset}
+            title="ล้างทุกช่องในฟอร์ม เพื่อเริ่มตรวจผู้ป่วยรายอื่น"
           >
-            ล้างข้อมูลในฟอร์ม
+            ↺ เริ่มผู้ป่วยรายใหม่
           </button>
-        </span>
+        </div>
+
+        <form
+          className="grid gap-3 sm:grid-cols-[minmax(0,14rem)_minmax(0,14rem)_auto] sm:items-start"
+          onSubmit={(e) => {
+            e.preventDefault();
+            search();
+          }}
+          noValidate
+        >
+          <div>
+            <label className="label" htmlFor="prefill-hn">
+              HN
+            </label>
+            <input
+              id="prefill-hn"
+              className={`input tabular ${hnError ? "border-red-400" : ""}`}
+              value={hn}
+              inputMode="numeric"
+              autoComplete="off"
+              disabled={disabled || busy}
+              aria-invalid={!!hnError}
+              aria-describedby="prefill-hn-err"
+              onChange={(e) => {
+                setHn(e.target.value);
+                // เปลี่ยน HN แล้วรายการเดิมใช้ไม่ได้อีก ต้องล้างทิ้ง
+                // ไม่งั้นจะกดเลือก visit ของคนไข้คนก่อนโดยไม่รู้ตัว
+                setVisits(null);
+                setError(null);
+              }}
+              placeholder="เช่น 000012345"
+            />
+            {hnError ? (
+              <span id="prefill-hn-err" className="mt-1 block text-sm text-red-700">
+                {hnError}
+              </span>
+            ) : null}
+          </div>
+
+          <div>
+            <label className="label" htmlFor="prefill-date">
+              วันที่มารับบริการ <span className="font-normal text-zinc-500">(ไม่บังคับ)</span>
+            </label>
+            <div className="flex gap-1.5">
+              <input
+                id="prefill-date"
+                type="date"
+                className={`input tabular ${dateError ? "border-red-400" : ""}`}
+                value={date}
+                max={todayIso()}
+                disabled={disabled || busy}
+                aria-invalid={!!dateError}
+                onChange={(e) => {
+                  setDate(e.target.value);
+                  setVisits(null);
+                  setError(null);
+                }}
+              />
+              {date ? (
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  aria-label="ล้างวันที่"
+                  onClick={() => {
+                    setDate("");
+                    setVisits(null);
+                  }}
+                >
+                  ✕
+                </button>
+              ) : null}
+            </div>
+            {dateError ? <span className="mt-1 block text-sm text-red-700">{dateError}</span> : null}
+          </div>
+
+          <div>
+            {/* ป้ายล่องหน ให้ปุ่มตรงแนวกับช่องกรอก ไม่ว่าฟอนต์จะสูงเท่าไร */}
+            <span aria-hidden className="label invisible hidden sm:block">
+              &nbsp;
+            </span>
+            <button
+              type="submit"
+              className="btn btn-primary w-full sm:w-auto"
+              disabled={disabled || busy}
+              aria-disabled={!!searchBlocker}
+            >
+              {busy && !picked ? "กำลังค้นหา…" : "🔍 ค้นหา"}
+            </button>
+          </div>
+        </form>
+
+        <p className={`hint ${touched && searchBlocker ? "!text-red-700" : ""}`}>
+          {touched && searchBlocker ? searchBlocker : searchHint}
+        </p>
+
+        {error ? <p className="alert alert-error mt-4">{error}</p> : null}
       </div>
 
-      <p className="hint">
-        ไม่ใส่วันที่ = เอาครั้งล่าสุดของ HN นั้น · ทุกช่องที่ดึงมาแก้ต่อได้ ·
-        จะตรวจคนไข้รายอื่นในหน้านี้ ให้กด &ldquo;ล้างข้อมูลในฟอร์ม&rdquo; ก่อนใส่ HN ใหม่
-      </p>
-
-      {error ? <p className="alert alert-error mt-4">{error}</p> : null}
-
-      {/* ── รายการ visit จริงจาก HOSxP ────────────────────────────────────── */}
+      {/* ── ขั้นที่ 2 : เลือกครั้งที่จะตรวจ ─────────────────────────────────── */}
       {visits && visits.length > 0 ? (
-        <div className="mt-4 overflow-hidden rounded-lg border border-zinc-300 bg-white">
-          <div className="border-b border-zinc-200 px-4 py-2.5 text-base font-medium">
-            ครั้งที่มารับบริการของ HN {hn.trim()} ({visits.length} ครั้ง) — กดเลือกครั้งที่จะตรวจ
+        <div className="border-t border-zinc-200">
+          <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 sm:px-6">
+            <h3 className="flex items-center gap-2.5 text-base font-semibold">
+              <StepBadge n={2} done={step2Done} />
+              {picked && !showList ? (
+                <span>
+                  กำลังตรวจ{" "}
+                  <span className="tabular">
+                    HN {picked.hn || hnTrim} · {formatThaiDateShort(picked.date)}
+                    {picked.time ? ` ${picked.time}` : ""} · VN {picked.vn}
+                  </span>
+                </span>
+              ) : (
+                <span>
+                  เลือกครั้งที่จะตรวจ{" "}
+                  <span className="font-normal text-zinc-500">
+                    ({visits.length} รายการ{searchedBy === "date" ? ` · ${formatThaiDateShort(date)}` : ` · HN ${hnTrim}`})
+                  </span>
+                </span>
+              )}
+            </h3>
+            {picked && !showList ? (
+              <button type="button" className="btn btn-sm" onClick={() => setShowList(true)}>
+                เปลี่ยนครั้งที่มา
+              </button>
+            ) : null}
           </div>
-          <div className="max-h-80 overflow-y-auto">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th className="w-12 text-center">#</th>
-                  <th>วันที่ / เวลา</th>
-                  <th>แผนก</th>
-                  <th>สิทธิ</th>
-                  <th>คำวินิจฉัย</th>
-                  <th className="w-24" />
-                </tr>
-              </thead>
-              <tbody>
-                {visits.map((v, i) => (
-                  <tr key={v.vn} className={pickedVn === v.vn ? "bg-brand-50" : undefined}>
-                    <td className="tabular text-center text-sm text-zinc-400">{i + 1}</td>
-                    <td className="tabular whitespace-nowrap">
-                      {formatThaiDateShort(v.date)}
-                      {v.time ? ` ${v.time}` : ""}
-                    </td>
-                    <td className="text-zinc-600">{v.department || "—"}</td>
-                    <td className="text-zinc-600">{v.pttype || "—"}</td>
-                    <td className="max-w-xs truncate text-zinc-600" title={v.diagText}>
-                      {v.diagText || "—"}
-                    </td>
-                    <td>
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-primary"
-                        disabled={disabled || busy}
-                        onClick={() => pull(v.vn)}
-                      >
-                        เลือก
-                      </button>
-                    </td>
+
+          {showList ? (
+            <div className="max-h-96 overflow-auto border-t border-zinc-100">
+              <table className="table">
+                <thead className="sticky top-0">
+                  <tr>
+                    <th>วันที่ / เวลา</th>
+                    {searchedBy === "date" ? <th>ผู้ป่วย</th> : null}
+                    <th>แผนก</th>
+                    <th>คำวินิจฉัย (แพทย์)</th>
+                    <th className="w-24" />
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {visits.map((v) => (
+                    <tr key={v.vn} className={picked?.vn === v.vn ? "bg-brand-50" : undefined}>
+                      <td className="tabular whitespace-nowrap">
+                        {formatThaiDateShort(v.date)}
+                        {v.time ? <span className="text-zinc-500"> {v.time}</span> : null}
+                        <span className="block text-xs text-zinc-400">VN {v.vn}</span>
+                      </td>
+                      {searchedBy === "date" ? (
+                        <td className="whitespace-nowrap">
+                          {v.patientName || "—"}
+                          <span className="tabular block text-xs text-zinc-500">HN {v.hn}</span>
+                        </td>
+                      ) : null}
+                      <td className="text-zinc-600">
+                        {v.department || "—"}
+                        {v.pttype ? <span className="block text-xs text-zinc-400">{v.pttype}</span> : null}
+                      </td>
+                      <td className="max-w-xs text-zinc-600">
+                        <span className="line-clamp-2 whitespace-pre-line" title={v.diagText}>
+                          {v.diagText || "—"}
+                        </span>
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-primary"
+                          disabled={disabled || busy}
+                          onClick={() => pull(v)}
+                        >
+                          {busy && picked?.vn === v.vn ? "กำลังดึง…" : "เลือก"}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
       {/* ── ถามก่อนทับของที่กรอกไว้แล้ว ───────────────────────────────────── */}
       {conflicts.length > 0 && pending ? (
-        <div className="alert alert-info mt-4 space-y-3">
-          <p>
-            ช่องเหล่านี้กรอกไว้แล้ว:{" "}
-            <strong>{conflicts.map((k) => LABEL[k] ?? k).join(", ")}</strong>
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <button type="button" className="btn btn-sm" onClick={() => apply(pending, false)}>
-              เติมเฉพาะช่องที่ยังว่าง
-            </button>
-            <button
-              type="button"
-              className="btn btn-sm btn-danger"
-              onClick={() => apply(pending, true)}
-            >
-              ทับของเดิมทั้งหมด
-            </button>
-            <button
-              type="button"
-              className="btn btn-sm"
-              onClick={() => {
-                setConflicts([]);
-                setPending(null);
-              }}
-            >
-              ยกเลิก
-            </button>
+        <div className="border-t border-zinc-200 px-5 py-4 sm:px-6">
+          <div className="alert alert-info space-y-3">
+            <p>
+              ฟอร์มมีข้อมูลอยู่แล้วในช่อง:{" "}
+              <strong>{conflicts.map((k) => LABEL[k] ?? k).join(", ")}</strong> — จะทำอย่างไร?
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className="btn btn-sm btn-primary" onClick={() => apply(pending, false)}>
+                เติมเฉพาะช่องที่ยังว่าง
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm btn-danger"
+                onClick={() => apply(pending, true)}
+              >
+                แทนที่ด้วยข้อมูล HOSxP ทั้งหมด
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => {
+                  setConflicts([]);
+                  setPending(null);
+                  setPicked(null);
+                }}
+              >
+                ยกเลิก
+              </button>
+            </div>
           </div>
         </div>
       ) : null}
 
       {result ? (
-        <div className="alert alert-ok mt-4 space-y-1">
-          <p>
-            ดึงข้อมูลมาแล้ว (VN {result.vn}) — <strong>ตรวจทานทุกช่องก่อนสร้างเอกสาร</strong>{" "}
-            เกณฑ์ สนย. ตัดสินที่รายละเอียด เช่น อาการสำคัญต้องระบุระยะเวลาด้วยจึงได้คะแนนเต็ม
-          </p>
-          {result.missing.length > 0 ? (
-            <p className="text-base">
-              ไม่มีข้อมูลใน HOSxP (ต้องกรอกเอง): {result.missing.join(", ")}
+        <div className="space-y-3 border-t border-zinc-200 px-5 py-4 sm:px-6">
+          <div className="alert alert-ok space-y-1">
+            <p>
+              ✓ ดึงข้อมูลมาแล้ว — <strong>ขั้นต่อไป: ตรวจทานทุกช่องด้านล่าง</strong> แก้ได้ทุกช่อง
+              (เช่น อาการสำคัญต้องมีระยะเวลาจึงได้คะแนนเต็ม)
             </p>
-          ) : null}
-        </div>
-      ) : null}
+            {result.missing.length > 0 ? (
+              <p className="text-base">ไม่มีข้อมูลใน HOSxP (ต้องกรอกเอง): {result.missing.join(", ")}</p>
+            ) : null}
+          </div>
 
-      {/* ── อ่านตารางไหนไม่ได้บ้าง ─────────────────────────────────────────────
-          ต่างจาก missing ข้างบนที่แปลว่า "ไม่มีข้อมูล" — ตรงนี้คือ "มีข้อมูลแต่
-          ระบบอ่านไม่ได้" ซึ่งแก้ได้ด้วยการขอสิทธิ์ ต้องบอกชื่อตารางให้ตรง
-          ไม่งั้นผู้ใช้เห็นแค่ช่องว่างแล้วเข้าใจว่า HOSxP ไม่มีข้อมูลจริงๆ */}
-      {result && (result.issues?.length ?? 0) > 0 ? (
-        <div className="alert alert-error mt-4 space-y-1">
-          <p>
-            <strong>อ่านบางตารางของ HOSxP ไม่ได้</strong> — ช่องที่เกี่ยวข้องจึงว่าง
-            ไม่ใช่เพราะไม่มีข้อมูล ส่งรายการนี้ให้ผู้ดูแลระบบเปิดสิทธิ์อ่านให้
-          </p>
-          <ul className="list-disc space-y-0.5 ps-6 text-base">
-            {result.issues?.map((m) => <li key={m}>{m}</li>)}
-          </ul>
+          {/* อ่านตารางไหนไม่ได้ — ต่างจาก missing ที่แปลว่า "ไม่มีข้อมูล"
+              ตรงนี้คือ "มีข้อมูลแต่ระบบอ่านไม่ได้" ซึ่งแก้ได้ด้วยการขอสิทธิ์ */}
+          {(result.issues?.length ?? 0) > 0 ? (
+            <div className="alert alert-error space-y-1">
+              <p>
+                <strong>อ่านบางตารางของ HOSxP ไม่ได้</strong> — ช่องที่เกี่ยวข้องจึงว่าง
+                ไม่ใช่เพราะไม่มีข้อมูล ส่งรายการนี้ให้ผู้ดูแลระบบเปิดสิทธิ์อ่านให้
+              </p>
+              <ul className="list-disc space-y-0.5 ps-6 text-base">
+                {result.issues?.map((m) => <li key={m}>{m}</li>)}
+              </ul>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </section>

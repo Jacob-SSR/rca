@@ -3,6 +3,7 @@ import Link from "next/link";
 import "./globals.css";
 import { getSession } from "@/lib/auth/session";
 import UserBar from "@/app/components/UserBar";
+import { hasCapability } from "@/lib/auth/permissions";
 
 export const metadata: Metadata = {
   title: "RCA — ตรวจคุณภาพการบันทึกข้อมูลผู้ป่วยนอก",
@@ -37,6 +38,11 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
                 <Link href="/reports" className="link text-base whitespace-nowrap">
                   Form A1 อัตโนมัติ
                 </Link>
+                {hasCapability(session.role, "manage") ? (
+                  <Link href="/settings/auto-audit" className="link text-base whitespace-nowrap">
+                    ตั้งค่า
+                  </Link>
+                ) : null}
                 <UserBar name={session.name} role={session.role} />
               </div>
             ) : null}

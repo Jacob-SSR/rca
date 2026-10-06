@@ -481,12 +481,23 @@ export async function listVisits(
  * ทุก visit ในวันที่เลือก — ใช้เมื่อผู้ใช้รู้แค่วันที่แต่ยังไม่รู้ HN
  * จำกัด 200 แถว เรียงตามเวลา ให้กดเลือกได้เหมือนรายการของ HN เดียว
  */
-export async function listVisitsByDate(date: string, limit = 200): Promise<VisitCore[]> {
+export async function listVisitsByDate(
+  date: string,
+  limit = 200,
+  opts: { opdOnly?: boolean; withDiag?: boolean } = {},
+): Promise<VisitCore[]> {
   const iso = normalizeVisitDate(date);
   if (!iso) return [];
 
   const [ovst, ksk, ptt] = await visitTables();
   const patient = await soft("ข้อมูลผู้ป่วย (patient)", () => qualify("patient"), "");
+
+  // OPD เท่านั้น: visit ที่ถูก admit จะมีเลข AN ใน ovst — ตัดออก
+  // (เกณฑ์ A1 คือผู้ป่วยนอก IPD ใช้ A3 คนละชุด) ไม่มีคอลัมน์ an ก็ไม่กรอง
+  const opdFilter =
+    opts.opdOnly && (await soft("โครงตาราง ovst", () => columnsOf("ovst"), new Set<string>())).has("an")
+      ? " AND (o.an IS NULL OR o.an = '')"
+      : "";
 
   const rows = await hosxpSelect<Row>(
     `SELECT ${VISIT_SELECT}` +
@@ -495,13 +506,15 @@ export async function listVisitsByDate(date: string, limit = 200): Promise<Visit
        LEFT JOIN ${ksk} k ON k.depcode = o.main_dep
        LEFT JOIN ${ptt} p ON p.pttype = o.pttype` +
       (patient ? ` LEFT JOIN ${patient} pt ON pt.hn = o.hn` : "") +
-      ` WHERE o.vstdate = ?
+      ` WHERE o.vstdate = ?${opdFilter}
       ORDER BY o.vsttime
-      LIMIT ${Math.max(1, Math.min(500, Math.trunc(limit)))}`,
+      LIMIT ${Math.max(1, Math.min(2000, Math.trunc(limit)))}`,
     [iso],
   );
 
   const visits = rows.map((r) => ({ ...toVisitCore(r), patientName: clean(r.patientName) }));
+  // ตรวจอัตโนมัติไม่ต้องใช้ข้อความวินิจฉัยในรายการ (ดึงอีกทีตอนเติมฟอร์ม) — ไม่ยิง query เปล่า ๆ
+  if (opts.withDiag === false) return visits;
   const doctor = await soft(
     "คำวินิจฉัยของแพทย์ (ovst_doctor_diag)",
     () => findDoctorDiagText(visits.map((v) => v.vn)),

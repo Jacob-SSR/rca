@@ -86,7 +86,7 @@ export default async function Home() {
             <h1 className="mt-4 flex flex-wrap items-baseline gap-x-2 text-3xl leading-snug font-bold sm:text-4xl sm:leading-snug">
               <BlurText text={session ? `${greeting()},` : greeting()} delay={120} />
               {session ? (
-                <GradientText colors={["#5a3ef0", "#12b5d6", "#f05aa8", "#5a3ef0"]} animationSpeed={6}>
+                <GradientText colors={["#0b8a65", "#22c1c3", "#2bcc9b", "#0b8a65"]} animationSpeed={6}>
                   {session.name}
                 </GradientText>
               ) : null}

@@ -7,7 +7,7 @@ import Icon from "@/app/components/Icon";
 export default function ScanningDoc({ className = "" }: { className?: string }) {
   return (
     <div
-      className={`relative mx-auto h-32 w-26 rounded-xl border border-zinc-200 bg-white p-3 shadow-[0_14px_30px_-14px_rgba(90,62,240,0.5)] ${className}`}
+      className={`relative mx-auto h-32 w-26 rounded-xl border border-zinc-200 bg-white p-3 shadow-[0_14px_30px_-14px_rgba(16,150,110,0.45)] ${className}`}
     >
       <div className="mb-2 h-2 w-10 rounded bg-brand-200" />
       {[90, 70, 85, 60, 78, 50].map((w, i) => (

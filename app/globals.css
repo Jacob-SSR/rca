@@ -35,16 +35,19 @@
   --color-surface: #ffffff;
   --color-on-brand: #ffffff;
 
-  /* สีหลัก — ม่วงคราม */
-  --color-brand-50: #f1efff;
-  --color-brand-100: #e4e0ff;
-  --color-brand-200: #cbc3ff;
-  --color-brand-300: #8d7bff;
-  --color-brand-400: #5b40ea;
-  --color-brand-500: #6d55ff;
-  --color-brand-600: #5a3ef0;
-  --color-brand-700: #4128c4;
-  --color-cyan-glow: #12b5d6;
+  /* สีหลัก — เขียวมิ้นต์
+     มิ้นต์เป็นสีอ่อน ตัวหนังสือสีขาววางบนมิ้นต์จะอ่านยาก (contrast ต่ำ)
+     → ปุ่มหลักใช้พื้นมิ้นต์ + ตัวหนังสือเขียวเข้ม, ลิงก์/ตัวหนังสือใช้เฉดเข้ม (600–700) */
+  --color-brand-50: #ecfbf5;
+  --color-brand-100: #d3f6e9;
+  --color-brand-200: #a6ecd4;
+  --color-brand-300: #5fd8b1;
+  --color-brand-400: #12946e;
+  --color-brand-500: #2bcc9b;
+  --color-brand-600: #0b8a65;
+  --color-brand-700: #076a4e;
+  --color-brand-ink: #04392a;
+  --color-cyan-glow: #22c1c3;
   --color-pink-glow: #f05aa8;
 
   /* สีสถานะคะแนน */
@@ -97,7 +100,7 @@ body {
   overflow: hidden;
   pointer-events: none;
   background:
-    radial-gradient(circle at 1px 1px, rgba(90, 62, 240, 0.09) 1px, transparent 0) 0 0 / 26px 26px,
+    radial-gradient(circle at 1px 1px, rgba(16, 150, 110, 0.1) 1px, transparent 0) 0 0 / 26px 26px,
     linear-gradient(180deg, #f7f7fd 0%, #f1f3fa 100%);
 }
 
@@ -114,7 +117,7 @@ body {
   height: 42vmax;
   left: -12vmax;
   top: -14vmax;
-  background: #cfc6ff;
+  background: #bff2de;
   animation: drift-a 26s ease-in-out infinite alternate;
 }
 
@@ -123,7 +126,7 @@ body {
   height: 36vmax;
   right: -10vmax;
   top: 10vh;
-  background: #bdeefa;
+  background: #c4f0f1;
   animation: drift-b 32s ease-in-out infinite alternate;
 }
 
@@ -132,7 +135,7 @@ body {
   height: 30vmax;
   left: 30vw;
   bottom: -16vmax;
-  background: #ffd3ea;
+  background: #e3f7c9;
   opacity: 0.45;
   animation: drift-a 38s ease-in-out infinite alternate-reverse;
 }
@@ -230,7 +233,7 @@ body {
       var(--color-surface);
     box-shadow:
       0 1px 2px rgba(22, 26, 48, 0.04),
-      0 12px 32px -18px rgba(54, 40, 140, 0.22);
+      0 12px 32px -18px rgba(10, 90, 70, 0.22);
     transition: border-color 0.25s, box-shadow 0.25s, transform 0.25s;
   }
 
@@ -240,7 +243,7 @@ body {
     border-color: var(--color-brand-200);
     box-shadow:
       0 1px 2px rgba(22, 26, 48, 0.04),
-      0 22px 44px -20px rgba(90, 62, 240, 0.38);
+      0 22px 44px -20px rgba(16, 150, 110, 0.38);
   }
 
   .card-pad {
@@ -256,7 +259,7 @@ body {
     @apply inline-grid shrink-0 place-items-center rounded-xl text-brand-600;
     width: 2.4rem;
     height: 2.4rem;
-    background: linear-gradient(140deg, var(--color-brand-50), #e6f8fc);
+    background: linear-gradient(140deg, var(--color-brand-50), #e2f8f8);
     box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-brand-200) 70%, transparent);
   }
 
@@ -278,17 +281,21 @@ body {
   }
 
   .btn-primary {
-    @apply border-transparent text-on-brand;
-    background: linear-gradient(110deg, #5a3ef0 0%, #7b5cff 45%, #2a9fe0 100%);
+    @apply border-transparent font-semibold text-brand-ink;
+    background: linear-gradient(110deg, #3fe0ae 0%, #5ee8c0 45%, #3cd3d1 100%);
     background-size: 200% 100%;
-    box-shadow: 0 8px 22px -10px rgba(90, 62, 240, 0.75);
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.35),
+      0 8px 22px -10px rgba(16, 150, 110, 0.75);
     animation: gradient-pan 8s ease infinite;
   }
 
   .btn-primary:hover {
-    @apply border-transparent text-on-brand;
+    @apply border-transparent text-brand-ink;
     background-color: transparent;
-    box-shadow: 0 12px 28px -10px rgba(90, 62, 240, 0.9);
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.45),
+      0 12px 28px -10px rgba(16, 150, 110, 0.9);
   }
 
   /* แสงวาบวิ่งผ่านปุ่มหลักตอนชี้ */
@@ -421,7 +428,7 @@ body {
 
   /* ── หัวข้อไล่สี ── */
   .text-gradient {
-    background: linear-gradient(100deg, #2a1f7a 0%, #5a3ef0 45%, #0e9cc0 100%);
+    background: linear-gradient(100deg, #064d39 0%, #0b9a70 45%, #13a9ab 100%);
     background-size: 200% 100%;
     -webkit-background-clip: text;
     background-clip: text;

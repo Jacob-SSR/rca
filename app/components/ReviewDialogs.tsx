@@ -101,7 +101,7 @@ export function Modal({
             role="dialog"
             aria-modal="true"
             aria-label={label}
-            className="relative w-full max-w-md overflow-hidden rounded-3xl bg-white p-6 text-center shadow-[0_30px_80px_-20px_rgba(40,25,140,0.45)] sm:p-8"
+            className="relative w-full max-w-md overflow-hidden rounded-3xl bg-white p-6 text-center shadow-[0_30px_80px_-20px_rgba(10,90,70,0.4)] sm:p-8"
             initial={{ opacity: 0, scale: 0.9, y: 24 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 12 }}
@@ -149,7 +149,7 @@ export function ReviewLoading({ open }: { open: boolean }) {
     <Modal open={open} label="กำลังตรวจเอกสาร">
       <ScanningDoc />
       <h2 className="mt-6 text-xl font-bold">
-        <ShinyText text="AI กำลังตรวจเอกสาร…" color="#3f2ab8" shineColor="#7fd8ff" speed={2.2} />
+        <ShinyText text="AI กำลังตรวจเอกสาร…" color="#076a4e" shineColor="#5ee8c0" speed={2.2} />
       </h2>
       <p className="mt-1 text-sm text-zinc-500">โดยปกติใช้เวลา 10–40 วินาที กรุณาอย่าปิดหน้านี้</p>
 
@@ -203,7 +203,7 @@ export function ReviewLoading({ open }: { open: boolean }) {
 // 2. ตรวจเสร็จแล้ว
 // ─────────────────────────────────────────────────────────────────────────────
 
-const CONFETTI_COLORS = ["#5a3ef0", "#12b5d6", "#f05aa8", "#ffb020", "#10b981", "#8d7bff"];
+const CONFETTI_COLORS = ["#2bcc9b", "#22c1c3", "#f05aa8", "#ffb020", "#0b8a65", "#a3e635"];
 
 function Confetti() {
   // ตำแหน่ง/สีคงที่ตาม index — render ซ้ำได้ผลเหมือนเดิม

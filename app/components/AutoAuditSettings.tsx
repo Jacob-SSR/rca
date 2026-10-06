@@ -4,9 +4,11 @@
 // + ปุ่มรันเดี๋ยวนี้ (เลือกวันที่ได้) + ประวัติรอบที่ผ่านมา
 
 import Link from "next/link";
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { AI_QUOTA_EVENT, Modal } from "@/app/components/ReviewDialogs";
 import { Switch } from "@/app/components/AutoAuditPanel";
 import { formatThaiDateShort } from "@/lib/form/thai-date";
+import Icon from "@/app/components/Icon";
 import {
   MAX_VISITS_CAP,
   TARGET_DAYS,
@@ -75,6 +77,9 @@ export default function AutoAuditSettings() {
   const [runDate, setRunDate] = useState("");
   const [starting, setStarting] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
+  /** รอบที่เพิ่งจบขณะเปิดหน้านี้อยู่ — แสดง popup สรุปผล */
+  const [finished, setFinished] = useState<Run | null>(null);
+  const runningId = useRef<string | null>(null);
 
   const load = useCallback(async (resetForm: boolean) => {
     const res = await fetch("/api/admin/auto-audit", { cache: "no-store" });
@@ -84,6 +89,17 @@ export default function AutoAuditSettings() {
     }
     const json = (await res.json()) as Data;
     setData(json);
+
+    // เคยเห็นว่ากำลังรัน แล้วตอนนี้ไม่รันแล้ว = รอบนั้นเพิ่งจบ → popup
+    const prev = runningId.current;
+    runningId.current = json.running?.id ?? null;
+    if (prev && !json.running) {
+      const done = json.runs.find((r) => r.id === prev);
+      if (done) {
+        setFinished(done);
+        if (done.error?.includes("โควตา")) window.dispatchEvent(new CustomEvent(AI_QUOTA_EVENT));
+      }
+    }
     if (resetForm) {
       const { enabled, runTime, weekdays, targetDay, maxVisits } = json.settings;
       setForm({ enabled, runTime, weekdays, targetDay, maxVisits });
@@ -165,7 +181,19 @@ export default function AutoAuditSettings() {
   }
 
   if (!data || !form) {
-    return <p className="card card-pad text-zinc-500">{message?.text ?? "กำลังโหลด…"}</p>;
+    return message ? (
+      <p className="card card-pad text-zinc-500">{message.text}</p>
+    ) : (
+      <div className="space-y-5" role="status" aria-label="กำลังโหลด">
+        {[0, 1].map((i) => (
+          <div key={i} className="card card-pad space-y-3">
+            <div className="skeleton h-5 w-48" />
+            <div className="skeleton h-4 w-3/4" />
+            <div className="skeleton h-10 w-full" />
+          </div>
+        ))}
+      </div>
+    );
   }
 
   return (
@@ -177,7 +205,7 @@ export default function AutoAuditSettings() {
       ) : null}
 
       {/* ── สวิตช์หลัก ─────────────────────────────────────────────────────── */}
-      <section className="card card-pad flex flex-wrap items-center justify-between gap-4">
+      <section className="card card-pad animate-rise flex flex-wrap items-center justify-between gap-4">
         <div>
           <Switch
             checked={form.enabled}
@@ -213,8 +241,11 @@ export default function AutoAuditSettings() {
       </section>
 
       {/* ── ตั้งเวลา ───────────────────────────────────────────────────────── */}
-      <section className="card">
-        <h2 className="card-title">กำหนดการ</h2>
+      <section className="card animate-rise">
+        <h2 className="card-title">
+          <span className="icon-orb"><Icon name="calendar" /></span>
+          กำหนดการ
+        </h2>
         <div className="grid gap-6 px-5 py-5 sm:px-6 md:grid-cols-2">
           <div>
             <span className="label">วันที่ให้ตรวจ</span>
@@ -233,8 +264,8 @@ export default function AutoAuditSettings() {
                     }
                     className={`size-11 rounded-full border text-base font-medium transition ${
                       on
-                        ? "border-brand-600 bg-brand-600 text-white"
-                        : "border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-50"
+                        ? "border-brand-600 bg-brand-600 text-on-brand"
+                        : "border-zinc-300 bg-surface text-zinc-600 hover:bg-zinc-50"
                     }`}
                   >
                     {label}
@@ -313,10 +344,16 @@ export default function AutoAuditSettings() {
             disabled={saving || !dirty || !!formError}
             onClick={() => void save()}
           >
+            {saving ? <span className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" /> : <Icon name="check" />}
             {saving ? "กำลังบันทึก…" : "บันทึกการตั้งค่า"}
           </button>
           {dirty && !formError ? <span className="text-sm text-warn-600">ยังไม่ได้บันทึก</span> : null}
-          {formError ? <span className="text-sm text-red-700">✕ {formError}</span> : null}
+          {formError ? (
+            <span className="inline-flex items-center gap-1 text-sm text-red-700">
+              <Icon name="x" size={15} />
+              {formError}
+            </span>
+          ) : null}
           {message ? (
             <span className={message.ok ? "text-emerald-700" : "text-red-700"}>{message.text}</span>
           ) : null}
@@ -324,8 +361,11 @@ export default function AutoAuditSettings() {
       </section>
 
       {/* ── รันเดี๋ยวนี้ ───────────────────────────────────────────────────── */}
-      <section className="card card-pad">
-        <h2 className="text-lg font-semibold">ตรวจเดี๋ยวนี้</h2>
+      <section className="card card-pad animate-rise">
+        <h2 className="flex items-center gap-2.5 text-lg font-semibold">
+          <span className="icon-orb"><Icon name="rocket" /></span>
+          ตรวจเดี๋ยวนี้
+        </h2>
         <p className="mt-1 text-sm text-zinc-600">
           ไม่ต้องรอเวลา — เลือกวันที่ของ visit ที่จะตรวจ (ว่าง = ตามที่ตั้งไว้ด้านบน) ใช้จำนวนต่อรอบเดียวกัน
         </p>
@@ -349,14 +389,18 @@ export default function AutoAuditSettings() {
             disabled={starting || running || !data.hosxpEnabled}
             onClick={() => void runNow()}
           >
-            {running ? "มีรอบกำลังตรวจอยู่…" : starting ? "กำลังเริ่ม…" : "▶ ตรวจเดี๋ยวนี้"}
+            {running || starting ? <span className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" /> : <Icon name="rocket" />}
+            {running ? "มีรอบกำลังตรวจอยู่…" : starting ? "กำลังเริ่ม…" : "ตรวจเดี๋ยวนี้"}
           </button>
         </div>
       </section>
 
       {/* ── ประวัติ ────────────────────────────────────────────────────────── */}
-      <section className="card overflow-hidden">
-        <h2 className="card-title">ประวัติการตรวจอัตโนมัติ</h2>
+      <section className="card animate-rise overflow-hidden">
+        <h2 className="card-title">
+          <span className="icon-orb"><Icon name="clock" /></span>
+          ประวัติการตรวจอัตโนมัติ
+        </h2>
         {data.runs.length === 0 ? (
           <p className="px-5 py-6 text-zinc-500 sm:px-6">ยังไม่เคยรัน</p>
         ) : (
@@ -443,6 +487,43 @@ export default function AutoAuditSettings() {
           </div>
         )}
       </section>
+
+      {/* ── popup เมื่อรอบที่กดรันเพิ่งจบ ─────────────────────────────────── */}
+      <Modal open={!!finished} onClose={() => setFinished(null)} label="รอบตรวจอัตโนมัติจบแล้ว">
+        {finished ? (
+          <>
+            <span
+              className={`mx-auto grid size-14 place-items-center rounded-full ring-8 ${
+                finished.status === "COMPLETED"
+                  ? "bg-emerald-50 text-emerald-600 ring-emerald-50/60"
+                  : "bg-warn-50 text-warn-600 ring-amber-50"
+              }`}
+            >
+              <Icon name={finished.status === "COMPLETED" ? "check" : "alert"} size={28} strokeWidth={2.6} />
+            </span>
+            <h2 className="mt-4 text-2xl font-bold">
+              {finished.status === "COMPLETED" ? "ตรวจอัตโนมัติเสร็จแล้ว!" : "รอบตรวจหยุดกลางทาง"}
+            </h2>
+            <p className="mt-1 text-zinc-500">visit วันที่ {finished.targetDate}</p>
+            <dl className="mt-5 grid grid-cols-3 gap-2">
+              {[
+                { k: "ตรวจแล้ว", v: finished.reviewed, cls: "text-emerald-700" },
+                { k: "ไม่สำเร็จ", v: finished.failed, cls: "text-red-700" },
+                { k: "เฉลี่ย", v: finished.avgPercent === null ? "—" : `${Number(finished.avgPercent).toFixed(1)}%`, cls: "text-brand-700" },
+              ].map((x) => (
+                <div key={x.k} className="rounded-2xl bg-zinc-50 py-3 ring-1 ring-zinc-200">
+                  <dd className={`tabular text-2xl font-bold ${x.cls}`}>{x.v}</dd>
+                  <dt className="text-sm text-zinc-500">{x.k}</dt>
+                </div>
+              ))}
+            </dl>
+            {finished.error ? <p className="alert alert-error mt-4 text-left text-sm">{finished.error}</p> : null}
+            <button type="button" className="btn btn-primary mt-6 w-full" onClick={() => setFinished(null)}>
+              ตกลง
+            </button>
+          </>
+        ) : null}
+      </Modal>
     </div>
   );
 }

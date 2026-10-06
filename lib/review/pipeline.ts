@@ -16,7 +16,7 @@ import { prisma } from "@/lib/prisma";
 import { extractDocument } from "@/lib/documents/extract";
 import { sanitizePHI, totalMasked, isUsableEvidence } from "@/lib/phi/sanitize";
 import { storeDocument } from "@/lib/storage/documents";
-import { getAIProvider } from "@/lib/ai";
+import { AIProviderError, assertAiAvailable, getAIProvider } from "@/lib/ai";
 import { runRuleEngine } from "@/lib/review/rule-engine";
 import type { CriterionInput, ExtractedFacts } from "@/lib/review/types";
 
@@ -85,6 +85,8 @@ async function scoreDocument(input: ScoreDocumentInput): Promise<ReviewResult> {
   const sanitized = sanitizePHI(input.text);
 
   const provider = getAIProvider();
+  // โควตาหมดอยู่ → ไม่สร้าง Review FAILED ทิ้งไว้
+  assertAiAvailable();
 
   const review = await prisma.review.create({
     data: {
@@ -154,7 +156,8 @@ async function scoreDocument(input: ScoreDocumentInput): Promise<ReviewResult> {
     };
   } catch (e) {
     await prisma.review.update({ where: { id: review.id }, data: { status: "FAILED" } });
-    if (e instanceof PipelineError) throw e;
+    // error จาก AI ส่งต่อตามชนิดเดิม — route แยกตอบ 429 (โควตาหมด) / 502 (AI มีปัญหา) ได้
+    if (e instanceof PipelineError || e instanceof AIProviderError) throw e;
     throw new PipelineError(e instanceof Error ? e.message : String(e), "extract-or-score", {
       cause: e,
     });

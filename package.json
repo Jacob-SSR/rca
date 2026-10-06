@@ -14,7 +14,7 @@
     "db:seed": "prisma db seed",
     "test:rules": "tsx scripts/test-rule-engine.ts",
     "test:phi": "tsx scripts/test-phi.ts",
-    "test": "npm run test:rules && npm run test:phi && npm run test:auth && npm run test:form && npm run test:hosxp && npm run test:a1 && npm run test:forms && npm run test:upload && npm run test:auto && npm run test:schedule",
+    "test": "npm run test:rules && npm run test:phi && npm run test:auth && npm run test:form && npm run test:hosxp && npm run test:a1 && npm run test:forms && npm run test:upload && npm run test:auto && npm run test:schedule && npm run test:quota",
     "make:samples": "tsx scripts/make-sample-docs.ts",
     "inspect": "tsx scripts/inspect-docx.ts",
     "test:auth": "tsx scripts/test-auth.ts",
@@ -25,7 +25,8 @@
     "test:upload": "tsx scripts/test-upload.ts",
     "check:conn": "tsx scripts/check-connections.ts",
     "test:auto": "tsx scripts/test-auto-audit.ts",
-    "test:schedule": "tsx scripts/test-auto-schedule.ts"
+    "test:schedule": "tsx scripts/test-auto-schedule.ts",
+    "test:quota": "tsx scripts/test-ai-quota.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -39,6 +40,7 @@
     "dotenv": "^17.4.2",
     "jose": "^6.2.9",
     "mammoth": "^1.12.1",
+    "motion": "^14.0.0",
     "mysql2": "^3.23.3",
     "next": "16.3.1",
     "pdfjs-dist": "^4.10.38",

@@ -20,6 +20,7 @@
 import { useState } from "react";
 import { formatThaiDateShort } from "@/lib/form/thai-date";
 import { classifySearch, parsePatientQuery } from "@/lib/hosxp/search-query";
+import Icon from "@/app/components/Icon";
 
 type Prefill = {
   values: Record<string, string>;
@@ -80,11 +81,13 @@ function StepBadge({ n, done }: { n: number; done: boolean }) {
   return (
     <span
       aria-hidden
-      className={`inline-flex size-7 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${
-        done ? "bg-emerald-600 text-white" : "bg-brand-600 text-white"
+      className={`inline-flex size-8 shrink-0 items-center justify-center rounded-full text-sm font-bold text-on-brand transition-all duration-500 ${
+        done
+          ? "bg-emerald-600 shadow-[0_0_16px_-3px] shadow-emerald-600"
+          : "bg-gradient-to-br from-brand-600 to-cyan-glow shadow-[0_0_16px_-3px] shadow-brand-500"
       }`}
     >
-      {done ? "✓" : n}
+      {done ? <Icon name="check" size={16} strokeWidth={3} /> : n}
     </span>
   );
 }
@@ -300,7 +303,7 @@ export default function HnPrefillBar({ current, disabled, onFill, onClear }: Pro
   const step2Done = result !== null;
 
   return (
-    <section className="card overflow-hidden">
+    <section className="card animate-rise overflow-hidden">
       {/* ── ขั้นที่ 1 : ค้นหา ─────────────────────────────────────────────── */}
       <div className="card-pad bg-brand-50/40">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -315,7 +318,8 @@ export default function HnPrefillBar({ current, disabled, onFill, onClear }: Pro
             onClick={reset}
             title="ล้างทุกช่องในฟอร์ม เพื่อเริ่มตรวจผู้ป่วยรายอื่น"
           >
-            ↺ เริ่มผู้ป่วยรายใหม่
+            <Icon name="plus" size={16} />
+            เริ่มผู้ป่วยรายใหม่
           </button>
         </div>
 
@@ -385,7 +389,7 @@ export default function HnPrefillBar({ current, disabled, onFill, onClear }: Pro
                     setVisits(null);
                   }}
                 >
-                  ✕
+                  <Icon name="x" size={16} />
                 </button>
               ) : null}
             </div>
@@ -403,7 +407,8 @@ export default function HnPrefillBar({ current, disabled, onFill, onClear }: Pro
               disabled={disabled || busy}
               aria-disabled={!!searchBlocker}
             >
-              {busy && !picked ? "กำลังค้นหา…" : "🔍 ค้นหา"}
+              {busy && !picked ? <span className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" /> : <Icon name="search" />}
+              {busy && !picked ? "กำลังค้นหา…" : "ค้นหา"}
             </button>
           </div>
         </form>
@@ -585,7 +590,8 @@ export default function HnPrefillBar({ current, disabled, onFill, onClear }: Pro
         <div className="space-y-3 border-t border-zinc-200 px-5 py-4 sm:px-6">
           <div className="alert alert-ok space-y-1">
             <p>
-              ✓ ดึงข้อมูลมาแล้ว — <strong>ขั้นต่อไป: ตรวจทานทุกช่องด้านล่าง</strong> แก้ได้ทุกช่อง
+              <Icon name="check" className="mr-1 inline" strokeWidth={2.6} />
+              ดึงข้อมูลมาแล้ว — <strong>ขั้นต่อไป: ตรวจทานทุกช่องด้านล่าง</strong> แก้ได้ทุกช่อง
               (เช่น อาการสำคัญต้องมีระยะเวลาจึงได้คะแนนเต็ม)
             </p>
             {result.missing.length > 0 ? (

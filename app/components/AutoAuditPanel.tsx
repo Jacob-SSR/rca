@@ -5,6 +5,7 @@
 
 import { improvementTip } from "@/lib/review/auto-audit";
 import type { RuleEngineResult } from "@/lib/review/types";
+import Icon from "@/app/components/Icon";
 
 type Props = {
   enabled: boolean;
@@ -46,13 +47,13 @@ export function Switch({
         }`}
       >
         <span
-          className={`absolute top-0.5 size-5 rounded-full bg-white shadow transition-all ${
+          className={`absolute top-0.5 size-5 rounded-full bg-on-brand shadow transition-all ${
             checked ? "left-[1.375rem]" : "left-0.5"
           }`}
         />
       </span>
       {label}
-      <span className={`text-sm ${checked ? "text-brand-600" : "text-zinc-500"}`}>
+      <span className={`text-sm ${checked ? "text-brand-400" : "text-zinc-500"}`}>
         {checked ? "เปิด" : "ปิด"}
       </span>
     </button>
@@ -87,7 +88,7 @@ export default function AutoAuditPanel({ enabled, onToggle, result, onJump }: Pr
           <div className="px-5 sm:px-6">
             <div className="h-2 overflow-hidden rounded-full bg-zinc-100">
               <div
-                className="h-full rounded-full bg-brand-600 transition-all"
+                className="h-full rounded-full bg-gradient-to-r from-brand-600 via-brand-500 to-cyan-glow shadow-[0_0_14px_-2px] shadow-brand-500 transition-all duration-700"
                 style={{ width: `${pct ?? 0}%` }}
               />
             </div>
@@ -97,11 +98,11 @@ export default function AutoAuditPanel({ enabled, onToggle, result, onJump }: Pr
             {result.items.map((it) => {
               const tip = improvementTip(it.criterionCode, it.score, it.criterionMaxScore);
               return (
-                <li key={it.criterionCode} className="bg-white">
+                <li key={it.criterionCode} className="bg-surface">
                   <button
                     type="button"
                     onClick={() => onJump(it.criterionCode)}
-                    className="block h-full w-full px-5 py-3 text-left hover:bg-zinc-50 sm:px-6"
+                    className="block h-full w-full px-5 py-3 text-left transition-colors hover:bg-brand-50/40 sm:px-6"
                   >
                     <span className="flex items-center justify-between gap-2">
                       <span className="truncate text-sm font-medium text-zinc-800">
@@ -111,7 +112,12 @@ export default function AutoAuditPanel({ enabled, onToggle, result, onJump }: Pr
                         {it.isNA ? "N/A" : `${it.score}/${it.criterionMaxScore}`}
                       </span>
                     </span>
-                    {tip ? <span className="mt-1 block text-sm text-zinc-500">→ {tip}</span> : null}
+                    {tip ? (
+                      <span className="mt-1 flex items-start gap-1 text-sm text-zinc-500">
+                        <Icon name="arrowRight" size={14} className="mt-1 text-brand-300" />
+                        {tip}
+                      </span>
+                    ) : null}
                   </button>
                 </li>
               );

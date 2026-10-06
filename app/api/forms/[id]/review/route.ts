@@ -9,7 +9,7 @@ import { prisma } from "@/lib/prisma";
 import { generateDocumentFromForm, isFormEmpty } from "@/lib/form/service";
 import { PipelineError, reviewExistingDocument } from "@/lib/review/pipeline";
 import { RuleEngineError } from "@/lib/review/rule-engine";
-import { AIProviderError } from "@/lib/ai";
+import { AIProviderError, AIQuotaError, assertAiAvailable, quotaErrorBody } from "@/lib/ai";
 import { DocxParseError } from "@/lib/docx/parse";
 import { requireCapability } from "@/lib/auth/session";
 import { authErrorResponse } from "@/lib/auth/api";
@@ -39,6 +39,8 @@ export async function POST(_req: NextRequest, ctx: RouteContext<"/api/forms/[id]
   }
 
   try {
+    // โควตา AI หมดอยู่ → บอกทันที ไม่สร้างเคส/เอกสารทิ้งไว้
+    assertAiAvailable();
     const generated = await generateDocumentFromForm(id);
     const result = await reviewExistingDocument(generated.documentId);
 
@@ -49,6 +51,10 @@ export async function POST(_req: NextRequest, ctx: RouteContext<"/api/forms/[id]
   } catch (e) {
     if (e instanceof DocxParseError) {
       return NextResponse.json({ error: e.message }, { status: 422 });
+    }
+    if (e instanceof AIQuotaError) {
+      const { body, init } = quotaErrorBody(e);
+      return NextResponse.json(body, init);
     }
     if (e instanceof AIProviderError) {
       // 502 = ต้นทางฝั่ง AI มีปัญหา ไม่ใช่ผู้ใช้ส่งข้อมูลผิด

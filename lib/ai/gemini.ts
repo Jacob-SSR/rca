@@ -7,8 +7,10 @@
 import { GoogleGenAI } from "@google/genai";
 import { env, requireAiApiKey } from "@/lib/env";
 import { parseExtractedFacts } from "@/lib/ai/facts.schema";
+import { currentQuotaBlock, detectQuotaError, quotaMessage, rememberQuotaBlock } from "@/lib/ai/quota";
 import {
   AIProviderError,
+  AIQuotaError,
   EXTRACT_FACTS_INSTRUCTION,
   EXTRACT_FACTS_JSON_SCHEMA,
   type AIProvider,
@@ -31,6 +33,12 @@ export class GeminiProvider implements AIProvider {
   async extractFacts(sanitizedText: string): Promise<ExtractedFacts> {
     const text = sanitizedText.slice(0, MAX_INPUT_CHARS);
 
+    // รู้อยู่แล้วว่าโควตาหมด → ไม่ต้องยิงไปให้โดน 429 ซ้ำ
+    const blocked = currentQuotaBlock();
+    if (blocked) {
+      throw new AIQuotaError(quotaMessage(blocked), this.name, blocked.scope, blocked.resetAt);
+    }
+
     let raw: string | undefined;
     try {
       const response = await this.client.models.generateContent({
@@ -46,6 +54,12 @@ export class GeminiProvider implements AIProvider {
       });
       raw = response.text;
     } catch (e) {
+      const quota = detectQuotaError(e);
+      if (quota) {
+        rememberQuotaBlock(quota);
+        const block = currentQuotaBlock()!;
+        throw new AIQuotaError(quotaMessage(block), this.name, block.scope, block.resetAt, { cause: e });
+      }
       throw new AIProviderError(
         `เรียก Gemini ไม่สำเร็จ: ${e instanceof Error ? e.message : String(e)}`,
         this.name,
@@ -88,4 +102,18 @@ function stripCodeFence(s: string): string {
     .replace(/^```(?:json)?\s*/i, "")
     .replace(/```$/, "")
     .trim();
+}
+
+/**
+ * ตรวจว่า API key ใช้ได้และ model มีอยู่จริง — ใช้ models.get ซึ่งไม่กินโควตาการสร้างข้อความ
+ * (โควตาคงเหลือ Gemini ไม่มี API ให้ถาม รู้ได้ตอนเรียกจริงแล้วโดน 429 เท่านั้น)
+ */
+export async function probeGemini(model: string = env.AI_MODEL): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const client = new GoogleGenAI({ apiKey: requireAiApiKey() });
+    await client.models.get({ model });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message.slice(0, 300) : String(e) };
+  }
 }

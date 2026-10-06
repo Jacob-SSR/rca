@@ -14,6 +14,8 @@ import { listVisitsByDate, lookupVisit } from "@/lib/hosxp/visit";
 import { recordFormSchema } from "@/lib/form/schema";
 import { generateDocumentFromForm, isFormEmpty, nextCaseNumber } from "@/lib/form/service";
 import { reviewExistingDocument } from "@/lib/review/pipeline";
+import { assertAiAvailable } from "@/lib/ai";
+import { currentQuotaBlock, quotaMessage } from "@/lib/ai/quota";
 import {
   DEFAULT_SETTINGS,
   autoRunKey,
@@ -189,8 +191,16 @@ export async function runAutoAudit(opts: {
     const fresh = visits.filter((v) => !done.has(v.vn));
     skipped = visits.length - fresh.length;
 
+    // โควตา AI หมดอยู่ → ไม่ต้องเริ่ม (บันทึกเหตุผลพร้อมเวลารีเซ็ตไว้ในประวัติรอบ)
+    assertAiAvailable();
+
     for (const v of sample(fresh, settings.maxVisits)) {
       results.push(await auditVisit(v, targetDate));
+
+      // โควตาหมดกลางรอบ → หยุดเลย visit ที่เหลือจะโดน 429 ทุกตัวอยู่ดี
+      const blocked = currentQuotaBlock();
+      if (blocked) throw new Error(`หยุดรอบนี้กลางทาง: ${quotaMessage(blocked)}`);
+
       // อัปเดตความคืบหน้าระหว่างทาง — หน้าตั้งค่าจะเห็นตัวเลขขยับ
       await prisma.autoAuditRun.update({
         where: { id: run.id },

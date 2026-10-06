@@ -14,7 +14,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { env } from "@/lib/env";
 import { DocumentParseError, detectKind } from "@/lib/documents/extract";
-import { AIProviderError } from "@/lib/ai";
+import { AIProviderError, AIQuotaError, assertAiAvailable, quotaErrorBody } from "@/lib/ai";
 import { RuleEngineError } from "@/lib/review/rule-engine";
 import { PipelineError, runReviewPipeline, DEFAULT_CRITERIA_SET_CODE } from "@/lib/review/pipeline";
 import { requireCapability } from "@/lib/auth/session";
@@ -89,6 +89,8 @@ export async function POST(req: NextRequest) {
   const criteriaSetCode = (form.get("criteriaSet") as string | null) || DEFAULT_CRITERIA_SET_CODE;
 
   try {
+    // โควตา AI หมดอยู่ → บอกทันที ไม่สร้างเคส/เอกสารทิ้งไว้
+    assertAiAvailable();
     const caseId = await ensureCase((form.get("caseId") as string | null) || null, session);
     const data = Buffer.from(await file.arrayBuffer());
 
@@ -109,6 +111,10 @@ export async function POST(req: NextRequest) {
     }
     if (e instanceof DocumentParseError) {
       return NextResponse.json({ error: e.message }, { status: 422 });
+    }
+    if (e instanceof AIQuotaError) {
+      const { body, init } = quotaErrorBody(e);
+      return NextResponse.json(body, init);
     }
     if (e instanceof AIProviderError) {
       // 502 = ต้นทางฝั่ง AI มีปัญหา ไม่ใช่ผู้ใช้ส่งข้อมูลผิด

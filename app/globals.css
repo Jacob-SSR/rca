@@ -6,52 +6,212 @@
    ⚠️ ตัวหนังสือต้องใหญ่กว่าเว็บทั่วไป
    ภาษาไทยมีวรรณยุกต์และสระบน-ล่าง ที่ 14px วรรณยุกต์จะติดกันจนอ่านยาก
    ตั้ง html เป็น 18px → ทุก utility ที่อิง rem ของ Tailwind ขยายตาม 12.5%
-   (text-sm = 15.75px, text-base = 18px, text-lg = 20.25px)
 
-   ผู้ใช้จริงคือบุคลากรที่นั่งกรอกเวชระเบียนทั้งวัน อ่านง่ายสำคัญกว่าสวย
+   หลักของธีม
+   - พื้นสว่าง การ์ดขาว ตัวหนังสือเข้ม — อ่านสบายตาทั้งวัน
+   - สีหลักม่วงคราม → ฟ้าน้ำทะเล ใช้แต่พอดี (ปุ่มหลัก หัวข้อ ไฮไลต์)
+   - ฉากหลังเป็นแสงสีพาสเทลเบลอที่ลอยช้ามาก ให้หน้ามีชีวิตแต่ไม่แย่งสายตา
+   - ทุกแอนิเมชันหยุดเมื่อผู้ใช้ตั้ง prefers-reduced-motion
    ───────────────────────────────────────────────────────────────────────────── */
 
 @theme {
-  /* ฟอนต์ไทยที่มีติดเครื่องอยู่แล้ว ไม่ต้องโหลดจากเน็ต
-     → build ไม่พึ่ง network และหน้าไม่กระพริบตอนโหลดฟอนต์ */
   --font-sans:
     "Noto Sans Thai", "IBM Plex Sans Thai", "Sarabun", "Leelawadee UI", "Prompt",
     -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-
   --font-mono: "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
 
-  /* สีหลัก — น้ำเงินอมเขียว อ่านสบายตา ไม่ฉูดฉาดแบบระบบราชการทั่วไป */
-  --color-brand-50: #eef6f7;
-  --color-brand-100: #d6eaed;
-  --color-brand-200: #aed6dc;
-  --color-brand-500: #17788a;
-  --color-brand-600: #12626f;
-  --color-brand-700: #0e4c56;
+  /* โทนกลางอมม่วงนิดๆ ให้เข้ากับสีหลัก */
+  --color-zinc-50: #f7f8fc;
+  --color-zinc-100: #eff1f8;
+  --color-zinc-200: #e1e4f0;
+  --color-zinc-300: #c9cee2;
+  --color-zinc-400: #8a90ad;
+  --color-zinc-500: #646a8a;
+  --color-zinc-600: #4b5175;
+  --color-zinc-700: #383d5e;
+  --color-zinc-800: #252945;
+  --color-zinc-900: #161a30;
+
+  --color-surface: #ffffff;
+  --color-on-brand: #ffffff;
+
+  /* สีหลัก — เขียวมิ้นต์
+     มิ้นต์เป็นสีอ่อน ตัวหนังสือสีขาววางบนมิ้นต์จะอ่านยาก (contrast ต่ำ)
+     → ปุ่มหลักใช้พื้นมิ้นต์ + ตัวหนังสือเขียวเข้ม, ลิงก์/ตัวหนังสือใช้เฉดเข้ม (600–700) */
+  --color-brand-50: #ecfbf5;
+  --color-brand-100: #d3f6e9;
+  --color-brand-200: #a6ecd4;
+  --color-brand-300: #5fd8b1;
+  --color-brand-400: #12946e;
+  --color-brand-500: #2bcc9b;
+  --color-brand-600: #0b8a65;
+  --color-brand-700: #076a4e;
+  --color-brand-ink: #04392a;
+  --color-cyan-glow: #22c1c3;
+  --color-pink-glow: #f05aa8;
 
   /* สีสถานะคะแนน */
-  --color-good-50: #ecfdf5;
-  --color-good-600: #059669;
-  --color-warn-50: #fffbeb;
-  --color-warn-600: #d97706;
-  --color-bad-50: #fef2f2;
-  --color-bad-600: #dc2626;
+  --color-good-50: #e9faf2;
+  --color-good-600: #078a5c;
+  --color-warn-50: #fff5e0;
+  --color-warn-600: #b25e00;
+  --color-bad-50: #ffeef2;
+  --color-bad-600: #d01f4b;
+
+  --animate-rise: rise 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-float: float 6s ease-in-out infinite;
+  --animate-pulse-ring: pulse-ring 2.4s ease-out infinite;
 }
 
 html {
-  /* ตัวคูณหลักของทั้งระบบ — ปรับตรงนี้จุดเดียวถ้าอยากใหญ่/เล็กกว่านี้ */
   font-size: 18px;
+  scroll-behavior: smooth;
 }
 
 body {
   font-family: var(--font-sans);
-  /* ภาษาไทยต้องการระยะบรรทัดมากกว่าปกติ ไม่งั้นวรรณยุกต์บรรทัดบนชนสระบรรทัดล่าง */
   line-height: 1.7;
   -webkit-font-smoothing: antialiased;
+  background: #f4f5fb;
+  color: var(--color-zinc-900);
 }
 
-/* ตัวเลขเรียงตรงคอลัมน์ในตารางคะแนน */
+::selection {
+  background: var(--color-brand-200);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-zinc-300) transparent;
+}
+
 .tabular {
   font-variant-numeric: tabular-nums;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ฉากหลัง — ก้อนแสงพาสเทล 3 ก้อนลอยช้าๆ + ลายจุดจางๆ (CSS ล้วน เบาเครื่อง)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 1px 1px, rgba(16, 150, 110, 0.1) 1px, transparent 0) 0 0 / 26px 26px,
+    linear-gradient(180deg, #f7f7fd 0%, #f1f3fa 100%);
+}
+
+.blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.55;
+  will-change: transform;
+}
+
+.blob-a {
+  width: 42vmax;
+  height: 42vmax;
+  left: -12vmax;
+  top: -14vmax;
+  background: #bff2de;
+  animation: drift-a 26s ease-in-out infinite alternate;
+}
+
+.blob-b {
+  width: 36vmax;
+  height: 36vmax;
+  right: -10vmax;
+  top: 10vh;
+  background: #c4f0f1;
+  animation: drift-b 32s ease-in-out infinite alternate;
+}
+
+.blob-c {
+  width: 30vmax;
+  height: 30vmax;
+  left: 30vw;
+  bottom: -16vmax;
+  background: #e3f7c9;
+  opacity: 0.45;
+  animation: drift-a 38s ease-in-out infinite alternate-reverse;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   คีย์เฟรม
+   ───────────────────────────────────────────────────────────────────────────── */
+
+@keyframes drift-a {
+  from { transform: translate(0, 0) scale(1); }
+  to { transform: translate(8vw, 6vh) scale(1.12); }
+}
+
+@keyframes drift-b {
+  from { transform: translate(0, 0) scale(1.05); }
+  to { transform: translate(-9vw, 8vh) scale(0.95); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes shimmer {
+  from { transform: translateX(-120%) skewX(-20deg); }
+  to { transform: translateX(220%) skewX(-20deg); }
+}
+
+@keyframes skeleton {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+@keyframes pulse-ring {
+  0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-brand-500) 45%, transparent); }
+  80%, 100% { box-shadow: 0 0 0 14px transparent; }
+}
+
+@keyframes gradient-pan {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+
+@keyframes bar-grow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+/* แถบความคืบหน้าแบบไม่รู้ปลายทาง (รอ AI) */
+@keyframes indeterminate {
+  0% { left: -40%; width: 40%; }
+  60% { left: 100%; width: 60%; }
+  100% { left: 100%; width: 60%; }
+}
+
+/* เส้นสแกนวิ่งลงบนเอกสาร */
+@keyframes scan {
+  0% { top: 8%; }
+  50% { top: 86%; }
+  100% { top: 8%; }
+}
+
+/* บรรทัดในเอกสารค่อยๆ ถูก "อ่าน" */
+@keyframes line-fill {
+  0%, 15% { transform: scaleX(0); }
+  45%, 100% { transform: scaleX(1); }
+}
+
+/* วงแหวนคะแนน — เริ่มจากว่างแล้ววาดจนถึงค่าจริง */
+@keyframes ring-draw {
+  from { stroke-dashoffset: var(--ring-c); }
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -59,8 +219,31 @@ body {
    ───────────────────────────────────────────────────────────────────────────── */
 
 @layer components {
+  /* การ์ด — ขาว ขอบบาง เงานุ่ม + แสงจางๆ ตามเมาส์ */
   .card {
-    @apply rounded-xl border border-zinc-200 bg-white shadow-sm;
+    position: relative;
+    border-radius: 1.1rem;
+    border: 1px solid var(--color-zinc-200);
+    background:
+      radial-gradient(
+        480px circle at var(--mx, -999px) var(--my, -999px),
+        color-mix(in oklab, var(--color-brand-500) 7%, transparent),
+        transparent 45%
+      ),
+      var(--color-surface);
+    box-shadow:
+      0 1px 2px rgba(22, 26, 48, 0.04),
+      0 12px 32px -18px rgba(10, 90, 70, 0.22);
+    transition: border-color 0.25s, box-shadow 0.25s, transform 0.25s;
+  }
+
+  /* การ์ดที่กดได้ทั้งใบ — ยกขึ้นเล็กน้อย */
+  .card-hover:hover {
+    transform: translateY(-3px);
+    border-color: var(--color-brand-200);
+    box-shadow:
+      0 1px 2px rgba(22, 26, 48, 0.04),
+      0 22px 44px -20px rgba(16, 150, 110, 0.38);
   }
 
   .card-pad {
@@ -68,27 +251,78 @@ body {
   }
 
   .card-title {
-    @apply border-b border-zinc-200 px-5 py-4 text-lg font-semibold sm:px-6;
+    @apply flex items-center gap-2.5 border-b border-zinc-200 px-5 py-4 text-lg font-semibold sm:px-6;
+  }
+
+  /* ไอคอนในกรอบสี — ใช้หน้าหัวข้อ */
+  .icon-orb {
+    @apply inline-grid shrink-0 place-items-center rounded-xl text-brand-600;
+    width: 2.4rem;
+    height: 2.4rem;
+    background: linear-gradient(140deg, var(--color-brand-50), #e2f8f8);
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-brand-200) 70%, transparent);
+  }
+
+  .icon-orb-lg {
+    width: 3.2rem;
+    height: 3.2rem;
+    border-radius: 0.95rem;
   }
 
   /* ── ปุ่ม ── ขนาดใหญ่พอกดด้วยนิ้วบนแท็บเล็ตได้ */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-zinc-300
-           bg-white px-5 py-2.5 text-base font-medium text-zinc-800 transition
-           hover:bg-zinc-50 focus-visible:outline-2 focus-visible:outline-offset-2
-           focus-visible:outline-brand-500 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply relative inline-flex items-center justify-center gap-2 overflow-hidden rounded-xl
+           border border-zinc-300 bg-white px-5 py-2.5 text-base font-medium text-zinc-800
+           shadow-[0_1px_2px_rgba(22,26,48,0.05)] transition duration-200
+           hover:-translate-y-px hover:border-brand-300 hover:bg-brand-50/50 hover:text-brand-700
+           active:translate-y-0 active:scale-[0.98]
+           focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500
+           disabled:pointer-events-none disabled:opacity-50;
   }
 
   .btn-primary {
-    @apply border-brand-600 bg-brand-600 text-white hover:bg-brand-700;
+    @apply border-transparent font-semibold text-brand-ink;
+    background: linear-gradient(110deg, #3fe0ae 0%, #5ee8c0 45%, #3cd3d1 100%);
+    background-size: 200% 100%;
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.35),
+      0 8px 22px -10px rgba(16, 150, 110, 0.75);
+    animation: gradient-pan 8s ease infinite;
+  }
+
+  .btn-primary:hover {
+    @apply border-transparent text-brand-ink;
+    background-color: transparent;
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.45),
+      0 12px 28px -10px rgba(16, 150, 110, 0.9);
+  }
+
+  /* แสงวาบวิ่งผ่านปุ่มหลักตอนชี้ */
+  .btn-primary::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    width: 40%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+    transform: translateX(-120%) skewX(-20deg);
+    pointer-events: none;
+  }
+
+  .btn-primary:hover::after {
+    animation: shimmer 0.9s ease;
   }
 
   .btn-sm {
-    @apply px-3 py-1.5 text-sm;
+    @apply rounded-lg px-3 py-1.5 text-sm;
+  }
+
+  .btn-ghost {
+    @apply border-transparent bg-transparent shadow-none hover:bg-zinc-100;
   }
 
   .btn-danger {
-    @apply border-red-300 text-red-700 hover:bg-red-50;
+    @apply border-red-200 text-red-700 hover:border-red-300 hover:bg-red-50 hover:text-red-700;
   }
 
   /* ── ช่องกรอก ── */
@@ -101,14 +335,19 @@ body {
   }
 
   .input {
-    @apply w-full rounded-lg border border-zinc-300 bg-white px-3.5 py-2.5 text-base
-           text-zinc-900 transition placeholder:text-zinc-400
-           focus:border-brand-500 focus:outline-2 focus:outline-offset-0
-           focus:outline-brand-500/30 disabled:bg-zinc-50 disabled:text-zinc-500;
+    @apply w-full rounded-xl border border-zinc-300 bg-white px-3.5 py-2.5 text-base
+           text-zinc-900 transition duration-200 placeholder:text-zinc-400
+           hover:border-zinc-400
+           focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-500/15
+           disabled:bg-zinc-50 disabled:text-zinc-500;
   }
 
   textarea.input {
     @apply leading-relaxed;
+  }
+
+  select.input {
+    @apply cursor-pointer;
   }
 
   /* ── ตาราง ── */
@@ -118,11 +357,15 @@ body {
 
   .table thead th {
     @apply border-b border-zinc-200 bg-zinc-50 px-5 py-3 text-left text-sm
-           font-semibold tracking-wide text-zinc-600;
+           font-semibold tracking-wide whitespace-nowrap text-zinc-500;
   }
 
   .table tbody td {
     @apply border-b border-zinc-100 px-5 py-3.5 align-top;
+  }
+
+  .table tbody tr {
+    @apply transition-colors duration-150;
   }
 
   .table tbody tr:last-child td {
@@ -130,38 +373,142 @@ body {
   }
 
   .table tbody tr:hover {
-    @apply bg-zinc-50/60;
+    background: linear-gradient(90deg, var(--color-brand-50), transparent 75%);
+  }
+
+  .table tfoot td {
+    @apply px-5 py-3.5;
   }
 
   /* ── ป้ายกำกับ ── */
   .badge {
-    @apply inline-flex items-center rounded-md bg-zinc-100 px-2 py-0.5 text-sm
-           font-medium text-zinc-600;
+    @apply inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2.5 py-0.5 text-sm
+           font-medium text-zinc-600 ring-1 ring-zinc-200 ring-inset;
   }
 
   .badge-brand {
-    @apply bg-brand-50 text-brand-700;
+    @apply bg-brand-50 text-brand-700 ring-brand-200;
   }
 
   .link {
-    @apply text-brand-600 underline decoration-brand-200 underline-offset-2
-           hover:decoration-brand-500;
+    @apply text-brand-600 underline decoration-brand-200 decoration-1 underline-offset-4
+           transition-colors hover:text-brand-700 hover:decoration-brand-500;
+  }
+
+  /* ลิงก์ย้อนกลับ — ลูกศรขยับตอนชี้ */
+  .back-link {
+    @apply inline-flex items-center gap-1.5 rounded-full bg-white/70 px-3 py-1 text-sm font-medium text-zinc-600
+           ring-1 ring-zinc-200 transition hover:bg-white hover:text-brand-700;
+  }
+
+  .back-link svg {
+    @apply transition-transform;
+  }
+
+  .back-link:hover svg {
+    transform: translateX(-3px);
   }
 
   /* ── กล่องข้อความแจ้งเตือน ── */
   .alert {
-    @apply rounded-lg px-4 py-3 text-base;
+    @apply rounded-xl px-4 py-3 text-base ring-1 ring-inset;
   }
 
   .alert-error {
-    @apply bg-red-50 text-red-800;
+    @apply bg-red-50 text-red-800 ring-red-200;
   }
 
   .alert-ok {
-    @apply bg-emerald-50 text-emerald-800;
+    @apply bg-emerald-50 text-emerald-800 ring-emerald-200;
   }
 
   .alert-info {
-    @apply bg-brand-50 text-brand-700;
+    @apply bg-brand-50 text-brand-700 ring-brand-200;
   }
+
+  /* ── หัวข้อไล่สี ── */
+  .text-gradient {
+    background: linear-gradient(100deg, #064d39 0%, #0b9a70 45%, #13a9ab 100%);
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: gradient-pan 10s ease infinite;
+  }
+
+  /* ── ลิงก์เมนูด้านบน ── */
+  .nav-link {
+    @apply relative inline-flex items-center gap-2 rounded-full px-3.5 py-2 text-base font-medium
+           whitespace-nowrap text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-900;
+  }
+
+  .nav-link[aria-current="page"] {
+    @apply bg-brand-50 text-brand-700 ring-1 ring-brand-200;
+  }
+
+  /* ── แถบคะแนน — โตจากซ้ายตอนโหลด ── */
+  .bar-fill {
+    transform-origin: left;
+    animation: bar-grow 1.1s cubic-bezier(0.2, 0.8, 0.2, 1) both 0.2s;
+  }
+
+  /* ── โครงรอโหลด (skeleton) ── */
+  .skeleton {
+    @apply rounded-lg;
+    background: linear-gradient(90deg, var(--color-zinc-100) 25%, var(--color-zinc-50) 50%, var(--color-zinc-100) 75%);
+    background-size: 200% 100%;
+    animation: skeleton 1.4s ease-in-out infinite;
+  }
+
+  /* ── ลำดับการปรากฏ: ลูกแต่ละตัวลอยขึ้นต่อกัน ── */
+  .stagger > * {
+    animation: rise 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  }
+
+  .stagger > *:nth-child(1) { animation-delay: 0.02s; }
+  .stagger > *:nth-child(2) { animation-delay: 0.08s; }
+  .stagger > *:nth-child(3) { animation-delay: 0.14s; }
+  .stagger > *:nth-child(4) { animation-delay: 0.2s; }
+  .stagger > *:nth-child(5) { animation-delay: 0.26s; }
+  .stagger > *:nth-child(6) { animation-delay: 0.32s; }
+  .stagger > *:nth-child(7) { animation-delay: 0.38s; }
+  .stagger > *:nth-child(8) { animation-delay: 0.44s; }
+  .stagger > *:nth-child(n + 9) { animation-delay: 0.5s; }
+}
+
+/* ช่อง <details> เปิดแบบนุ่มๆ */
+details[open] > :not(summary) {
+  animation: rise 0.35s ease both;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   เคารพผู้ที่ไม่ต้องการการเคลื่อนไหว
+   ───────────────────────────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ประกายบนโลโก้ — วิ่งผ่านทุก 5 วินาที */
+.logo-shine {
+  background: linear-gradient(110deg, transparent 35%, rgba(255, 255, 255, 0.55) 50%, transparent 65%);
+  background-size: 250% 100%;
+  animation: logo-shine 5s ease-in-out infinite;
+}
+
+@keyframes logo-shine {
+  0%, 70% { background-position: 150% 0; }
+  100% { background-position: -100% 0; }
+}
+
+/* ดาวกระดาษสีโปรยตอนตรวจเสร็จ */
+@keyframes confetti-fall {
+  0% { transform: translate(0, 0) rotate(0deg); opacity: 1; }
+  100% { transform: translate(var(--dx), 420px) rotate(var(--rot)); opacity: 0; }
 }

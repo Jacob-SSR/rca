@@ -7,6 +7,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Icon from "@/app/components/Icon";
 
 type Props = {
   caseId: string;
@@ -107,6 +108,7 @@ export default function CaseActions({ caseId, caseNumber, initialTitle }: Props)
             />
           </div>
           <button type="button" className="btn btn-primary" disabled={busy} onClick={save}>
+            <Icon name="check" />
             {busy ? "กำลังบันทึก…" : "บันทึก"}
           </button>
           <button
@@ -125,6 +127,7 @@ export default function CaseActions({ caseId, caseNumber, initialTitle }: Props)
       ) : (
         <div className="flex flex-wrap gap-2">
           <button type="button" className="btn btn-sm" onClick={() => setEditing(true)}>
+            <Icon name="pencil" size={16} />
             แก้ชื่อเรื่อง
           </button>
           <button
@@ -133,6 +136,7 @@ export default function CaseActions({ caseId, caseNumber, initialTitle }: Props)
             disabled={busy}
             onClick={remove}
           >
+            <Icon name="trash" size={16} />
             ลบเคสนี้
           </button>
         </div>

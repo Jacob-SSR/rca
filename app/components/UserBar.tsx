@@ -1,5 +1,5 @@
 // app/components/UserBar.tsx
-// แถบผู้ใช้มุมขวาบน — ชื่อ, สิทธิ์, ปุ่มออกจากระบบ
+// แถบผู้ใช้มุมขวาบน — อวตาร, ชื่อ, สิทธิ์, ปุ่มออกจากระบบ
 //
 // เป็น server component ได้เพราะปุ่มออกจากระบบใช้ Server Action
 // (ลบ cookie แล้ว redirect ฝั่ง server — ไม่ต้องมี state ฝั่ง client)
@@ -13,11 +13,19 @@ type Props = {
 };
 
 export default function UserBar({ name, role }: Props) {
+  const initial = name.trim().charAt(0) || "?";
   return (
-    <div className="flex items-center gap-3">
-      <div className="hidden text-right leading-tight sm:block">
-        <div className="text-base font-medium">{name}</div>
-        <div className="text-sm text-zinc-500">{role}</div>
+    <div className="flex items-center gap-2.5 border-l border-zinc-200 pl-2.5 sm:ml-1 sm:pl-3">
+      <span
+        aria-hidden
+        className="relative grid size-10 shrink-0 place-items-center rounded-full bg-gradient-to-br from-brand-500 to-cyan-glow text-base font-bold text-on-brand shadow-md shadow-brand-500/30"
+      >
+        {initial}
+        <span className="absolute -right-0.5 -bottom-0.5 size-3 rounded-full bg-emerald-500 ring-2 ring-white" />
+      </span>
+      <div className="hidden max-w-40 text-left leading-tight lg:block">
+        <div className="truncate text-base font-medium">{name}</div>
+        <div className="truncate text-sm text-zinc-500">{role}</div>
       </div>
       <form action={logoutAction}>
         <LogoutButton />

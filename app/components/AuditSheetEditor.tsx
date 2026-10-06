@@ -26,6 +26,7 @@ import {
 } from "@/lib/audit-forms/compute";
 import { suggestIcdResult } from "@/lib/audit-forms/icd-compare";
 import IcdPullBar from "@/app/components/IcdPullBar";
+import Icon from "@/app/components/Icon";
 
 type Props = {
   form: AuditFormDef;
@@ -143,9 +144,9 @@ export default function AuditSheetEditor({
   return (
     <div className="space-y-6">
       {/* ── หัวฟอร์ม ─────────────────────────────────────────────────────── */}
-      <section className="card card-pad">
+      <section className="card card-pad animate-rise">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h1 className="text-2xl font-semibold">
+          <h1 className="text-gradient text-2xl font-bold">
             Form {form.code} — {form.title}
           </h1>
           <span className="badge badge-brand">{form.scope}</span>
@@ -194,7 +195,10 @@ export default function AuditSheetEditor({
       {/* ── ตาราง ────────────────────────────────────────────────────────── */}
       <section className="card overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 px-5 py-4 sm:px-6">
-          <h2 className="text-lg font-semibold">ตารางบันทึกผล ({rows.length} แถว)</h2>
+          <h2 className="flex items-center gap-2.5 text-lg font-semibold">
+            <span className="icon-orb"><Icon name="grid" /></span>
+            ตารางบันทึกผล <span className="badge tabular">{rows.length} แถว</span>
+          </h2>
           {canEdit ? (
             <div className="flex flex-wrap gap-2">
               {pendingSuggestions.length > 0 ? (
@@ -282,7 +286,7 @@ export default function AuditSheetEditor({
                           setSaved(false);
                         }}
                       >
-                        ✕
+                        <Icon name="trash" size={16} />
                       </button>
                     </td>
                   ) : null}
@@ -309,7 +313,10 @@ export default function AuditSheetEditor({
       {/* ── บรรทัดสรุป ───────────────────────────────────────────────────── */}
       {summary.kind !== "none" ? (
         <section className="card card-pad">
-          <h2 className="text-lg font-semibold">สรุปผลการตรวจ</h2>
+          <h2 className="flex items-center gap-2.5 text-lg font-semibold">
+            <span className="icon-orb"><Icon name="chart" /></span>
+            สรุปผลการตรวจ
+          </h2>
 
           {summary.kind === "score" ? (
             <div className="mt-3 flex flex-wrap gap-x-10 gap-y-2 text-lg">
@@ -364,17 +371,24 @@ export default function AuditSheetEditor({
 
       {/* ── ปุ่ม ─────────────────────────────────────────────────────────── */}
       {error ? <p className="alert alert-error whitespace-pre-line">{error}</p> : null}
-      {saved ? <p className="alert alert-ok">บันทึกแล้ว</p> : null}
+      {saved ? (
+        <p className="alert alert-ok animate-rise flex items-center gap-2">
+          <Icon name="check" strokeWidth={2.6} />
+          บันทึกแล้ว
+        </p>
+      ) : null}
 
       <div className="flex flex-wrap items-center gap-3">
         {canEdit ? (
           <button type="button" className="btn btn-primary" onClick={save} disabled={saving}>
+            {saving ? <span className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" /> : <Icon name="check" />}
             {saving ? "กำลังบันทึก…" : "บันทึก"}
           </button>
         ) : null}
 
         {sheetId ? (
           <a href={`/api/sheets/${sheetId}/export`} className="btn">
+            <Icon name="download" />
             ดาวน์โหลด .docx
           </a>
         ) : (
@@ -383,6 +397,7 @@ export default function AuditSheetEditor({
 
         {canEdit && sheetId ? (
           <button type="button" className="btn btn-danger ml-auto" onClick={remove}>
+            <Icon name="trash" />
             ลบแผ่นงาน
           </button>
         ) : null}

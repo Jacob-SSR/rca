@@ -6,6 +6,8 @@ import { prisma } from "@/lib/prisma";
 import RecordFormEditor from "@/app/components/RecordFormEditor";
 import ScoreBadge from "@/app/components/ScoreBadge";
 import type { RecordFormInput } from "@/lib/form/schema";
+import PageHeader from "@/app/components/PageHeader";
+import Icon from "@/app/components/Icon";
 
 export const dynamic = "force-dynamic";
 
@@ -41,20 +43,24 @@ export default async function FormPage({ params }: PageProps<"/forms/[id]">) {
 
   return (
     <div className="space-y-5">
-      <div>
-        <Link href={`/cases/${form.caseId}`} className="link text-base">
-          ← กลับไปที่เคส {form.case.caseNumber}
-        </Link>
-        <h1 className="mt-3 text-2xl font-semibold">แก้ไขบันทึกเวชระเบียน</h1>
-        <p className="mt-1 text-sm text-zinc-500">
-          แก้ล่าสุด {thaiDate(form.updatedAt)}
-          {form.source === "hosxp" ? " · ข้อมูลตั้งต้นจาก HOSxP" : ""}
-        </p>
-      </div>
+      <PageHeader
+        icon="pencil"
+        back={{ href: `/cases/${form.caseId}`, label: `กลับไปที่เคส ${form.case.caseNumber}` }}
+        title="แก้ไขบันทึกเวชระเบียน"
+        subtitle={
+          <span className="inline-flex flex-wrap items-center gap-2 text-sm">
+            <Icon name="clock" size={16} /> แก้ล่าสุด {thaiDate(form.updatedAt)}
+            {form.source === "hosxp" ? <span className="badge badge-brand">ข้อมูลตั้งต้นจาก HOSxP</span> : null}
+          </span>
+        }
+      />
 
       {form.documents.length > 0 ? (
-        <section className="card overflow-hidden">
-          <h2 className="card-title">เอกสารที่สร้างจากฟอร์มนี้</h2>
+        <section className="card animate-rise overflow-hidden">
+          <h2 className="card-title">
+            <span className="icon-orb"><Icon name="fileText" /></span>
+            เอกสารที่สร้างจากฟอร์มนี้
+          </h2>
           <div className="overflow-x-auto">
             <table className="table">
               <thead>
@@ -95,7 +101,8 @@ export default async function FormPage({ params }: PageProps<"/forms/[id]">) {
             </table>
           </div>
           <div className="border-t border-zinc-200 px-5 py-4 sm:px-6">
-            <a href={`/api/forms/${form.id}/generate`} className="link">
+            <a href={`/api/forms/${form.id}/generate`} className="btn btn-sm">
+              <Icon name="download" />
               ดาวน์โหลดเอกสารฉบับล่าสุด (.docx)
             </a>
           </div>

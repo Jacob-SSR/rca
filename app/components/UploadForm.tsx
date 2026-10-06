@@ -6,8 +6,9 @@
 // ถ้าเลือกชนิดที่อ่านไม่ได้ ฝั่งเซิร์ฟเวอร์จะตอบกลับมาว่าต้องแปลงเป็นอะไรก่อน
 // — บอกตอนกดส่งดีกว่าไปกรองที่ accept แล้วผู้ใช้งงว่าทำไมเลือกไฟล์ไม่ได้
 
-import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
+import Icon from "@/app/components/Icon";
+import ReviewDialogs, { readReviewResponse, type ReviewOutcome } from "@/app/components/ReviewDialogs";
 
 type Props = {
   /** ถ้าส่งมา = อัปโหลดเข้าเคสเดิม, ไม่ส่ง = ให้ API สร้างเคสใหม่ */
@@ -15,19 +16,17 @@ type Props = {
 };
 
 export default function UploadForm({ caseId }: Props) {
-  const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [warnings, setWarnings] = useState<string[]>([]);
-  const [reviewId, setReviewId] = useState<string | null>(null);
+  const [outcome, setOutcome] = useState<ReviewOutcome | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
-
-    setWarnings([]);
-    setReviewId(null);
+    setOutcome(null);
 
     const form = new FormData(e.currentTarget);
     const file = form.get("file");
@@ -40,27 +39,20 @@ export default function UploadForm({ caseId }: Props) {
     setBusy(true);
     try {
       const res = await fetch("/api/review", { method: "POST", body: form });
-      const json = await res.json();
+      const json = await res.json().catch(() => null);
 
-      if (!res.ok) {
-        setError(json?.error ?? `เกิดข้อผิดพลาด (${res.status})`);
+      // ตรวจเสร็จ → popup คะแนน (มีคำเตือนตอนอ่านไฟล์ก็แสดงใน popup ก่อนกดไปดูผล)
+      // โควตา AI หมด → popup นับถอยหลังถึงเวลารีเซ็ต
+      const r = readReviewResponse(res, json);
+      if (r.kind === "error") {
+        setError(r.message);
         return;
       }
-
-      // ⚠️ มีคำเตือนตอนอ่านไฟล์ (เช่น PDF ที่ระบบต้องซ่อมวรรณยุกต์ให้) →
-      //    ไม่เด้งไปหน้าคะแนนทันที ให้ผู้ใช้อ่านคำเตือนก่อนแล้วค่อยกดเอง
-      //    ถ้าเด้งไปเลย คำเตือนจะหายไปพร้อมหน้านี้ แล้วคนจะเชื่อคะแนนโดยไม่รู้ที่มา
-      const warns: string[] = Array.isArray(json?.extractWarnings) ? json.extractWarnings : [];
-      if (warns.length > 0) {
-        setWarnings(warns);
-        setReviewId(json.reviewId);
-        return;
+      setOutcome(r);
+      if (r.kind === "done") {
+        setFileName(null);
+        if (inputRef.current) inputRef.current.value = "";
       }
-
-      // ห้ามตาม refresh() ทันที — มันจะ re-render route ปัจจุบันแล้วยกเลิก push นี้
-      // (ดูคอมเมนต์ใน LoginForm) หน้าปลายทางเป็น force-dynamic และเป็น id ใหม่
-      // จึงไม่มีของเก่าใน Router Cache ให้ต้อง refresh อยู่แล้ว
-      router.push(`/reviews/${json.reviewId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "เชื่อมต่อไม่สำเร็จ");
     } finally {
@@ -69,9 +61,14 @@ export default function UploadForm({ caseId }: Props) {
   }
 
   return (
-    <form onSubmit={onSubmit} className="card card-pad flex flex-col">
-      <h2 className="text-xl font-semibold">อัปโหลดเอกสารที่มีอยู่แล้ว</h2>
-      <p className="mt-2 text-zinc-600">
+    <form onSubmit={onSubmit} className="card card-pad card-hover group flex flex-col">
+      <div className="flex items-center gap-3">
+        <span className="icon-orb icon-orb-lg transition-transform duration-500 group-hover:rotate-6 group-hover:scale-110">
+          <Icon name="upload" size={26} />
+        </span>
+        <h2 className="text-xl font-semibold">อัปโหลดเอกสารที่มีอยู่แล้ว</h2>
+      </div>
+      <p className="mt-3 text-zinc-600">
         เลือกไฟล์อะไรก็ได้ ระบบจะปิดบังข้อมูลระบุตัวบุคคล (ชื่อ, HN,
         เลขบัตรประชาชน, ที่อยู่, เบอร์โทร) ก่อนส่งเข้าประมวลผลเสมอ
       </p>
@@ -80,8 +77,32 @@ export default function UploadForm({ caseId }: Props) {
         และไฟล์ข้อความ · ไฟล์รูปหรือ PDF ที่สแกนเป็นรูปยังอ่านไม่ได้ (ระบบไม่มี OCR)
       </p>
 
-      <label className="mt-4 flex cursor-pointer items-center justify-center gap-3 rounded-lg border-2 border-dashed border-zinc-300 px-4 py-6 text-center transition hover:border-brand-500 hover:bg-brand-50/40">
+      {/* ลากไฟล์มาวางได้ หรือคลิกเลือก */}
+      <label
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragging(false);
+          const files = e.dataTransfer.files;
+          if (files.length > 0 && inputRef.current) {
+            inputRef.current.files = files;
+            setFileName(files[0].name);
+          }
+        }}
+        className={`mt-4 flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed px-4 py-6 text-center transition duration-300 ${
+          dragging
+            ? "scale-[1.02] border-brand-500 bg-brand-50/70 shadow-[0_0_40px_-10px] shadow-brand-500"
+            : fileName
+              ? "border-emerald-600/60 bg-emerald-50/50"
+              : "border-zinc-300 hover:border-brand-500 hover:bg-brand-50/40"
+        }`}
+      >
         <input
+          ref={inputRef}
           type="file"
           name="file"
           // ไม่จำกัดชนิดที่นี่ — ให้เลือกได้ทุกไฟล์แล้วไปบอกเหตุผลตอนส่ง
@@ -89,30 +110,35 @@ export default function UploadForm({ caseId }: Props) {
           disabled={busy}
           onChange={(e) => setFileName(e.target.files?.[0]?.name ?? null)}
         />
-        <span className={fileName ? "font-medium text-zinc-800" : "text-zinc-500"}>
-          {fileName ?? "คลิกเพื่อเลือกไฟล์"}
+        <span
+          className={`grid size-11 place-items-center rounded-full transition ${
+            fileName ? "bg-emerald-600 text-on-brand" : "bg-zinc-100 text-brand-400 group-hover:animate-bounce"
+          }`}
+        >
+          <Icon name={fileName ? "fileText" : "upload"} size={22} />
+        </span>
+        <span className={fileName ? "font-medium break-all text-zinc-800" : "text-zinc-500"}>
+          {fileName ?? (dragging ? "ปล่อยไฟล์ตรงนี้เลย" : "คลิกเพื่อเลือกไฟล์ หรือลากมาวาง")}
         </span>
       </label>
 
       <button type="submit" disabled={busy} className="btn btn-primary mt-4 self-start">
+        {busy ? (
+          <span className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+        ) : (
+          <Icon name="sparkles" />
+        )}
         {busy ? "กำลังตรวจ… (อาจใช้เวลาสักครู่)" : "ตรวจเอกสาร"}
       </button>
 
-      {error ? <p className="alert alert-error mt-4">{error}</p> : null}
-
-      {warnings.length > 0 && reviewId ? (
-        <div className="alert alert-info mt-4 space-y-2">
-          <p className="font-medium">ตรวจเสร็จแล้ว แต่มีเรื่องต้องรู้ก่อนดูคะแนน</p>
-          <ul className="list-inside list-disc space-y-1">
-            {warnings.map((w) => (
-              <li key={w}>{w}</li>
-            ))}
-          </ul>
-          <a href={`/reviews/${reviewId}`} className="btn btn-sm btn-primary">
-            ดูผลตรวจ
-          </a>
-        </div>
+      {error ? (
+        <p role="alert" className="alert alert-error animate-rise mt-4 flex items-start gap-2">
+          <Icon name="alert" className="mt-1" />
+          {error}
+        </p>
       ) : null}
+
+      <ReviewDialogs busy={busy} outcome={outcome} onClose={() => setOutcome(null)} />
     </form>
   );
 }

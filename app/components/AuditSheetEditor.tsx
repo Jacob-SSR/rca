@@ -146,7 +146,7 @@ export default function AuditSheetEditor({
       {/* ── หัวฟอร์ม ─────────────────────────────────────────────────────── */}
       <section className="card card-pad animate-rise">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h1 className="text-cosmic text-2xl font-bold">
+          <h1 className="text-gradient text-2xl font-bold">
             Form {form.code} — {form.title}
           </h1>
           <span className="badge badge-brand">{form.scope}</span>

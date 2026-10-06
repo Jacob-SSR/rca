@@ -15,13 +15,13 @@ type Props = {
 export default function UserBar({ name, role }: Props) {
   const initial = name.trim().charAt(0) || "?";
   return (
-    <div className="flex items-center gap-2.5 border-l border-zinc-200 pl-2.5 sm:pl-3">
+    <div className="flex items-center gap-2.5 border-l border-zinc-200 pl-2.5 sm:ml-1 sm:pl-3">
       <span
         aria-hidden
-        className="relative grid size-10 shrink-0 place-items-center rounded-full bg-gradient-to-br from-brand-500 to-cyan-glow text-base font-bold text-on-brand shadow-[0_0_18px_-4px] shadow-brand-500"
+        className="relative grid size-10 shrink-0 place-items-center rounded-full bg-gradient-to-br from-brand-500 to-cyan-glow text-base font-bold text-on-brand shadow-md shadow-brand-500/30"
       >
         {initial}
-        <span className="absolute -right-0.5 -bottom-0.5 size-3 rounded-full bg-emerald-600 ring-2 ring-surface" />
+        <span className="absolute -right-0.5 -bottom-0.5 size-3 rounded-full bg-emerald-500 ring-2 ring-white" />
       </span>
       <div className="hidden max-w-40 text-left leading-tight lg:block">
         <div className="truncate text-base font-medium">{name}</div>

@@ -4,7 +4,7 @@
 // เพิ่มช่องใหม่ในไฟล์ schema แล้วหน้านี้กับ DOCX จะตามไปเอง
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { FORM_SECTIONS, blankFormValues, type RecordFormInput } from "@/lib/form/schema";
 import { fieldLabel, isBlank, validateRecordForm, type Issue } from "@/lib/form/validate";
 import { autoAuditOpd } from "@/lib/review/auto-audit";
@@ -12,6 +12,7 @@ import FormFieldInput from "@/app/components/FormFieldInput";
 import HnPrefillBar from "@/app/components/HnPrefillBar";
 import AutoAuditPanel, { scoreTone } from "@/app/components/AutoAuditPanel";
 import Icon from "@/app/components/Icon";
+import ReviewDialogs, { readReviewResponse, type ReviewOutcome } from "@/app/components/ReviewDialogs";
 
 // ── สวิตช์ตรวจอัตโนมัติ — จำไว้ในเครื่อง (ค่าตั้งต้น: เปิด) ─────────────────────
 // ใช้ useSyncExternalStore แทน useEffect+setState เพื่อไม่ให้ค่าบน server กับ client ชนกัน
@@ -62,6 +63,9 @@ export default function RecordFormEditor({ formId, initial, caseNumber }: Props)
   const [busy, setBusy] = useState<null | "save" | "generate" | "review">(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [outcome, setOutcome] = useState<ReviewOutcome | null>(null);
+  /** id ของฟอร์มที่เพิ่งบันทึกตอนกดตรวจ — ฟอร์มใหม่ต้องย้ายไปหน้าของมันหลังปิด popup */
+  const reviewedId = useRef<string | null>(null);
   /** โชว์ error รายช่องหลังจากกดบันทึก/ตรวจครั้งแรก — ไม่ขึ้นแดงตั้งแต่ยังไม่ได้พิมพ์ */
   const [submitted, setSubmitted] = useState(false);
 
@@ -218,21 +222,31 @@ export default function RecordFormEditor({ formId, initial, caseNumber }: Props)
     try {
       const id = await save();
       if (!id) return;
+      reviewedId.current = id;
 
       const res = await fetch(`/api/forms/${id}/review`, { method: "POST" });
-      const json = await res.json();
+      const json = await res.json().catch(() => null);
 
-      if (!res.ok) {
-        setError(json?.error ?? `ตรวจไม่สำเร็จ (${res.status})`);
+      const r = readReviewResponse(res, json);
+      if (r.kind === "error") {
+        setError(r.message);
         return;
       }
-
-      router.push(`/reviews/${json.reviewId}`);
+      setOutcome(r);
     } catch (e) {
       setError(e instanceof Error ? e.message : "ตรวจไม่สำเร็จ");
     } finally {
       setBusy(null);
     }
+  }
+
+  /** ปิด popup ผลตรวจ/โควตา — ฟอร์มใหม่ไปหน้าของตัวเอง (กันบันทึกซ้ำเป็นฟอร์มที่สอง) ฟอร์มเดิมรีเฟรชตารางเอกสาร */
+  function closeOutcome() {
+    setOutcome(null);
+    const id = reviewedId.current;
+    if (!id) return;
+    if (formId) router.refresh();
+    else router.push(`/forms/${id}`);
   }
 
   const hasPatient = (values.hn ?? "").trim() !== "" || (values.patientName ?? "").trim() !== "";
@@ -431,6 +445,8 @@ export default function RecordFormEditor({ formId, initial, caseNumber }: Props)
           &ldquo;บันทึกร่าง&rdquo; = เก็บไว้กรอกต่อทีหลัง · ระบบไม่เติมข้อความแทนช่องที่ว่าง
         </p>
       </div>
+
+      <ReviewDialogs busy={busy === "review"} outcome={outcome} onClose={closeOutcome} />
     </div>
   );
 }

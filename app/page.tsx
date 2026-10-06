@@ -7,8 +7,10 @@ import ScoreBadge from "@/app/components/ScoreBadge";
 import { getSession } from "@/lib/auth/session";
 import { isOwner } from "@/lib/auth/ownership";
 import Icon from "@/app/components/Icon";
-import CountUp from "@/app/components/CountUp";
-import OrbitSystem from "@/app/components/OrbitSystem";
+import CountUp from "@/app/components/reactbits/CountUp";
+import BlurText from "@/app/components/reactbits/BlurText";
+import GradientText from "@/app/components/reactbits/GradientText";
+import HeroArt from "@/app/components/HeroArt";
 
 export const dynamic = "force-dynamic";
 
@@ -49,10 +51,10 @@ export default async function Home() {
   const avgPct = reviewStats._avg.percentage === null ? null : Number(reviewStats._avg.percentage);
 
   const stats = [
-    { label: "เคสทั้งหมด", value: caseCount, icon: "folder" as const, tone: "from-brand-500 to-brand-300" },
-    { label: "ตรวจเสร็จแล้ว", value: reviewStats._count._all, icon: "check" as const, tone: "from-emerald-600 to-emerald-700" },
+    { label: "เคสทั้งหมด", value: caseCount, icon: "folder" as const, tone: "from-brand-600 to-brand-300" },
+    { label: "ตรวจเสร็จแล้ว", value: reviewStats._count._all, icon: "check" as const, tone: "from-emerald-500 to-teal-500" },
     { label: "ตรวจวันนี้", value: reviewsToday, icon: "sparkles" as const, tone: "from-cyan-glow to-brand-300" },
-    { label: "คะแนนเฉลี่ย", value: avgPct, suffix: "%", decimals: 1, icon: "target" as const, tone: "from-pink-glow to-warn-600" },
+    { label: "คะแนนเฉลี่ย", value: avgPct, suffix: "%", decimals: 1, icon: "target" as const, tone: "from-pink-glow to-amber-400" },
   ];
 
   const cases = await prisma.case.findMany({
@@ -76,17 +78,17 @@ export default async function Home() {
           <div>
             <p className="inline-flex items-center gap-2 rounded-full bg-brand-50 px-3 py-1 text-sm font-medium text-brand-700 ring-1 ring-brand-200/60">
               <span className="relative flex size-2">
-                <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-700 opacity-75" />
-                <span className="relative inline-flex size-2 rounded-full bg-emerald-700" />
+                <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-500 opacity-75" />
+                <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
               </span>
               ระบบพร้อมใช้งาน
             </p>
-            <h1 className="mt-4 text-3xl leading-snug font-bold sm:text-4xl sm:leading-snug">
-              {greeting()}
+            <h1 className="mt-4 flex flex-wrap items-baseline gap-x-2 text-3xl leading-snug font-bold sm:text-4xl sm:leading-snug">
+              <BlurText text={session ? `${greeting()},` : greeting()} delay={120} />
               {session ? (
-                <>
-                  , <span className="text-cosmic">{session.name}</span>
-                </>
+                <GradientText colors={["#5a3ef0", "#12b5d6", "#f05aa8", "#5a3ef0"]} animationSpeed={6}>
+                  {session.name}
+                </GradientText>
               ) : null}
             </h1>
             <p className="mt-2 max-w-xl text-lg text-zinc-600">
@@ -97,10 +99,10 @@ export default async function Home() {
               {stats.map((st) => (
                 <div
                   key={st.label}
-                  className="rounded-2xl bg-zinc-50/80 p-4 ring-1 ring-zinc-200 transition hover:-translate-y-0.5 hover:ring-brand-300/50"
+                  className="rounded-2xl bg-zinc-50 p-4 ring-1 ring-zinc-200 transition hover:-translate-y-0.5 hover:bg-white hover:shadow-md hover:ring-brand-200"
                 >
                   <dt className="flex items-center gap-2 text-sm text-zinc-500">
-                    <span className={`grid size-7 place-items-center rounded-lg bg-gradient-to-br ${st.tone} text-[#0b0b2a]`}>
+                    <span className={`grid size-7 place-items-center rounded-lg bg-gradient-to-br ${st.tone} text-white`}>
                       <Icon name={st.icon} size={16} strokeWidth={2.4} />
                     </span>
                     {st.label}
@@ -110,7 +112,7 @@ export default async function Home() {
                       <span className="text-zinc-400">—</span>
                     ) : (
                       <>
-                        <CountUp value={st.value} decimals={st.decimals ?? 0} />
+                        <CountUp to={st.decimals ? Math.round(st.value * 10) / 10 : st.value} duration={1.2} separator="," />
                         {st.suffix ? <span className="ml-0.5 text-lg font-medium text-zinc-500">{st.suffix}</span> : null}
                       </>
                     )}
@@ -120,7 +122,7 @@ export default async function Home() {
             </dl>
           </div>
 
-          <OrbitSystem className="mx-auto hidden w-full max-w-[17rem] lg:block" />
+          <HeroArt className="mx-auto hidden w-full max-w-[17rem] lg:block" />
         </div>
       </section>
 
@@ -146,7 +148,7 @@ export default async function Home() {
               { icon: "sparkles" as const, text: "บันทึกและให้ AI ตรวจตามเกณฑ์" },
             ].map((st, i) => (
               <li key={st.text} className="flex items-center gap-3 text-zinc-700">
-                <span className="tabular grid size-7 shrink-0 place-items-center rounded-full bg-zinc-100 text-sm font-semibold text-brand-400 ring-1 ring-zinc-200">
+                <span className="tabular grid size-7 shrink-0 place-items-center rounded-full bg-brand-50 text-sm font-semibold text-brand-600 ring-1 ring-brand-200">
                   {i + 1}
                 </span>
                 <Icon name={st.icon} className="text-zinc-400" />

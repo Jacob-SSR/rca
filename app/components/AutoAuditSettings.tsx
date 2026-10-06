@@ -4,7 +4,8 @@
 // + ปุ่มรันเดี๋ยวนี้ (เลือกวันที่ได้) + ประวัติรอบที่ผ่านมา
 
 import Link from "next/link";
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { AI_QUOTA_EVENT, Modal } from "@/app/components/ReviewDialogs";
 import { Switch } from "@/app/components/AutoAuditPanel";
 import { formatThaiDateShort } from "@/lib/form/thai-date";
 import Icon from "@/app/components/Icon";
@@ -76,6 +77,9 @@ export default function AutoAuditSettings() {
   const [runDate, setRunDate] = useState("");
   const [starting, setStarting] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
+  /** รอบที่เพิ่งจบขณะเปิดหน้านี้อยู่ — แสดง popup สรุปผล */
+  const [finished, setFinished] = useState<Run | null>(null);
+  const runningId = useRef<string | null>(null);
 
   const load = useCallback(async (resetForm: boolean) => {
     const res = await fetch("/api/admin/auto-audit", { cache: "no-store" });
@@ -85,6 +89,17 @@ export default function AutoAuditSettings() {
     }
     const json = (await res.json()) as Data;
     setData(json);
+
+    // เคยเห็นว่ากำลังรัน แล้วตอนนี้ไม่รันแล้ว = รอบนั้นเพิ่งจบ → popup
+    const prev = runningId.current;
+    runningId.current = json.running?.id ?? null;
+    if (prev && !json.running) {
+      const done = json.runs.find((r) => r.id === prev);
+      if (done) {
+        setFinished(done);
+        if (done.error?.includes("โควตา")) window.dispatchEvent(new CustomEvent(AI_QUOTA_EVENT));
+      }
+    }
     if (resetForm) {
       const { enabled, runTime, weekdays, targetDay, maxVisits } = json.settings;
       setForm({ enabled, runTime, weekdays, targetDay, maxVisits });
@@ -166,7 +181,19 @@ export default function AutoAuditSettings() {
   }
 
   if (!data || !form) {
-    return <p className="card card-pad text-zinc-500">{message?.text ?? "กำลังโหลด…"}</p>;
+    return message ? (
+      <p className="card card-pad text-zinc-500">{message.text}</p>
+    ) : (
+      <div className="space-y-5" role="status" aria-label="กำลังโหลด">
+        {[0, 1].map((i) => (
+          <div key={i} className="card card-pad space-y-3">
+            <div className="skeleton h-5 w-48" />
+            <div className="skeleton h-4 w-3/4" />
+            <div className="skeleton h-10 w-full" />
+          </div>
+        ))}
+      </div>
+    );
   }
 
   return (
@@ -460,6 +487,43 @@ export default function AutoAuditSettings() {
           </div>
         )}
       </section>
+
+      {/* ── popup เมื่อรอบที่กดรันเพิ่งจบ ─────────────────────────────────── */}
+      <Modal open={!!finished} onClose={() => setFinished(null)} label="รอบตรวจอัตโนมัติจบแล้ว">
+        {finished ? (
+          <>
+            <span
+              className={`mx-auto grid size-14 place-items-center rounded-full ring-8 ${
+                finished.status === "COMPLETED"
+                  ? "bg-emerald-50 text-emerald-600 ring-emerald-50/60"
+                  : "bg-warn-50 text-warn-600 ring-amber-50"
+              }`}
+            >
+              <Icon name={finished.status === "COMPLETED" ? "check" : "alert"} size={28} strokeWidth={2.6} />
+            </span>
+            <h2 className="mt-4 text-2xl font-bold">
+              {finished.status === "COMPLETED" ? "ตรวจอัตโนมัติเสร็จแล้ว!" : "รอบตรวจหยุดกลางทาง"}
+            </h2>
+            <p className="mt-1 text-zinc-500">visit วันที่ {finished.targetDate}</p>
+            <dl className="mt-5 grid grid-cols-3 gap-2">
+              {[
+                { k: "ตรวจแล้ว", v: finished.reviewed, cls: "text-emerald-700" },
+                { k: "ไม่สำเร็จ", v: finished.failed, cls: "text-red-700" },
+                { k: "เฉลี่ย", v: finished.avgPercent === null ? "—" : `${Number(finished.avgPercent).toFixed(1)}%`, cls: "text-brand-700" },
+              ].map((x) => (
+                <div key={x.k} className="rounded-2xl bg-zinc-50 py-3 ring-1 ring-zinc-200">
+                  <dd className={`tabular text-2xl font-bold ${x.cls}`}>{x.v}</dd>
+                  <dt className="text-sm text-zinc-500">{x.k}</dt>
+                </div>
+              ))}
+            </dl>
+            {finished.error ? <p className="alert alert-error mt-4 text-left text-sm">{finished.error}</p> : null}
+            <button type="button" className="btn btn-primary mt-6 w-full" onClick={() => setFinished(null)}>
+              ตกลง
+            </button>
+          </>
+        ) : null}
+      </Modal>
     </div>
   );
 }

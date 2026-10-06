@@ -29,6 +29,23 @@ export class AIProviderError extends Error {
 }
 
 /**
+ * โควตา AI หมด — แยกจาก error อื่นเพราะผู้ใช้ทำอะไรไม่ได้นอกจาก "รอ"
+ * จึงต้องบอกให้ชัดว่ารออีกนานเท่าไร (resetAt) แทนข้อความ error ดิบของผู้ให้บริการ
+ */
+export class AIQuotaError extends AIProviderError {
+  constructor(
+    message: string,
+    provider: ProviderName,
+    readonly scope: "minute" | "day",
+    readonly resetAt: string,
+    options?: { cause?: unknown },
+  ) {
+    super(message, provider, options);
+    this.name = "AIQuotaError";
+  }
+}
+
+/**
  * prompt กลาง — ใช้ร่วมกันทุก provider
  * ถ้า provider ไหนใช้ prompt คนละแบบ คะแนนจะเริ่มขึ้นกับ model ซึ่งผิดสเปกข้อ 2.1
  */

@@ -17,7 +17,7 @@ export default async function NoAccessPage() {
         <span className="icon-orb icon-orb-lg mx-auto mb-4 animate-float">
           <Icon name="lock" size={26} />
         </span>
-        <h1 className="text-cosmic text-2xl font-bold">ไม่มีสิทธิ์เข้าถึงส่วนนี้</h1>
+        <h1 className="text-gradient text-2xl font-bold">ไม่มีสิทธิ์เข้าถึงส่วนนี้</h1>
 
         {session ? (
           <p className="mt-4 text-zinc-600">

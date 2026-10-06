@@ -3,21 +3,21 @@
 
 import { Suspense } from "react";
 import LoginForm from "@/app/login/LoginForm";
-import OrbitLogo from "@/app/components/OrbitLogo";
+import BrandLogo from "@/app/components/BrandLogo";
 import Icon from "@/app/components/Icon";
 
 export const dynamic = "force-dynamic";
 
 export default function LoginPage() {
   return (
-    <div className="mx-auto grid max-w-5xl items-center gap-10 py-6 lg:grid-cols-2 lg:py-14">
+    <div className="mx-auto grid max-w-5xl items-center gap-10 py-6 lg:grid-cols-2 lg:py-12">
       {/* ── ซ้าย: แนะนำระบบ ── */}
       <div className="animate-rise hidden lg:block">
-        <OrbitLogo size={120} className="animate-float" />
+        <BrandLogo size={64} />
         <h1 className="mt-6 text-4xl leading-tight font-bold">
           ยินดีต้อนรับสู่
           <br />
-          <span className="text-cosmic">จักรวาลเวชระเบียน</span>
+          <span className="text-gradient">ระบบตรวจคุณภาพเวชระเบียน</span>
         </h1>
         <p className="mt-4 max-w-md text-lg text-zinc-600">
           ระบบตรวจคุณภาพการบันทึกข้อมูลผู้ป่วยนอก ตามเกณฑ์ สนย. (Form A1)
@@ -41,7 +41,7 @@ export default function LoginPage() {
       {/* ── ขวา: ฟอร์ม ── */}
       <div className="animate-rise mx-auto w-full max-w-md [animation-delay:0.15s]">
         <div className="mb-6 text-center lg:hidden">
-          <OrbitLogo size={84} className="mx-auto animate-float" />
+          <BrandLogo size={64} className="mx-auto" />
         </div>
         <div className="mb-5 flex items-center gap-3">
           <span className="icon-orb icon-orb-lg">

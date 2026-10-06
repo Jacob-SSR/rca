@@ -44,7 +44,7 @@ export default function ScoreRing({ percentage, size = 132 }: Props) {
             {percentage === null ? "—" : Math.round(pct)}
             <span className="text-base font-medium">%</span>
           </div>
-          <div className="mt-1 text-xs text-zinc-500">สัดส่วนคะแนน</div>
+          {size >= 130 ? <div className="mt-1 text-xs text-zinc-500">สัดส่วนคะแนน</div> : null}
         </div>
       </div>
     </div>

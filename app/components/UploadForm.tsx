@@ -6,9 +6,9 @@
 // ถ้าเลือกชนิดที่อ่านไม่ได้ ฝั่งเซิร์ฟเวอร์จะตอบกลับมาว่าต้องแปลงเป็นอะไรก่อน
 // — บอกตอนกดส่งดีกว่าไปกรองที่ accept แล้วผู้ใช้งงว่าทำไมเลือกไฟล์ไม่ได้
 
-import { useRouter } from "next/navigation";
 import { useRef, useState, type FormEvent } from "react";
 import Icon from "@/app/components/Icon";
+import ReviewDialogs, { readReviewResponse, type ReviewOutcome } from "@/app/components/ReviewDialogs";
 
 type Props = {
   /** ถ้าส่งมา = อัปโหลดเข้าเคสเดิม, ไม่ส่ง = ให้ API สร้างเคสใหม่ */
@@ -16,21 +16,17 @@ type Props = {
 };
 
 export default function UploadForm({ caseId }: Props) {
-  const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [warnings, setWarnings] = useState<string[]>([]);
-  const [reviewId, setReviewId] = useState<string | null>(null);
+  const [outcome, setOutcome] = useState<ReviewOutcome | null>(null);
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
-
-    setWarnings([]);
-    setReviewId(null);
+    setOutcome(null);
 
     const form = new FormData(e.currentTarget);
     const file = form.get("file");
@@ -43,27 +39,20 @@ export default function UploadForm({ caseId }: Props) {
     setBusy(true);
     try {
       const res = await fetch("/api/review", { method: "POST", body: form });
-      const json = await res.json();
+      const json = await res.json().catch(() => null);
 
-      if (!res.ok) {
-        setError(json?.error ?? `เกิดข้อผิดพลาด (${res.status})`);
+      // ตรวจเสร็จ → popup คะแนน (มีคำเตือนตอนอ่านไฟล์ก็แสดงใน popup ก่อนกดไปดูผล)
+      // โควตา AI หมด → popup นับถอยหลังถึงเวลารีเซ็ต
+      const r = readReviewResponse(res, json);
+      if (r.kind === "error") {
+        setError(r.message);
         return;
       }
-
-      // ⚠️ มีคำเตือนตอนอ่านไฟล์ (เช่น PDF ที่ระบบต้องซ่อมวรรณยุกต์ให้) →
-      //    ไม่เด้งไปหน้าคะแนนทันที ให้ผู้ใช้อ่านคำเตือนก่อนแล้วค่อยกดเอง
-      //    ถ้าเด้งไปเลย คำเตือนจะหายไปพร้อมหน้านี้ แล้วคนจะเชื่อคะแนนโดยไม่รู้ที่มา
-      const warns: string[] = Array.isArray(json?.extractWarnings) ? json.extractWarnings : [];
-      if (warns.length > 0) {
-        setWarnings(warns);
-        setReviewId(json.reviewId);
-        return;
+      setOutcome(r);
+      if (r.kind === "done") {
+        setFileName(null);
+        if (inputRef.current) inputRef.current.value = "";
       }
-
-      // ห้ามตาม refresh() ทันที — มันจะ re-render route ปัจจุบันแล้วยกเลิก push นี้
-      // (ดูคอมเมนต์ใน LoginForm) หน้าปลายทางเป็น force-dynamic และเป็น id ใหม่
-      // จึงไม่มีของเก่าใน Router Cache ให้ต้อง refresh อยู่แล้ว
-      router.push(`/reviews/${json.reviewId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "เชื่อมต่อไม่สำเร็จ");
     } finally {
@@ -142,21 +131,14 @@ export default function UploadForm({ caseId }: Props) {
         {busy ? "กำลังตรวจ… (อาจใช้เวลาสักครู่)" : "ตรวจเอกสาร"}
       </button>
 
-      {error ? <p className="alert alert-error mt-4">{error}</p> : null}
-
-      {warnings.length > 0 && reviewId ? (
-        <div className="alert alert-info mt-4 space-y-2">
-          <p className="font-medium">ตรวจเสร็จแล้ว แต่มีเรื่องต้องรู้ก่อนดูคะแนน</p>
-          <ul className="list-inside list-disc space-y-1">
-            {warnings.map((w) => (
-              <li key={w}>{w}</li>
-            ))}
-          </ul>
-          <a href={`/reviews/${reviewId}`} className="btn btn-sm btn-primary">
-            ดูผลตรวจ
-          </a>
-        </div>
+      {error ? (
+        <p role="alert" className="alert alert-error animate-rise mt-4 flex items-start gap-2">
+          <Icon name="alert" className="mt-1" />
+          {error}
+        </p>
       ) : null}
+
+      <ReviewDialogs busy={busy} outcome={outcome} onClose={() => setOutcome(null)} />
     </form>
   );
 }

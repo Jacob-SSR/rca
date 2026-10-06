@@ -3,11 +3,29 @@
 // เมนูหลักด้านบน — ไฮไลต์หน้าที่อยู่ด้วยแคปซูลเรืองแสง
 // เป็น client component เพราะต้องอ่าน pathname ปัจจุบัน
 
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 import Icon, { type IconName } from "@/app/components/Icon";
 
 type Item = { href: string; label: string; icon: IconName };
+
+/** แถบวิ่งบนสุดของจอระหว่างรอหน้าใหม่ — มีอยู่เสมอ สลับแค่ความโปร่งใส ไม่ดันเลย์เอาต์ */
+function PendingBar() {
+  const { pending } = useLinkStatus();
+  return (
+    <span
+      aria-hidden
+      className={`pointer-events-none fixed inset-x-0 top-0 z-50 h-[3px] overflow-hidden transition-opacity duration-200 ${
+        pending ? "opacity-100" : "opacity-0"
+      }`}
+    >
+      <span
+        className="absolute top-0 h-full rounded-full bg-gradient-to-r from-brand-500 via-cyan-glow to-pink-glow"
+        style={{ animation: "indeterminate 1.2s ease-in-out infinite" }}
+      />
+    </span>
+  );
+}
 
 export default function NavLinks({ canManage }: { canManage: boolean }) {
   const pathname = usePathname();
@@ -36,6 +54,7 @@ export default function NavLinks({ canManage }: { canManage: boolean }) {
         >
           <Icon name={it.icon} />
           <span className="text-xs sm:hidden md:inline md:text-base">{it.label}</span>
+          <PendingBar />
         </Link>
       ))}
     </nav>

@@ -30,7 +30,7 @@ export default function PageHeader({ icon, title, subtitle, back, actions, child
             <Icon name={icon} size={26} />
           </span>
           <div className="min-w-0">
-            <h1 className="text-cosmic text-2xl font-bold sm:text-3xl">{title}</h1>
+            <h1 className="text-gradient text-2xl font-bold sm:text-3xl">{title}</h1>
             {subtitle ? <div className="mt-1.5 max-w-3xl text-zinc-600">{subtitle}</div> : null}
           </div>
         </div>

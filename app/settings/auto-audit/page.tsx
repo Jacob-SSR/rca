@@ -3,6 +3,7 @@
 import { getSession } from "@/lib/auth/session";
 import { hasCapability } from "@/lib/auth/permissions";
 import AutoAuditSettings from "@/app/components/AutoAuditSettings";
+import AiStatusCard from "@/app/components/AiStatusCard";
 import PageHeader from "@/app/components/PageHeader";
 import Icon from "@/app/components/Icon";
 
@@ -32,6 +33,7 @@ export default async function AutoAuditSettingsPage() {
         title="ตั้งค่า · ตรวจอัตโนมัติด้วย AI (OPD)"
         subtitle="ทุกวันตามเวลาที่ตั้ง ระบบจะดึงผู้ป่วยนอกจาก HOSxP สุ่มตามจำนวนที่กำหนด สร้างเอกสารและให้คะแนนตามเกณฑ์ Form A1 ด้วย AI เหมือนกดตรวจเอง ผลเข้าไปอยู่ในรายการเคสตามปกติ"
       />
+      <AiStatusCard />
       <AutoAuditSettings />
     </div>
   );

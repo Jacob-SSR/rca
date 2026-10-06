@@ -6,6 +6,7 @@
 import { useActionState } from "react";
 import { useSearchParams } from "next/navigation";
 import { loginAction, type LoginState } from "@/app/actions/auth";
+import Icon from "@/app/components/Icon";
 
 const initialState: LoginState = { error: null };
 
@@ -21,33 +22,44 @@ export default function LoginForm() {
 
       <label className="mb-4 block">
         <span className="label">ชื่อผู้ใช้</span>
+        <span className="relative block">
+          <Icon name="user" className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-zinc-400" />
         <input
           name="username"
           autoComplete="username"
           autoFocus
           required
           disabled={pending}
-          className="input"
+          className="input pl-11"
         />
+        </span>
       </label>
 
       <label className="mb-6 block">
         <span className="label">รหัสผ่าน</span>
+        <span className="relative block">
+          <Icon name="lock" className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-zinc-400" />
         <input
           name="password"
           type="password"
           autoComplete="current-password"
           required
           disabled={pending}
-          className="input"
+          className="input pl-11"
         />
+        </span>
       </label>
 
       <button type="submit" disabled={pending} className="btn btn-primary w-full">
+        {pending ? (
+          <span className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+        ) : (
+          <Icon name="rocket" />
+        )}
         {pending ? "กำลังตรวจสอบ…" : "เข้าสู่ระบบ"}
       </button>
 
-      {state.error ? <p className="alert alert-error mt-4">{state.error}</p> : null}
+      {state.error ? <p role="alert" className="alert alert-error mt-4 flex items-center gap-2"><Icon name="alert" />{state.error}</p> : null}
     </form>
   );
 }

@@ -6,6 +6,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import TimelineChart from "@/app/components/TimelineChart";
+import Icon from "@/app/components/Icon";
 
 type Row = { eventTime: string; title: string; source: string };
 
@@ -65,8 +66,11 @@ export default function TimelineEditor({ caseId, initialEvents }: Props) {
   }
 
   return (
-    <section className="card overflow-hidden">
-      <h2 className="card-title">ลำดับเหตุการณ์ (แก้ไขได้)</h2>
+    <section className="card animate-rise overflow-hidden">
+      <h2 className="card-title">
+        <span className="icon-orb"><Icon name="activity" /></span>
+        ลำดับเหตุการณ์ <span className="text-base font-normal text-zinc-500">(แก้ไขได้)</span>
+      </h2>
 
       {/* กราฟตามชั่วโมง — วาดจากแถวที่กำลังแก้อยู่ ไม่ต้องกดบันทึกก่อนก็เห็น */}
       <div className="border-b border-zinc-200 px-5 py-5 sm:px-6">
@@ -112,9 +116,11 @@ export default function TimelineEditor({ caseId, initialEvents }: Props) {
             onClick={() => setRows((prev) => [...prev, { eventTime: "", title: "", source: "manual" }])}
             className="btn"
           >
-            + เพิ่มเหตุการณ์
+            <Icon name="plus" />
+            เพิ่มเหตุการณ์
           </button>
           <button type="button" onClick={save} disabled={busy} className="btn btn-primary">
+            {busy ? <span className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" /> : <Icon name="check" />}
             {busy ? "กำลังบันทึก…" : "บันทึก timeline"}
           </button>
           {message ? <span className="text-zinc-600">{message}</span> : null}

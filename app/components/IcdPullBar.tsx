@@ -11,6 +11,7 @@
 import { useState } from "react";
 import type { AuditFormDef } from "@/lib/audit-forms/registry";
 import type { SheetRow } from "@/lib/audit-forms/compute";
+import Icon from "@/app/components/Icon";
 
 type IcdRow = {
   ref: string;
@@ -144,6 +145,7 @@ export default function IcdPullBar({ form, onRows }: Props) {
           disabled={busy || key.trim() === ""}
           onClick={pull}
         >
+          {busy ? <span className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" /> : <Icon name="download" />}
           {busy ? "กำลังดึง…" : "ดึงรหัสมาเป็นแถว"}
         </button>
 

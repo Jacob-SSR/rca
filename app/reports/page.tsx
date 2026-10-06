@@ -5,6 +5,8 @@
 
 import { buildFormA1 } from "@/lib/report/form-a1-query";
 import FormA1Download from "@/app/components/FormA1Download";
+import PageHeader from "@/app/components/PageHeader";
+import Icon from "@/app/components/Icon";
 
 export const dynamic = "force-dynamic";
 
@@ -22,23 +24,28 @@ export default async function ReportsPage() {
 
   return (
     <div className="space-y-8">
-      <section className="card card-pad">
-        <h1 className="text-2xl font-semibold">Form A1 — ตารางบันทึกผลการตรวจสอบคุณภาพ</h1>
-        <p className="mt-2 text-zinc-600">
-          รวมผลการตรวจหลายรายไว้ในตารางเดียวตามแบบฟอร์มของ สนย. (คู่มือ มีนาคม 2558)
-          สำหรับส่งสำนักงานสาธารณสุขจังหวัด — ข้อมูลผู้ป่วย 1 ราย อยู่ใน 1 บรรทัด
-        </p>
+      <section className="card card-pad animate-rise">
+        <PageHeader
+          icon="chart"
+          title="Form A1 — ตารางบันทึกผลการตรวจสอบคุณภาพ"
+          subtitle="รวมผลการตรวจหลายรายไว้ในตารางเดียวตามแบบฟอร์มของ สนย. (คู่มือ มีนาคม 2558) สำหรับส่งสำนักงานสาธารณสุขจังหวัด — ข้อมูลผู้ป่วย 1 ราย อยู่ใน 1 บรรทัด"
+        />
 
         <FormA1Download defaultFrom={isoDay(firstOfMonth)} defaultTo={isoDay(now)} />
       </section>
 
-      <section className="card overflow-hidden">
+      <section className="card animate-rise overflow-hidden [animation-delay:0.15s]">
         <h2 className="card-title">
-          ผลการตรวจที่พร้อมออกฟอร์มทั้งหมด ({all.rows.length} ราย)
+          <span className="icon-orb"><Icon name="grid" /></span>
+          ผลการตรวจที่พร้อมออกฟอร์มทั้งหมด
+          <span className="badge badge-brand tabular ml-auto">{all.rows.length} ราย</span>
         </h2>
 
         {all.rows.length === 0 ? (
           <div className="px-6 py-14 text-center">
+            <span className="icon-orb icon-orb-lg mx-auto mb-4 animate-float">
+              <Icon name="inbox" size={26} />
+            </span>
             <p className="text-lg text-zinc-500">ยังไม่มีผลการตรวจที่เสร็จแล้ว</p>
             <p className="mt-1 text-zinc-400">
               ฟอร์มจะออกมาเป็นตารางเปล่าให้เขียนมือได้ตามปกติ
@@ -81,7 +88,7 @@ export default async function ReportsPage() {
                 ))}
               </tbody>
               <tfoot>
-                <tr className="border-t-2 border-zinc-300 font-semibold">
+                <tr className="border-t-2 border-brand-200 bg-brand-50/40 font-semibold">
                   <td colSpan={9} className="text-right">
                     สรุปผลการตรวจ
                   </td>

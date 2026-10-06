@@ -194,7 +194,7 @@ export default function TimelineChart({ events, gapWarnMin = 30 }: Props) {
                     {/* จุดเหตุการณ์ — วงขาวรอบจุดกันจุดที่เวลาเดียวกันกลืนกัน */}
                     <span
                       aria-hidden
-                      className={`absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-white ${
+                      className={`absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-surface ${
                         active ? "bg-brand-700 size-4" : "bg-brand-600"
                       }`}
                       style={{ left: `${r.x}%` }}
@@ -214,7 +214,7 @@ export default function TimelineChart({ events, gapWarnMin = 30 }: Props) {
                     {active ? (
                       <span
                         role="tooltip"
-                        className="pointer-events-none absolute bottom-full z-10 mb-1 w-max max-w-xs -translate-x-1/2 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm shadow-md"
+                        className="pointer-events-none absolute bottom-full z-10 mb-1 w-max max-w-xs -translate-x-1/2 rounded-md border border-zinc-200 bg-surface px-3 py-2 text-sm shadow-md"
                         style={{ left: `${Math.min(Math.max(r.x, 12), 88)}%` }}
                       >
                         <span className="block font-medium text-zinc-900">{r.title}</span>

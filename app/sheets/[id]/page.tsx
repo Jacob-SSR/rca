@@ -6,6 +6,7 @@ import { getAuditSheet } from "@/lib/audit-forms/service";
 import { getSession } from "@/lib/auth/session";
 import { hasCapability } from "@/lib/auth/permissions";
 import AuditSheetEditor from "@/app/components/AuditSheetEditor";
+import Icon from "@/app/components/Icon";
 
 export const dynamic = "force-dynamic";
 
@@ -19,12 +20,15 @@ export default async function SheetPage(props: PageProps<"/sheets/[id]">) {
 
   return (
     <div className="space-y-6">
-      <Link href="/sheets" className="link">
-        ← กลับไปรายการแบบฟอร์ม
+      <Link href="/sheets" className="back-link">
+        <Icon name="arrowLeft" size={16} />
+        กลับไปรายการแบบฟอร์ม
       </Link>
 
       {canEdit ? null : (
-        <p className="alert alert-info">บัญชีของคุณดูได้อย่างเดียว แก้ไขแบบฟอร์มไม่ได้</p>
+        <p className="alert alert-info flex items-center gap-2">
+          <Icon name="lock" />
+          บัญชีของคุณดูได้อย่างเดียว แก้ไขแบบฟอร์มไม่ได้</p>
       )}
 
       <AuditSheetEditor

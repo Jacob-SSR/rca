@@ -7,6 +7,7 @@ import Link from "next/link";
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { Switch } from "@/app/components/AutoAuditPanel";
 import { formatThaiDateShort } from "@/lib/form/thai-date";
+import Icon from "@/app/components/Icon";
 import {
   MAX_VISITS_CAP,
   TARGET_DAYS,
@@ -177,7 +178,7 @@ export default function AutoAuditSettings() {
       ) : null}
 
       {/* ── สวิตช์หลัก ─────────────────────────────────────────────────────── */}
-      <section className="card card-pad flex flex-wrap items-center justify-between gap-4">
+      <section className="card card-pad animate-rise flex flex-wrap items-center justify-between gap-4">
         <div>
           <Switch
             checked={form.enabled}
@@ -213,8 +214,11 @@ export default function AutoAuditSettings() {
       </section>
 
       {/* ── ตั้งเวลา ───────────────────────────────────────────────────────── */}
-      <section className="card">
-        <h2 className="card-title">กำหนดการ</h2>
+      <section className="card animate-rise">
+        <h2 className="card-title">
+          <span className="icon-orb"><Icon name="calendar" /></span>
+          กำหนดการ
+        </h2>
         <div className="grid gap-6 px-5 py-5 sm:px-6 md:grid-cols-2">
           <div>
             <span className="label">วันที่ให้ตรวจ</span>
@@ -233,8 +237,8 @@ export default function AutoAuditSettings() {
                     }
                     className={`size-11 rounded-full border text-base font-medium transition ${
                       on
-                        ? "border-brand-600 bg-brand-600 text-white"
-                        : "border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-50"
+                        ? "border-brand-600 bg-brand-600 text-on-brand"
+                        : "border-zinc-300 bg-surface text-zinc-600 hover:bg-zinc-50"
                     }`}
                   >
                     {label}
@@ -313,10 +317,16 @@ export default function AutoAuditSettings() {
             disabled={saving || !dirty || !!formError}
             onClick={() => void save()}
           >
+            {saving ? <span className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" /> : <Icon name="check" />}
             {saving ? "กำลังบันทึก…" : "บันทึกการตั้งค่า"}
           </button>
           {dirty && !formError ? <span className="text-sm text-warn-600">ยังไม่ได้บันทึก</span> : null}
-          {formError ? <span className="text-sm text-red-700">✕ {formError}</span> : null}
+          {formError ? (
+            <span className="inline-flex items-center gap-1 text-sm text-red-700">
+              <Icon name="x" size={15} />
+              {formError}
+            </span>
+          ) : null}
           {message ? (
             <span className={message.ok ? "text-emerald-700" : "text-red-700"}>{message.text}</span>
           ) : null}
@@ -324,8 +334,11 @@ export default function AutoAuditSettings() {
       </section>
 
       {/* ── รันเดี๋ยวนี้ ───────────────────────────────────────────────────── */}
-      <section className="card card-pad">
-        <h2 className="text-lg font-semibold">ตรวจเดี๋ยวนี้</h2>
+      <section className="card card-pad animate-rise">
+        <h2 className="flex items-center gap-2.5 text-lg font-semibold">
+          <span className="icon-orb"><Icon name="rocket" /></span>
+          ตรวจเดี๋ยวนี้
+        </h2>
         <p className="mt-1 text-sm text-zinc-600">
           ไม่ต้องรอเวลา — เลือกวันที่ของ visit ที่จะตรวจ (ว่าง = ตามที่ตั้งไว้ด้านบน) ใช้จำนวนต่อรอบเดียวกัน
         </p>
@@ -349,14 +362,18 @@ export default function AutoAuditSettings() {
             disabled={starting || running || !data.hosxpEnabled}
             onClick={() => void runNow()}
           >
-            {running ? "มีรอบกำลังตรวจอยู่…" : starting ? "กำลังเริ่ม…" : "▶ ตรวจเดี๋ยวนี้"}
+            {running || starting ? <span className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" /> : <Icon name="rocket" />}
+            {running ? "มีรอบกำลังตรวจอยู่…" : starting ? "กำลังเริ่ม…" : "ตรวจเดี๋ยวนี้"}
           </button>
         </div>
       </section>
 
       {/* ── ประวัติ ────────────────────────────────────────────────────────── */}
-      <section className="card overflow-hidden">
-        <h2 className="card-title">ประวัติการตรวจอัตโนมัติ</h2>
+      <section className="card animate-rise overflow-hidden">
+        <h2 className="card-title">
+          <span className="icon-orb"><Icon name="clock" /></span>
+          ประวัติการตรวจอัตโนมัติ
+        </h2>
         {data.runs.length === 0 ? (
           <p className="px-5 py-6 text-zinc-500 sm:px-6">ยังไม่เคยรัน</p>
         ) : (

@@ -1,9 +1,11 @@
 // app/reviews/[id]/page.tsx — ผลตรวจ 1 ครั้ง: คะแนนต่อหัวข้อ + เหตุผล + evidence จริง
 
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getReviewDetail } from "@/lib/review/queries";
 import ScoreBadge from "@/app/components/ScoreBadge";
+import ScoreRing from "@/app/components/ScoreRing";
+import PageHeader from "@/app/components/PageHeader";
+import Icon from "@/app/components/Icon";
 
 export const dynamic = "force-dynamic";
 
@@ -21,8 +23,11 @@ function ScoreBar({ score, max }: { score: number; max: number }) {
   const color = pct >= 80 ? "bg-good-600" : pct >= 60 ? "bg-warn-600" : "bg-bad-600";
 
   return (
-    <div className="h-2 w-full overflow-hidden rounded-full bg-zinc-100">
-      <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
+    <div className="h-2.5 w-full overflow-hidden rounded-full bg-zinc-100">
+      <div
+        className={`bar-fill h-full rounded-full ${color} shadow-[0_0_12px_-2px_currentColor]`}
+        style={{ width: `${pct}%` }}
+      />
     </div>
   );
 }
@@ -34,25 +39,35 @@ export default async function ReviewPage({ params }: PageProps<"/reviews/[id]">)
 
   return (
     <div className="space-y-6">
-      <div>
-        <Link href={`/cases/${review.caseId}`} className="link text-base">
-          ← กลับไปที่เคส {review.case.caseNumber}
-        </Link>
-        <h1 className="mt-3 text-2xl font-semibold">ผลการตรวจคุณภาพการบันทึก</h1>
-        <p className="mt-1 text-zinc-600">{review.document.fileName}</p>
-      </div>
+      <PageHeader
+        icon="target"
+        back={{ href: `/cases/${review.caseId}`, label: `กลับไปที่เคส ${review.case.caseNumber}` }}
+        title="ผลการตรวจคุณภาพการบันทึก"
+        subtitle={
+          <span className="inline-flex items-center gap-1.5 break-all">
+            <Icon name="fileText" size={16} />
+            {review.document.fileName}
+          </span>
+        }
+      />
 
       {review.status !== "COMPLETED" ? (
-        <p className="alert bg-warn-50 text-warn-600">
+        <p className="alert flex items-center gap-2 bg-warn-50 text-warn-600 ring-warn-600/30">
+          <Icon name="clock" />
           สถานะ: {review.status} — ยังไม่มีคะแนน
         </p>
       ) : (
         <>
           {/* ── สรุปคะแนนรวม ─────────────────────────────────────────────── */}
-          <section className="card card-pad">
+          <section className="card card-pad animate-rise">
             <div className="flex flex-wrap items-center justify-between gap-5">
+              <div className="flex flex-wrap items-center gap-6">
+              <ScoreRing percentage={review.percentage === null ? null : Number(review.percentage)} />
               <div>
-                <p className="text-zinc-600">คะแนนรวม</p>
+                <p className="flex items-center gap-2 text-zinc-600">
+                  <Icon name="star" className="text-warn-600" />
+                  คะแนนรวม
+                </p>
                 <div className="mt-2">
                   <ScoreBadge
                     total={review.totalScore}
@@ -65,25 +80,27 @@ export default async function ReviewPage({ params }: PageProps<"/reviews/[id]">)
                   คะแนนเต็มนับเฉพาะหัวข้อที่ไม่ใช่ N/A · ตัดสินโดย Rule Engine ตามเกณฑ์
                 </p>
               </div>
+              </div>
 
               <a href={`/api/reviews/${review.id}/export`} className="btn btn-primary">
+                <Icon name="download" />
                 ดาวน์โหลดสรุปผล (.docx)
               </a>
             </div>
 
             <dl className="mt-6 grid gap-4 border-t border-zinc-100 pt-5 text-base sm:grid-cols-3">
               <div>
-                <dt className="text-sm text-zinc-500">วันที่ตรวจ</dt>
+                <dt className="flex items-center gap-1.5 text-sm text-zinc-500"><Icon name="calendar" size={15} />วันที่ตรวจ</dt>
                 <dd className="tabular">{thaiDate(review.createdAt)}</dd>
               </div>
               <div>
-                <dt className="text-sm text-zinc-500">เกณฑ์ที่ใช้</dt>
+                <dt className="flex items-center gap-1.5 text-sm text-zinc-500"><Icon name="layers" size={15} />เกณฑ์ที่ใช้</dt>
                 <dd className="tabular">
                   {review.criteriaSet.code} v{review.criteriaSet.version}
                 </dd>
               </div>
               <div>
-                <dt className="text-sm text-zinc-500">ผู้ช่วยสกัดข้อมูล</dt>
+                <dt className="flex items-center gap-1.5 text-sm text-zinc-500"><Icon name="sparkles" size={15} />ผู้ช่วยสกัดข้อมูล</dt>
                 <dd>
                   {review.provider}
                   {review.model ? ` (${review.model})` : ""}
@@ -93,7 +110,7 @@ export default async function ReviewPage({ params }: PageProps<"/reviews/[id]">)
           </section>
 
           {/* ── คะแนนรายหัวข้อ ───────────────────────────────────────────── */}
-          <section className="space-y-4">
+          <section className="stagger space-y-4">
             {review.items.map((item) => (
               <article key={item.id} className="card card-pad">
                 <header className="flex flex-wrap items-start justify-between gap-3">
@@ -106,7 +123,17 @@ export default async function ReviewPage({ params }: PageProps<"/reviews/[id]">)
                     {item.isNA ? (
                       <span className="badge">N/A</span>
                     ) : (
-                      <span className="tabular text-2xl font-semibold">
+                      <span
+                        className={`tabular text-2xl font-semibold ${
+                          item.score === null
+                            ? ""
+                            : item.score >= item.criterion.maxScore
+                              ? "text-good-600"
+                              : item.score === 0
+                                ? "text-bad-600"
+                                : "text-warn-600"
+                        }`}
+                      >
                         {item.score}
                         <span className="text-lg font-normal text-zinc-400">
                           /{item.criterion.maxScore}
@@ -124,14 +151,14 @@ export default async function ReviewPage({ params }: PageProps<"/reviews/[id]">)
 
                 <div className="mt-4 space-y-3">
                   <div>
-                    <div className="text-sm font-medium text-zinc-500">เหตุผล</div>
+                    <div className="flex items-center gap-1.5 text-sm font-medium text-zinc-500"><Icon name="info" size={15} />เหตุผล</div>
                     <p className="mt-0.5">{item.reason}</p>
                   </div>
 
                   <div>
-                    <div className="text-sm font-medium text-zinc-500">หลักฐานจากเอกสาร</div>
+                    <div className="flex items-center gap-1.5 text-sm font-medium text-zinc-500"><Icon name="search" size={15} />หลักฐานจากเอกสาร</div>
                     {item.evidence ? (
-                      <blockquote className="mt-1 rounded-lg border-l-4 border-brand-200 bg-brand-50/60 px-4 py-2.5">
+                      <blockquote className="mt-1 rounded-xl border-l-4 border-brand-300 bg-brand-50/60 px-4 py-2.5">
                         {item.evidence}
                       </blockquote>
                     ) : (

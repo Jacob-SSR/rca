@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { getSession } from "@/lib/auth/session";
 import { capabilitiesForRole } from "@/lib/auth/permissions";
+import Icon from "@/app/components/Icon";
 
 export const dynamic = "force-dynamic";
 
@@ -12,8 +13,11 @@ export default async function NoAccessPage() {
 
   return (
     <div className="mx-auto max-w-lg py-10">
-      <div className="card card-pad text-center">
-        <h1 className="text-2xl font-semibold">ไม่มีสิทธิ์เข้าถึงส่วนนี้</h1>
+      <div className="card card-pad animate-rise text-center">
+        <span className="icon-orb icon-orb-lg mx-auto mb-4 animate-float">
+          <Icon name="lock" size={26} />
+        </span>
+        <h1 className="text-cosmic text-2xl font-bold">ไม่มีสิทธิ์เข้าถึงส่วนนี้</h1>
 
         {session ? (
           <p className="mt-4 text-zinc-600">
@@ -30,6 +34,7 @@ export default async function NoAccessPage() {
         </p>
 
         <Link href="/" className="btn mt-6">
+          <Icon name="home" />
           กลับหน้าแรก
         </Link>
       </div>

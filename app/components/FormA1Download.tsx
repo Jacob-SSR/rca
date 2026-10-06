@@ -7,6 +7,7 @@
 // (ชื่อไฟล์ภาษาไทยที่ route ส่งมาทาง filename* จึงติดมาด้วย)
 
 import { useState } from "react";
+import Icon from "@/app/components/Icon";
 
 type Props = { defaultFrom: string; defaultTo: string };
 
@@ -77,6 +78,7 @@ export default function FormA1Download({ defaultFrom, defaultTo }: Props) {
           className={`btn btn-primary ${invalidRange ? "pointer-events-none opacity-50" : ""}`}
           aria-disabled={invalidRange}
         >
+          <Icon name="download" />
           ดาวน์โหลด Form A1 (.docx)
         </a>
         <span className="text-sm text-zinc-500">

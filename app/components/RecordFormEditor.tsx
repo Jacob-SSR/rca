@@ -11,6 +11,7 @@ import { autoAuditOpd } from "@/lib/review/auto-audit";
 import FormFieldInput from "@/app/components/FormFieldInput";
 import HnPrefillBar from "@/app/components/HnPrefillBar";
 import AutoAuditPanel, { scoreTone } from "@/app/components/AutoAuditPanel";
+import Icon from "@/app/components/Icon";
 
 // ── สวิตช์ตรวจอัตโนมัติ — จำไว้ในเครื่อง (ค่าตั้งต้น: เปิด) ─────────────────────
 // ใช้ useSyncExternalStore แทน useEffect+setState เพื่อไม่ให้ค่าบน server กับ client ชนกัน
@@ -245,19 +246,23 @@ export default function RecordFormEditor({ formId, initial, caseNumber }: Props)
   return (
     <div className="space-y-5 pb-4">
       {/* ── ขั้นตอนการใช้งาน — ให้เห็นตลอดว่าอยู่ตรงไหน ต้องทำอะไรต่อ ───────── */}
-      <ol className="flex flex-wrap items-center gap-x-2 gap-y-2 text-sm">
+      <ol className="card animate-rise flex flex-wrap items-center gap-x-2 gap-y-2 px-4 py-3 text-sm sm:px-5">
         {caseNumber ? <li className="badge badge-brand me-2">เคส {caseNumber}</li> : null}
         {steps.map((st, i) => (
           <li key={st.n} className="flex items-center gap-2">
             <span
-              className={`inline-flex size-6 items-center justify-center rounded-full text-xs font-semibold ${
-                st.done ? "bg-emerald-600 text-white" : "bg-zinc-200 text-zinc-700"
+              className={`inline-flex size-7 items-center justify-center rounded-full text-xs font-semibold transition-all duration-500 ${
+                st.done
+                  ? "bg-emerald-600 text-on-brand shadow-[0_0_14px_-2px] shadow-emerald-600"
+                  : "bg-zinc-200 text-zinc-700"
               }`}
             >
-              {st.done ? "✓" : st.n}
+              {st.done ? <Icon name="check" size={15} strokeWidth={3} /> : st.n}
             </span>
             <span className={st.done ? "text-zinc-800" : "text-zinc-500"}>{st.label}</span>
-            {i < steps.length - 1 ? <span aria-hidden className="mx-1 text-zinc-300">→</span> : null}
+            {i < steps.length - 1 ? (
+              <span aria-hidden className="mx-1 h-px w-6 bg-gradient-to-r from-zinc-300 to-brand-300/60" />
+            ) : null}
           </li>
         ))}
       </ol>
@@ -280,7 +285,7 @@ export default function RecordFormEditor({ formId, initial, caseNumber }: Props)
       />
 
       <h2 className="flex items-center gap-2.5 pt-2 text-lg font-semibold">
-        <span className="inline-flex size-7 items-center justify-center rounded-full bg-brand-600 text-sm text-white">
+        <span className="inline-flex size-8 items-center justify-center rounded-full bg-gradient-to-br from-brand-600 to-cyan-glow text-sm font-bold text-on-brand shadow-[0_0_16px_-3px] shadow-brand-500">
           3
         </span>
         ตรวจทานและแก้ไขข้อมูล
@@ -290,9 +295,12 @@ export default function RecordFormEditor({ formId, initial, caseNumber }: Props)
       {FORM_SECTIONS.map((section) => {
         const scored = section.criterion ? auditByCode.get(section.criterion) : undefined;
         return (
-          <section key={section.key} id={sectionId(section.key)} className="card scroll-mt-24">
+          <section key={section.key} id={sectionId(section.key)} className="card animate-rise scroll-mt-24">
             <header className="flex flex-wrap items-baseline justify-between gap-2 border-b border-zinc-200 px-5 py-4 sm:px-6">
-              <h2 className="text-lg font-semibold">{section.title}</h2>
+              <h2 className="flex items-center gap-2 text-lg font-semibold">
+                <span aria-hidden className="size-2 rounded-full bg-gradient-to-br from-brand-500 to-cyan-glow shadow-[0_0_10px] shadow-brand-500" />
+                {section.title}
+              </h2>
               {section.criterion ? (
                 <span className="flex flex-wrap items-center gap-2">
                   {scored ? (
@@ -350,9 +358,9 @@ export default function RecordFormEditor({ formId, initial, caseNumber }: Props)
                       <span
                         key={i.message}
                         role={i.level === "error" ? "alert" : undefined}
-                        className={`mt-1 block text-sm ${i.level === "error" ? "text-red-700" : "text-warn-600"}`}
+                        className={`mt-1 flex items-start gap-1.5 text-sm ${i.level === "error" ? "text-red-700" : "text-warn-600"}`}
                       >
-                        {i.level === "error" ? "✕ " : "⚠ "}
+                        <Icon name={i.level === "error" ? "x" : "alert"} size={15} className="mt-1" />
                         {i.message}
                       </span>
                     ))}
@@ -364,7 +372,7 @@ export default function RecordFormEditor({ formId, initial, caseNumber }: Props)
         );
       })}
 
-      <div className="sticky bottom-0 -mx-4 border-t border-zinc-200 bg-white/95 px-4 py-4 backdrop-blur sm:-mx-6 sm:px-6">
+      <div className="sticky bottom-0 z-10 -mx-4 rounded-t-2xl border-t border-brand-200/60 bg-surface/85 px-4 py-4 shadow-[0_-20px_40px_-20px_rgba(0,0,0,0.6)] backdrop-blur-xl sm:-mx-6 sm:px-6">
         {error ? <p className="alert alert-error mb-3">{error}</p> : null}
 
         {submitted && errors.length > 0 ? (
@@ -379,22 +387,34 @@ export default function RecordFormEditor({ formId, initial, caseNumber }: Props)
         ) : null}
 
         <div className="flex flex-wrap items-center gap-3">
-          <span className="inline-flex size-7 items-center justify-center rounded-full bg-brand-600 text-sm font-semibold text-white">
+          <span className="inline-flex size-8 items-center justify-center rounded-full bg-gradient-to-br from-brand-600 to-cyan-glow text-sm font-bold text-on-brand shadow-[0_0_16px_-3px] shadow-brand-500">
             4
           </span>
           <button type="button" onClick={onReview} disabled={busy !== null} className="btn btn-primary">
+            {busy === "review" ? (
+              <span className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+            ) : (
+              <Icon name="sparkles" />
+            )}
             {busy === "review" ? "กำลังตรวจ… (อาจใช้เวลาสักครู่)" : "บันทึกและตรวจด้วย AI"}
           </button>
 
           <button type="button" onClick={onSave} disabled={busy !== null} className="btn">
+            <Icon name="check" />
             {busy === "save" ? "กำลังบันทึก…" : "บันทึกร่าง"}
           </button>
 
           <button type="button" onClick={onGenerate} disabled={busy !== null} className="btn">
+            <Icon name="fileText" />
             {busy === "generate" ? "กำลังสร้าง…" : "สร้างเอกสาร .docx"}
           </button>
 
-          {message ? <span className="text-emerald-700">✓ {message}</span> : null}
+          {message ? (
+            <span className="animate-rise inline-flex items-center gap-1.5 text-emerald-700">
+              <Icon name="check" strokeWidth={2.6} />
+              {message}
+            </span>
+          ) : null}
 
           {audit ? (
             <span className="ms-auto text-sm text-zinc-600">

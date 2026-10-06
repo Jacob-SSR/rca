@@ -245,7 +245,7 @@ export default function Combobox({
           id={listId}
           role="listbox"
           className="absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-lg border
-                     border-zinc-300 bg-white py-1 shadow-lg"
+                     border-zinc-300 bg-surface py-1 shadow-lg"
         >
           {filtered.map((item, i) => (
             <li

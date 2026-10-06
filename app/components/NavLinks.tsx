@@ -1,0 +1,43 @@
+"use client";
+
+// เมนูหลักด้านบน — ไฮไลต์หน้าที่อยู่ด้วยแคปซูลเรืองแสง
+// เป็น client component เพราะต้องอ่าน pathname ปัจจุบัน
+
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import Icon, { type IconName } from "@/app/components/Icon";
+
+type Item = { href: string; label: string; icon: IconName };
+
+export default function NavLinks({ canManage }: { canManage: boolean }) {
+  const pathname = usePathname();
+
+  const items: Item[] = [
+    { href: "/", label: "หน้าแรก", icon: "home" },
+    { href: "/sheets", label: "แบบฟอร์ม", icon: "clipboard" },
+    { href: "/reports", label: "Form A1", icon: "chart" },
+    ...(canManage ? [{ href: "/settings/auto-audit", label: "ตั้งค่า", icon: "sliders" as const }] : []),
+  ];
+
+  const isActive = (href: string) =>
+    href === "/"
+      ? pathname === "/" || pathname.startsWith("/cases") || pathname.startsWith("/forms") || pathname.startsWith("/reviews")
+      : pathname.startsWith(href);
+
+  return (
+    <nav aria-label="เมนูหลัก" className="flex items-center justify-around gap-1 sm:justify-start">
+      {items.map((it) => (
+        <Link
+          key={it.href}
+          href={it.href}
+          aria-current={isActive(it.href) ? "page" : undefined}
+          className="nav-link flex-col gap-0.5 px-3 py-1.5 sm:flex-row sm:gap-2 sm:px-3.5 sm:py-2"
+          title={it.label}
+        >
+          <Icon name={it.icon} />
+          <span className="text-xs sm:hidden md:inline md:text-base">{it.label}</span>
+        </Link>
+      ))}
+    </nav>
+  );
+}

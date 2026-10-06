@@ -236,7 +236,7 @@ export default function RecordFormEditor({ formId, initial, caseNumber }: Props)
 
   const hasPatient = (values.hn ?? "").trim() !== "" || (values.patientName ?? "").trim() !== "";
   const steps = [
-    { n: 1, label: "ค้นหา HN / วันที่", done: hasPatient },
+    { n: 1, label: "ค้นหาผู้ป่วย", done: hasPatient },
     { n: 2, label: "เลือกครั้งที่มา", done: hasPatient },
     { n: 3, label: `ตรวจทาน/แก้ไข (${progress.done}/${progress.total} หัวข้อ)`, done: progress.done === progress.total },
     { n: 4, label: "บันทึก / ตรวจ", done: !!formId },

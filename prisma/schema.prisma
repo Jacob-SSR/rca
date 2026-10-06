@@ -285,3 +285,66 @@ model AuditSheet {
   @@index([formCode])
   @@index([createdAt])
 }
+
+/// ตั้งค่า "ตรวจอัตโนมัติด้วย AI ประจำวัน" (OPD) — มีแถวเดียว id = "default"
+///
+/// ตั้งผ่านหน้า /settings/auto-audit โดยคนที่มีสิทธิ์ manage
+/// ตัวตั้งเวลาอยู่ในตัวแอปเอง (instrumentation.ts) ไม่ต้องพึ่ง cron ของเครื่อง
+model AutoAuditSetting {
+  id String @id @default("default")
+
+  enabled Boolean @default(false)
+
+  /// เวลาที่รัน "HH:mm" เวลาไทย — ค่าตั้งต้นเที่ยงวัน
+  runTime String @default("12:00") @db.VarChar(5)
+
+  /// วันในสัปดาห์ที่รัน เช่น "1,2,3,4,5" (0 = อาทิตย์ … 6 = เสาร์) ตาม Date.getDay()
+  weekdays String @default("0,1,2,3,4,5,6") @db.VarChar(20)
+
+  /// ตรวจ visit ของวันไหน: "yesterday" (ทั้งวันของเมื่อวาน) | "today" (ถึงเวลาที่รัน)
+  targetDay String @default("yesterday") @db.VarChar(20)
+
+  /// จำนวน visit สูงสุดต่อรอบ — คุมค่าใช้จ่าย AI (สุ่มจากทั้งวัน)
+  maxVisits Int @default(20)
+
+  updatedBy String?  @db.VarChar(100)
+  updatedAt DateTime @updatedAt
+}
+
+/// ประวัติการรันตรวจอัตโนมัติ — หนึ่งแถวต่อหนึ่งรอบ
+///
+/// ⚠️ runKey unique กันรันซ้ำวันเดียวกัน (เช่น container รีสตาร์ทหลังเที่ยง
+///    หรือมีหลาย instance) — รอบที่กดรันเองใช้ key อื่น จึงรันเพิ่มได้เสมอ
+model AutoAuditRun {
+  id String @id @default(cuid())
+
+  /// "auto:2026-10-06" สำหรับรอบตามเวลา | "manual:<cuid>" สำหรับกดรันเอง
+  runKey String @unique @db.VarChar(100)
+
+  /// วันที่ของ visit ที่ตรวจ (YYYY-MM-DD)
+  targetDate String @db.VarChar(10)
+
+  /// "auto" | "manual"
+  trigger String @db.VarChar(20)
+  /// RUNNING | COMPLETED | FAILED
+  status  String @default("RUNNING") @db.VarChar(20)
+
+  found    Int @default(0)
+  reviewed Int @default(0)
+  skipped  Int @default(0)
+  failed   Int @default(0)
+
+  /// คะแนนเฉลี่ย (%) ของรอบนี้ — null ถ้ายังไม่มีเคสที่ตรวจสำเร็จ
+  avgPercent Decimal? @db.Decimal(5, 2)
+
+  /// เคสที่สร้างในรอบนี้ [{ caseId, vn, percentage, error }]
+  results Json?
+  error   String? @db.Text
+
+  startedBy  String?   @db.VarChar(100)
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  @@index([startedAt])
+  @@index([targetDate])
+}

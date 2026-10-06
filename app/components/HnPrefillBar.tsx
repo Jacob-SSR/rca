@@ -19,6 +19,7 @@
 
 import { useState } from "react";
 import { formatThaiDateShort } from "@/lib/form/thai-date";
+import { classifySearch, parsePatientQuery } from "@/lib/hosxp/search-query";
 
 type Prefill = {
   values: Record<string, string>;
@@ -38,6 +39,8 @@ type Visit = {
   diagText: string;
   patientName?: string;
 };
+
+type Patient = { hn: string; name: string; cidMasked: string; age: string; gender: string };
 
 type Props = {
   /** ค่าที่กรอกอยู่ตอนนี้ — ใช้เช็คว่าจะทับของเดิมไหม */
@@ -68,8 +71,6 @@ const LABEL: Record<string, string> = {
   diagnosis: "การวินิจฉัย",
   treatment: "การรักษา",
 };
-
-const HN_RE = /^[A-Za-z0-9-]{1,20}$/;
 
 function todayIso(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok" }).format(new Date());
@@ -103,24 +104,32 @@ export default function HnPrefillBar({ current, disabled, onFill, onClear }: Pro
   const [searchedBy, setSearchedBy] = useState<"hn" | "date">("hn");
   const [picked, setPicked] = useState<Visit | null>(null);
   const [showList, setShowList] = useState(true);
+  /** ผลค้นหาด้วยชื่อ/เลขบัตร — เลือกคนแล้วค่อยไปดูรายการ visit */
+  const [patients, setPatients] = useState<Patient[] | null>(null);
 
   // ── validate ช่องค้นหา ─────────────────────────────────────────────────────
   const hnTrim = hn.trim();
-  const hnError = hnTrim !== "" && !HN_RE.test(hnTrim) ? "HN ต้องเป็นตัวเลข/ตัวอักษร ไม่เกิน 20 ตัว" : null;
+  const kind = classifySearch(hn);
+  const parsedQuery = kind === "cid" || kind === "name" ? parsePatientQuery(hn) : null;
+  const hnError = parsedQuery?.kind === "invalid" ? parsedQuery.reason : null;
   const dateError = date !== "" && date > todayIso() ? "วันที่อยู่ในอนาคต" : null;
   const nothing = hnTrim === "" && date === "";
   const searchBlocker = nothing
-    ? "ใส่ HN หรือเลือกวันที่อย่างน้อยหนึ่งอย่าง"
+    ? "ใส่ HN / เลขบัตรประชาชน / ชื่อ หรือเลือกวันที่ อย่างน้อยหนึ่งอย่าง"
     : (hnError ?? dateError);
 
   const searchHint =
-    hnTrim !== "" && date !== ""
+    kind === "cid"
+      ? "ค้นด้วยเลขบัตรประชาชน → เลือกผู้ป่วย แล้วจะแสดงรายการที่มารับบริการ"
+      : kind === "name"
+        ? "ค้นด้วยชื่อ (พิมพ์ “ชื่อ นามสกุล” หรือคำเดียวก็ได้) → เลือกผู้ป่วย แล้วจะแสดงรายการที่มารับบริการ"
+        : hnTrim !== "" && date !== ""
       ? "จะแสดงเฉพาะครั้งที่ HN นี้มาในวันที่เลือก"
       : hnTrim !== ""
         ? "จะแสดงทุกครั้งที่ HN นี้มา (ใหม่ → เก่า) — เลือกวันที่ด้วยถ้าอยากกรองให้เหลือวันเดียว"
         : date !== ""
           ? "จะแสดงผู้มารับบริการทุกคนในวันที่เลือก"
-          : "ใส่ HN เพื่อดูทุกครั้งที่มา หรือเลือกแค่วันที่เพื่อดูผู้ป่วยทั้งหมดของวันนั้น";
+          : "พิมพ์ HN, เลขบัตรประชาชน 13 หลัก หรือชื่อ-สกุล — หรือเลือกแค่วันที่เพื่อดูผู้ป่วยทั้งหมดของวันนั้น";
 
   function apply(prefill: Prefill, overwrite: boolean) {
     const next = overwrite
@@ -153,6 +162,7 @@ export default function HnPrefillBar({ current, disabled, onFill, onClear }: Pro
     setDate("");
     setTouched(false);
     setVisits(null);
+    setPatients(null);
     setPicked(null);
     setShowList(true);
     setResult(null);
@@ -161,11 +171,60 @@ export default function HnPrefillBar({ current, disabled, onFill, onClear }: Pro
     setPending(null);
   }
 
-  /** ค้นหารายการ visit ตาม HN และ/หรือวันที่ */
+  /** ปุ่มค้นหา — HN/วันที่ ไปที่รายการ visit ตรง ๆ ส่วนชื่อ/เลขบัตร ไปหาตัวผู้ป่วยก่อน */
   async function search() {
     setTouched(true);
     if (searchBlocker) return;
 
+    if (kind === "cid" || kind === "name") {
+      await findPatients();
+    } else {
+      await loadVisits(hnTrim);
+    }
+  }
+
+  /** ค้นผู้ป่วยด้วยชื่อ/เลขบัตร — เจอคนเดียวไปต่อรายการ visit เลย */
+  async function findPatients() {
+    setBusy(true);
+    setError(null);
+    setVisits(null);
+    setPatients(null);
+
+    try {
+      const res = await fetch(`/api/hosxp/patients?q=${encodeURIComponent(hnTrim)}`);
+      const json = await res.json().catch(() => ({}));
+
+      if (!json?.available) {
+        setError(json?.reason ?? json?.error ?? "ค้นหาผู้ป่วยไม่สำเร็จ");
+        return;
+      }
+
+      const list = (json.patients ?? []) as Patient[];
+      if (list.length === 0) {
+        setError(json?.reason ?? "ไม่พบผู้ป่วย");
+        return;
+      }
+      if (list.length === 1) {
+        setBusy(false);
+        await choosePatient(list[0]);
+        return;
+      }
+      setPatients(list);
+    } catch {
+      setError("ติดต่อเซิร์ฟเวอร์ไม่ได้");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function choosePatient(p: Patient) {
+    setPatients(null);
+    setHn(p.hn);
+    await loadVisits(p.hn);
+  }
+
+  /** รายการ visit ตาม HN และ/หรือวันที่ */
+  async function loadVisits(hnValue: string) {
     setBusy(true);
     setError(null);
     setVisits(null);
@@ -173,7 +232,7 @@ export default function HnPrefillBar({ current, disabled, onFill, onClear }: Pro
 
     try {
       const params = new URLSearchParams({ list: "1" });
-      if (hnTrim) params.set("hn", hnTrim);
+      if (hnValue) params.set("hn", hnValue);
       if (date) params.set("date", date);
 
       const res = await fetch(`/api/hosxp/visit?${params.toString()}`);
@@ -185,7 +244,7 @@ export default function HnPrefillBar({ current, disabled, onFill, onClear }: Pro
       }
 
       const list = (json.visits ?? []) as Visit[];
-      setSearchedBy(hnTrim ? "hn" : "date");
+      setSearchedBy(hnValue ? "hn" : "date");
       setVisits(list);
       if (list.length === 0) setError(json?.reason ?? "ไม่พบการมารับบริการ");
     } catch {
@@ -237,7 +296,7 @@ export default function HnPrefillBar({ current, disabled, onFill, onClear }: Pro
     }
   }
 
-  const step1Done = visits !== null && visits.length > 0;
+  const step1Done = (visits !== null && visits.length > 0) || result !== null;
   const step2Done = result !== null;
 
   return (
@@ -261,7 +320,7 @@ export default function HnPrefillBar({ current, disabled, onFill, onClear }: Pro
         </div>
 
         <form
-          className="grid gap-3 sm:grid-cols-[minmax(0,14rem)_minmax(0,14rem)_auto] sm:items-start"
+          className="grid gap-3 sm:grid-cols-[minmax(0,22rem)_minmax(0,14rem)_auto] sm:items-start"
           onSubmit={(e) => {
             e.preventDefault();
             search();
@@ -270,13 +329,12 @@ export default function HnPrefillBar({ current, disabled, onFill, onClear }: Pro
         >
           <div>
             <label className="label" htmlFor="prefill-hn">
-              HN
+              HN / เลขบัตรประชาชน / ชื่อ-สกุล
             </label>
             <input
               id="prefill-hn"
               className={`input tabular ${hnError ? "border-red-400" : ""}`}
               value={hn}
-              inputMode="numeric"
               autoComplete="off"
               disabled={disabled || busy}
               aria-invalid={!!hnError}
@@ -286,9 +344,10 @@ export default function HnPrefillBar({ current, disabled, onFill, onClear }: Pro
                 // เปลี่ยน HN แล้วรายการเดิมใช้ไม่ได้อีก ต้องล้างทิ้ง
                 // ไม่งั้นจะกดเลือก visit ของคนไข้คนก่อนโดยไม่รู้ตัว
                 setVisits(null);
+                setPatients(null);
                 setError(null);
               }}
-              placeholder="เช่น 000012345"
+              placeholder="เช่น 000012345 หรือ สมชาย ใจดี"
             />
             {hnError ? (
               <span id="prefill-hn-err" className="mt-1 block text-sm text-red-700">
@@ -355,6 +414,53 @@ export default function HnPrefillBar({ current, disabled, onFill, onClear }: Pro
 
         {error ? <p className="alert alert-error mt-4">{error}</p> : null}
       </div>
+
+      {/* ── ผลค้นหาด้วยชื่อ/เลขบัตร — ชื่อซ้ำกันได้ ต้องให้เลือกคนก่อน ─────────── */}
+      {patients && patients.length > 0 ? (
+        <div className="border-t border-zinc-200">
+          <h3 className="px-5 py-3 text-base font-semibold sm:px-6">
+            เลือกผู้ป่วย{" "}
+            <span className="font-normal text-zinc-500">
+              (พบ {patients.length} คน{patients.length >= 30 ? " — แสดง 30 คนแรก พิมพ์ชื่อ-นามสกุลให้ละเอียดขึ้น" : ""})
+            </span>
+          </h3>
+          <div className="max-h-96 overflow-auto border-t border-zinc-100">
+            <table className="table">
+              <thead className="sticky top-0">
+                <tr>
+                  <th>ชื่อ-สกุล</th>
+                  <th>HN</th>
+                  <th>เลขบัตร</th>
+                  <th>อายุ / เพศ</th>
+                  <th className="w-24" />
+                </tr>
+              </thead>
+              <tbody>
+                {patients.map((p) => (
+                  <tr key={p.hn}>
+                    <td>{p.name || "—"}</td>
+                    <td className="tabular">{p.hn}</td>
+                    <td className="tabular text-zinc-500">{p.cidMasked || "—"}</td>
+                    <td className="text-zinc-600">
+                      {[p.age, p.gender].filter(Boolean).join(" · ") || "—"}
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-primary"
+                        disabled={disabled || busy}
+                        onClick={() => void choosePatient(p)}
+                      >
+                        เลือก
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
 
       {/* ── ขั้นที่ 2 : เลือกครั้งที่จะตรวจ ─────────────────────────────────── */}
       {visits && visits.length > 0 ? (

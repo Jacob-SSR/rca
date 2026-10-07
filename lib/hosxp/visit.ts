@@ -339,6 +339,8 @@ export type VisitCore = {
   date: string;
   time: string;
   department: string;
+  /** รหัสแผนก (ovst.main_dep) — ใช้กรองตามแผนกในรอบตรวจอัตโนมัติ */
+  depcode: string;
   pttype: string;
   diagText: string;
   /** มีเฉพาะรายการแบบเลือกตามวันที่ (ไม่ได้ใส่ HN) — ต้องรู้ว่าแถวนี้คือใคร */
@@ -346,7 +348,7 @@ export type VisitCore = {
 };
 
 const VISIT_SELECT = `o.vn, o.hn, o.vstdate AS date, o.vsttime AS time, o.diag_text AS diagText,
-            k.department AS department, p.name AS pttype`;
+            o.main_dep AS depcode, k.department AS department, p.name AS pttype`;
 
 function toVisitCore(r: Row): VisitCore {
   return {
@@ -355,6 +357,7 @@ function toVisitCore(r: Row): VisitCore {
     date: isoDate(r.date),
     time: hhmm(r.time),
     department: clean(r.department),
+    depcode: clean(r.depcode),
     pttype: clean(r.pttype),
     diagText: clean(r.diagText),
   };

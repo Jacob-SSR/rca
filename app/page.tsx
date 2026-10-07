@@ -11,6 +11,8 @@ import CountUp from "@/app/components/reactbits/CountUp";
 import BlurText from "@/app/components/reactbits/BlurText";
 import GradientText from "@/app/components/reactbits/GradientText";
 import HeroArt from "@/app/components/HeroArt";
+import CaseFilters from "@/app/components/CaseFilters";
+import { Suspense } from "react";
 
 export const dynamic = "force-dynamic";
 
@@ -32,8 +34,11 @@ function thaiDate(d: Date): string {
   }).format(d);
 }
 
-export default async function Home() {
+export default async function Home(props: PageProps<"/">) {
   const session = await getSession();
+  const sp = await props.searchParams;
+  const depFilter = typeof sp.dep === "string" ? sp.dep.trim() : "";
+  const mineOnly = sp.mine === "1" && !!session;
 
   // เที่ยงคืนตามเวลาไทยของวันนี้ — ไว้นับ "ตรวจวันนี้"
   const todayTh = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok" }).format(new Date());
@@ -57,11 +62,25 @@ export default async function Home() {
     { label: "คะแนนเฉลี่ย", value: avgPct, suffix: "%", decimals: 1, icon: "target" as const, tone: "from-pink-glow to-amber-400" },
   ];
 
+  // แผนกที่มีเคสอยู่จริง — เป็นตัวเลือกของตัวกรอง (ไม่ต้องต่อ HOSxP)
+  const deptRows = await prisma.case.groupBy({
+    by: ["department"],
+    where: { department: { not: null } },
+    orderBy: { department: "asc" },
+  });
+  const departmentOptions = deptRows.map((r) => r.department).filter((d): d is string => !!d);
+
   const cases = await prisma.case.findMany({
+    where: {
+      ...(depFilter ? { department: depFilter } : {}),
+      ...(mineOnly ? { createdBy: session!.username } : {}),
+    },
     orderBy: { createdAt: "desc" },
-    take: 30,
+    take: 50,
     include: {
       _count: { select: { documents: true, forms: true } },
+      // คลินิกจากฟอร์มล่าสุด — สำรองไว้แสดงถ้าเคสเก่ายังไม่มีแผนกที่สร้าง
+      forms: { orderBy: { updatedAt: "desc" }, take: 1, select: { department: true } },
       reviews: {
         orderBy: { createdAt: "desc" },
         take: 1,
@@ -167,18 +186,27 @@ export default async function Home() {
 
       {/* ── รายการเคส ──────────────────────────────────────────────────────── */}
       <section className="card animate-rise overflow-hidden [animation-delay:0.25s]">
-        <h2 className="card-title">
-          <span className="icon-orb"><Icon name="layers" /></span>
-          เคสล่าสุด
-          <span className="badge ml-auto tabular">{cases.length} รายการ</span>
-        </h2>
+        <div className="flex flex-wrap items-center gap-3 border-b border-zinc-200 px-5 py-4 sm:px-6">
+          <h2 className="flex items-center gap-2.5 text-lg font-semibold">
+            <span className="icon-orb"><Icon name="layers" /></span>
+            เคสล่าสุด
+            <span className="badge tabular">{cases.length} รายการ</span>
+          </h2>
+          <div className="sm:ml-auto">
+            <Suspense fallback={null}>
+              <CaseFilters departments={departmentOptions} />
+            </Suspense>
+          </div>
+        </div>
 
         {cases.length === 0 ? (
           <div className="px-6 py-14 text-center">
             <span className="icon-orb icon-orb-lg mx-auto mb-4 animate-float">
               <Icon name="inbox" size={26} />
             </span>
-            <p className="text-lg text-zinc-500">ยังไม่มีเคสในระบบ</p>
+            <p className="text-lg text-zinc-500">
+              {depFilter || mineOnly ? "ไม่มีเคสตามตัวกรองที่เลือก" : "ยังไม่มีเคสในระบบ"}
+            </p>
             <p className="mt-1 text-zinc-400">
               เริ่มจากสร้างฟอร์มใหม่ หรืออัปโหลดเอกสารด้านบน
             </p>
@@ -189,6 +217,7 @@ export default async function Home() {
               <thead>
                 <tr>
                   <th>เลขที่เคส</th>
+                  <th>แผนกที่สร้าง</th>
                   <th>ผู้สร้าง</th>
                   <th>วันที่สร้าง</th>
                   <th className="text-center">ฟอร์ม</th>
@@ -209,6 +238,9 @@ export default async function Home() {
                         {c.title ? (
                           <div className="text-sm text-zinc-500">{c.title}</div>
                         ) : null}
+                      </td>
+                      <td className="text-zinc-600">
+                        {c.department || c.forms[0]?.department || <span className="text-zinc-400">—</span>}
                       </td>
                       <td className="whitespace-nowrap text-zinc-600">
                         {c.createdByName || c.createdBy || (

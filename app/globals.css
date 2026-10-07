@@ -237,6 +237,12 @@ body {
     transition: border-color 0.25s, box-shadow 0.25s, transform 0.25s;
   }
 
+  /* การ์ดที่มีช่องกำลังพิมพ์อยู่ ยกขึ้นเหนือการ์ดถัดไป
+     (การ์ดเป็น position: relative ทุกใบ ไม่งั้น dropdown ของ Combobox จะจมใต้การ์ดใบล่าง) */
+  .card:focus-within {
+    z-index: 10;
+  }
+
   /* การ์ดที่กดได้ทั้งใบ — ยกขึ้นเล็กน้อย */
   .card-hover:hover {
     transform: translateY(-3px);

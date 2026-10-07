@@ -5,9 +5,10 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { recordFormSchema } from "@/lib/form/schema";
+import { caseDepartmentSchema, recordFormSchema } from "@/lib/form/schema";
 import { requireCapability } from "@/lib/auth/session";
 import { authErrorResponse } from "@/lib/auth/api";
+import { caseNumberFor, isFallbackCaseNumber } from "@/lib/form/service";
 
 export const dynamic = "force-dynamic";
 
@@ -86,11 +87,23 @@ export async function PATCH(req: NextRequest, ctx: RouteContext<"/api/forms/[id]
     data: { ...parsed.data, updatedBy: session.username },
   });
 
+  // แผนกที่สร้างเคส ส่งมาพร้อมฟอร์ม (ช่องอยู่บนหัวฟอร์ม) แต่เก็บที่เคส
+  const caseDept = caseDepartmentSchema.safeParse((body as { caseDepartment?: unknown })?.caseDepartment);
+  if (caseDept.success && caseDept.data !== "") {
+    await prisma.case.update({ where: { id: form.caseId }, data: { department: caseDept.data } });
+  }
+
   // HN เปลี่ยน → อัปเดตที่เคสด้วย จะได้ค้นหาจากเคสได้ตรงกัน
-  if (parsed.data.hn !== undefined) {
+  // เคสที่ยังใช้เลขแบบเดิม (ตอนสร้างยังไม่รู้ HN) → เปลี่ยนเป็น HN-วันที่ ให้เลย
+  if (parsed.data.hn !== undefined || parsed.data.serviceDate !== undefined) {
+    const c = await prisma.case.findUnique({ where: { id: form.caseId }, select: { caseNumber: true } });
+    const renumber = c && isFallbackCaseNumber(c.caseNumber) && (form.hn ?? "").trim() !== "";
     await prisma.case.update({
       where: { id: form.caseId },
-      data: { hosxpPatientRef: parsed.data.hn ?? null },
+      data: {
+        ...(parsed.data.hn !== undefined ? { hosxpPatientRef: parsed.data.hn ?? null } : {}),
+        ...(renumber ? { caseNumber: await caseNumberFor(form.hn, form.serviceDate) } : {}),
+      },
     });
   }
 

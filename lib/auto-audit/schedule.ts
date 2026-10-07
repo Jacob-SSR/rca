@@ -15,8 +15,17 @@ export const TARGET_DAYS = {
 
 export type TargetDay = keyof typeof TARGET_DAYS;
 
-/** สูงสุดต่อรอบ — กันตั้งค่าผิดแล้วยิง AI หลายพันครั้งในรอบเดียว */
+/** สูงสุดต่อรอบ (โหมดสุ่ม) — กันพิมพ์เลขผิดแล้วยิง AI หลายพันครั้ง */
 export const MAX_VISITS_CAP = 300;
+
+/**
+ * maxVisits = 0 คือ "ตรวจทุกรายของวัน" (ไม่สุ่ม)
+ * โควตา AI หมดกลางทาง → รอบหยุดรอ แล้วตรวจต่อเองหลังรีเซ็ต (ดู runner.ts)
+ */
+export const ALL_VISITS = 0;
+
+/** จำนวนที่รอบหนึ่งต้องตรวจ — null = ทุกราย */
+export const visitLimitOf = (maxVisits: number): number | null => (maxVisits === ALL_VISITS ? null : maxVisits);
 
 export const settingsSchema = z.object({
   enabled: z.boolean(),
@@ -26,7 +35,13 @@ export const settingsSchema = z.object({
     .min(1, "เลือกวันอย่างน้อย 1 วัน")
     .transform((d) => [...new Set(d)].sort()),
   targetDay: z.enum(["yesterday", "today"]),
-  maxVisits: z.number().int().min(1, "อย่างน้อย 1 ราย").max(MAX_VISITS_CAP, `ไม่เกิน ${MAX_VISITS_CAP} ราย`),
+  /** รหัสแผนก (depcode) ที่ให้ตรวจ — ว่าง = ทุกแผนก */
+  departments: z.array(z.string().trim().min(1).max(20)).max(200).default([]),
+  maxVisits: z
+    .number({ error: "ใส่จำนวนราย" })
+    .int()
+    .min(ALL_VISITS, "จำนวนต้องไม่ติดลบ")
+    .max(MAX_VISITS_CAP, `ไม่เกิน ${MAX_VISITS_CAP} ราย (ถ้าต้องการทุกราย เลือก "ตรวจทุกรายของวัน")`),
 });
 
 export type AutoAuditSettings = z.infer<typeof settingsSchema>;
@@ -37,7 +52,59 @@ export const DEFAULT_SETTINGS: AutoAuditSettings = {
   weekdays: [0, 1, 2, 3, 4, 5, 6],
   targetDay: "yesterday",
   maxVisits: 20,
+  departments: [],
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ตัวกรองของรอบตรวจ: แผนก + ช่วงเวลาที่มา (หรือเวร)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** เวรมาตรฐานของโรงพยาบาล — ช่วงเวลาคิดจากเวลาที่ผู้ป่วยมา (vsttime) ของวันเดียวกัน */
+export const SHIFTS = {
+  morning: { label: "เวรเช้า", from: "08:00", to: "16:00" },
+  afternoon: { label: "เวรบ่าย", from: "16:00", to: "24:00" },
+  night: { label: "เวรดึก", from: "00:00", to: "08:00" },
+} as const;
+
+export type ShiftKey = keyof typeof SHIFTS;
+
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$|^24:00$/;
+
+export const runFiltersSchema = z
+  .object({
+    departments: z.array(z.string().trim().min(1).max(20)).max(200).default([]),
+    shift: z.enum(["morning", "afternoon", "night"]).nullish(),
+    timeFrom: z.string().regex(HHMM, "เวลาต้องเป็น ชม:นาที").nullish(),
+    timeTo: z.string().regex(HHMM, "เวลาต้องเป็น ชม:นาที").nullish(),
+  })
+  .refine((f) => !f.timeFrom === !f.timeTo, { message: "ใส่เวลาให้ครบทั้งเริ่มและสิ้นสุด" })
+  .refine((f) => !f.timeFrom || f.timeFrom !== f.timeTo, { message: "เวลาเริ่มกับสิ้นสุดต้องไม่เท่ากัน" });
+
+export type RunFilters = z.infer<typeof runFiltersSchema>;
+
+/** ช่วงเวลาที่ใช้จริง — เลือกเวรมา ใช้เวลาของเวร, ใส่เวลาเอง ใช้เวลาที่ใส่ */
+export function timeRangeOf(f: RunFilters): { from: string; to: string } | null {
+  if (f.shift) return { from: SHIFTS[f.shift].from, to: SHIFTS[f.shift].to };
+  if (f.timeFrom && f.timeTo) return { from: f.timeFrom, to: f.timeTo };
+  return null;
+}
+
+/**
+ * visit นี้เข้าเงื่อนไขของรอบไหม
+ * ช่วงเวลา: from ≤ เวลา < to · ถ้า from > to ถือว่าข้ามเที่ยงคืน (เช่น 20:00–02:00)
+ */
+export function matchesFilters(v: { depcode?: string; time: string }, f: RunFilters): boolean {
+  if (f.departments.length > 0 && !f.departments.includes((v.depcode ?? "").trim())) return false;
+
+  const range = timeRangeOf(f);
+  if (range) {
+    const t = v.time.slice(0, 5);
+    if (!/^\d{2}:\d{2}$/.test(t)) return false;
+    const inRange = range.from < range.to ? t >= range.from && t < range.to : t >= range.from || t < range.to;
+    if (!inRange) return false;
+  }
+  return true;
+}
 
 export function parseWeekdays(s: string): number[] {
   return [...new Set(s.split(",").map((x) => Number(x.trim())))]
@@ -115,4 +182,53 @@ export function sample<T>(items: T[], n: number, rand: () => number = Math.rando
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a.slice(0, Math.max(0, n));
+}
+
+/** ฟอร์มที่มีอยู่แล้วของ visit หนึ่ง — ใช้ตัดสินว่าต้องตรวจ visit นั้นอีกไหม */
+export type ExistingForm = {
+  id: string;
+  hosxpVisitRef: string | null;
+  /** ฟอร์มที่รอบอัตโนมัติสร้างเอง (ไม่ใช่คนกรอก) */
+  byAutoAudit: boolean;
+  /** มีผลตรวจที่เสร็จสมบูรณ์ (COMPLETED) แล้ว */
+  completed: boolean;
+};
+
+/**
+ * เลือก visit ที่รอบนี้ต้องตรวจ
+ *
+ * "ตรวจแล้ว" = มีผลตรวจ COMPLETED เท่านั้น — ไม่ใช่แค่ "มีฟอร์ม"
+ * เพราะรอบอัตโนมัติสร้างเคส+ฟอร์มก่อนเรียก AI ถ้า AI ล้ม (เช่นโควตาหมด)
+ * visit นั้นจะมีฟอร์มค้างอยู่ ถ้านับว่าตรวจแล้วจะหลุดไปตลอดกาล
+ *
+ *   - มีผลตรวจ COMPLETED                       → ข้าม
+ *   - ฟอร์มที่คนกรอกเอง ยังไม่เสร็จ             → ข้าม (คนกำลังทำอยู่ อย่าไปแย่ง)
+ *   - ฟอร์มของรอบอัตโนมัติ ที่ตรวจไม่สำเร็จ    → ตรวจซ้ำ ใช้เคส/ฟอร์มเดิม (ไม่สร้างเคสซ้ำ)
+ *   - ยังไม่มีฟอร์ม                            → ตรวจใหม่
+ *
+ * limit = null → ทุกรายตามลำดับที่มา, ตัวเลข → สุ่มเท่านั้นราย
+ */
+export function planVisits<V extends { vn: string }>(
+  visits: V[],
+  forms: ExistingForm[],
+  limit: number | null,
+  rand: () => number = Math.random,
+): { todo: Array<V & { reuseFormId?: string }>; skipped: number } {
+  const byVn = new Map<string, ExistingForm[]>();
+  for (const f of forms) {
+    if (!f.hosxpVisitRef) continue;
+    byVn.set(f.hosxpVisitRef, [...(byVn.get(f.hosxpVisitRef) ?? []), f]);
+  }
+
+  const candidates: Array<V & { reuseFormId?: string }> = [];
+  for (const v of visits) {
+    const fs = byVn.get(v.vn) ?? [];
+    if (fs.some((f) => f.completed)) continue;
+    if (fs.some((f) => !f.byAutoAudit)) continue;
+    const retry = fs.find((f) => f.byAutoAudit);
+    candidates.push(retry ? { ...v, reuseFormId: retry.id } : { ...v });
+  }
+
+  const todo = limit === null ? candidates : sample(candidates, limit, rand);
+  return { todo, skipped: visits.length - candidates.length };
 }

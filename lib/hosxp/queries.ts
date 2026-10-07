@@ -29,8 +29,31 @@ const SAFE_IDENT = /^[A-Za-z0-9_$]+$/;
 
 /**
  * คืนชื่อตารางแบบเต็ม เช่น `hos`.`kskdepartment`
- * เลือกฐานที่ตั้งไว้ใน HOSXP_DB_NAME ก่อน ถ้าตารางไม่ได้อยู่ที่นั่นก็เอาฐานแรกที่เจอ
+ *
+ * ลำดับการเลือกฐาน
+ *   1. ฐานที่ตั้งไว้ใน HOSXP_DB_NAME
+ *   2. ฐานที่ตารางนั้นมีแถวมากที่สุด
+ *   3. ชื่อฐานเรียงตามตัวอักษร
+ *
+ * ⚠️ ข้อ 2 สำคัญ — เครื่อง HOSxP มักมีฐานสำรอง/ฐานทดสอบ/ฐานเก่าที่มีตารางชื่อเดียวกัน
+ *    (เช่น hos กับ hos_backup) ถ้าเลือกตามตัวอักษรอย่างเดียว อาจไปอ่านฐานสำเนาที่ข้อมูลไม่ครบ
+ *    อาการคือ "Visit List ใน HOSxP มี 17 ครั้ง แต่ระบบนี้เห็นแค่ 2" — ฐานตัวจริงคือฐานที่ข้อมูลเยอะสุด
+ *    (table_rows ใน information_schema เป็นค่าประมาณ ไม่ต้องนับจริง จึงไม่หนักเครื่อง)
+ *    ตรวจว่าเลือกฐานไหนอยู่ได้ด้วย `npm run check:conn`
  */
+/** ทุกฐานที่มีตารางนี้ + จำนวนแถวโดยประมาณ — ไว้ให้ check:conn แสดงว่ามีฐานซ้ำไหม */
+export async function schemasWithTable(table: string): Promise<{ db: string; rows: number }[]> {
+  if (!SAFE_IDENT.test(table)) throw new Error(`ชื่อตารางไม่ถูกต้อง: ${table}`);
+  const rows = await hosxpSelect<RowDataPacket & { db: unknown; n: unknown }>(
+    `SELECT table_schema AS db, COALESCE(table_rows, 0) AS n
+       FROM information_schema.tables
+      WHERE table_name = ?
+      ORDER BY n DESC`,
+    [table],
+  );
+  return rows.map((r) => ({ db: String(r.db), rows: Number(r.n) }));
+}
+
 export async function qualify(table: string): Promise<string> {
   if (!SAFE_IDENT.test(table)) {
     throw new Error(`ชื่อตารางไม่ถูกต้อง: ${table}`);
@@ -44,7 +67,7 @@ export async function qualify(table: string): Promise<string> {
     `SELECT table_schema AS db
        FROM information_schema.tables
       WHERE table_name = ?
-      ORDER BY (table_schema = ?) DESC, table_schema
+      ORDER BY (table_schema = ?) DESC, COALESCE(table_rows, 0) DESC, table_schema
       LIMIT 1`,
     [table, preferred],
   );

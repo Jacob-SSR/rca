@@ -62,6 +62,8 @@ export default async function Home() {
     take: 30,
     include: {
       _count: { select: { documents: true, forms: true } },
+      // แผนกจากฟอร์มล่าสุด — หลายหน่วยตรวจพร้อมกัน ต้องเห็นว่าเคสไหนของแผนกไหน
+      forms: { orderBy: { updatedAt: "desc" }, take: 1, select: { department: true } },
       reviews: {
         orderBy: { createdAt: "desc" },
         take: 1,
@@ -189,6 +191,7 @@ export default async function Home() {
               <thead>
                 <tr>
                   <th>เลขที่เคส</th>
+                  <th>แผนก</th>
                   <th>ผู้สร้าง</th>
                   <th>วันที่สร้าง</th>
                   <th className="text-center">ฟอร์ม</th>
@@ -209,6 +212,9 @@ export default async function Home() {
                         {c.title ? (
                           <div className="text-sm text-zinc-500">{c.title}</div>
                         ) : null}
+                      </td>
+                      <td className="text-zinc-600">
+                        {c.forms[0]?.department || <span className="text-zinc-400">—</span>}
                       </td>
                       <td className="whitespace-nowrap text-zinc-600">
                         {c.createdByName || c.createdBy || (

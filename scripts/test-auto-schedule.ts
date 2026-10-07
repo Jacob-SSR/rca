@@ -9,13 +9,16 @@ import {
   isDue,
   nextRun,
   parseWeekdays,
+  matchesFilters,
   planVisits,
+  runFiltersSchema,
   sample,
   settingsSchema,
   shiftDate,
   targetDateFor,
   visitLimitOf,
 } from "@/lib/auto-audit/schedule";
+import { caseNumberBase } from "@/lib/form/case-number";
 import { classifySearch, isValidThaiCid, maskCid, parsePatientQuery } from "@/lib/hosxp/search-query";
 
 let passed = 0;
@@ -162,6 +165,39 @@ test("โหมดสุ่ม: ได้ไม่เกิน limit และ�
   const p = planVisits(visits, [form("f1", "v1", false, true)], 2, () => 0.3);
   assert.equal(p.todo.length, 2);
   assert.equal(p.todo.some((v) => v.vn === "v1"), false);
+});
+
+// ── ตัวกรองแผนก / เวร / ช่วงเวลา ─────────────────────────────────────────────
+const f = (x: Record<string, unknown>) => runFiltersSchema.parse(x);
+
+test("แผนก: ว่าง = ทุกแผนก, เลือกแล้วผ่านเฉพาะแผนกนั้น", () => {
+  assert.equal(matchesFilters({ depcode: "010", time: "09:00" }, f({})), true);
+  assert.equal(matchesFilters({ depcode: "010", time: "09:00" }, f({ departments: ["010", "020"] })), true);
+  assert.equal(matchesFilters({ depcode: "030", time: "09:00" }, f({ departments: ["010"] })), false);
+});
+
+test("เวรเช้า 08:00–16:00 / บ่าย 16:00–24:00 / ดึก 00:00–08:00 (เริ่มรวม สิ้นสุดไม่รวม)", () => {
+  assert.equal(matchesFilters({ time: "08:00" }, f({ shift: "morning" })), true);
+  assert.equal(matchesFilters({ time: "15:59" }, f({ shift: "morning" })), true);
+  assert.equal(matchesFilters({ time: "16:00" }, f({ shift: "morning" })), false);
+  assert.equal(matchesFilters({ time: "23:59" }, f({ shift: "afternoon" })), true);
+  assert.equal(matchesFilters({ time: "02:30" }, f({ shift: "night" })), true);
+  assert.equal(matchesFilters({ time: "08:00" }, f({ shift: "night" })), false);
+});
+
+test("กำหนดเวลาเอง รวมช่วงข้ามเที่ยงคืน และ visit ไม่มีเวลา ไม่ผ่าน", () => {
+  assert.equal(matchesFilters({ time: "10:30" }, f({ timeFrom: "10:00", timeTo: "12:00" })), true);
+  assert.equal(matchesFilters({ time: "23:00" }, f({ timeFrom: "20:00", timeTo: "02:00" })), true);
+  assert.equal(matchesFilters({ time: "03:00" }, f({ timeFrom: "20:00", timeTo: "02:00" })), false);
+  assert.equal(matchesFilters({ time: "" }, f({ timeFrom: "10:00", timeTo: "12:00" })), false);
+  assert.equal(runFiltersSchema.safeParse({ timeFrom: "10:00" }).success, false);
+});
+
+test("เลขที่เคส = HN-วันที่มา (พ.ศ.) · ไม่มี HN = null (ใช้เลขแบบเดิม)", () => {
+  assert.equal(caseNumberBase("690000258", "2026-05-06"), "690000258-25690506");
+  assert.equal(caseNumberBase(" 690000258 ", null, new Date("2026-10-07T03:00:00Z")), "690000258-25691007");
+  assert.equal(caseNumberBase("", "2026-05-06"), null);
+  assert.equal(caseNumberBase("69/123", "2026-05-06"), null);
 });
 
 console.log(`\n${failed === 0 ? "✅" : "❌"} ผ่าน ${passed} / ${passed + failed} เทสต์\n`);

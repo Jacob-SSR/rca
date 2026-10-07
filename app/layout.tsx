@@ -9,7 +9,6 @@ import Spotlight from "@/app/components/Spotlight";
 import BrandLogo from "@/app/components/BrandLogo";
 import AiQuotaBanner from "@/app/components/AiQuotaBanner";
 import Icon from "@/app/components/Icon";
-import { hasCapability } from "@/lib/auth/permissions";
 
 export const metadata: Metadata = {
   title: "RCA — ตรวจคุณภาพการบันทึกข้อมูลผู้ป่วยนอก",
@@ -44,7 +43,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
             {/* มือถือ: เมนูลงไปเป็นแถวที่สองเต็มความกว้าง */}
             {session ? (
               <div className="order-last w-full sm:order-none sm:ml-auto sm:w-auto">
-                <NavLinks canManage={hasCapability(session.role, "manage")} />
+                <NavLinks />
               </div>
             ) : null}
 

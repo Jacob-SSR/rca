@@ -12,7 +12,7 @@ import { prisma } from "@/lib/prisma";
 import { isHosxpEnabled } from "@/lib/hosxp/env";
 import { listVisitsByDate, lookupVisit } from "@/lib/hosxp/visit";
 import { recordFormSchema } from "@/lib/form/schema";
-import { generateDocumentFromForm, isFormEmpty, nextCaseNumber } from "@/lib/form/service";
+import { caseNumberFor, generateDocumentFromForm, isFormEmpty } from "@/lib/form/service";
 import { reviewExistingDocument } from "@/lib/review/pipeline";
 import { AIQuotaError, assertAiAvailable } from "@/lib/ai";
 import { currentQuotaBlock, quotaMessage } from "@/lib/ai/quota";
@@ -20,8 +20,10 @@ import {
   DEFAULT_SETTINGS,
   autoRunKey,
   bangkokParts,
+  matchesFilters,
   parseWeekdays,
   planVisits,
+  type RunFilters,
   targetDateFor,
   visitLimitOf,
   type AutoAuditSettings,
@@ -47,6 +49,7 @@ export async function loadSettings(): Promise<AutoAuditSettings & { updatedBy: s
     weekdays: parseWeekdays(row.weekdays),
     targetDay: (row.targetDay === "today" ? "today" : "yesterday") as TargetDay,
     maxVisits: row.maxVisits,
+    departments: (row.departments ?? "").split(",").map((d) => d.trim()).filter(Boolean),
     updatedBy: row.updatedBy,
     updatedAt: row.updatedAt,
   };
@@ -59,6 +62,7 @@ export async function saveSettings(s: AutoAuditSettings, by: string) {
     weekdays: s.weekdays.join(","),
     targetDay: s.targetDay,
     maxVisits: s.maxVisits,
+    departments: s.departments.length > 0 ? s.departments.join(",") : null,
     updatedBy: by,
   };
   await prisma.autoAuditSetting.upsert({
@@ -80,11 +84,16 @@ async function claimRun(opts: {
   targetDate: string;
   trigger: "auto" | "manual" | "resume";
   startedBy: string | null;
+  startedByName: string | null;
   visitLimit: number | null;
   resumedFrom: string | null;
+  filters: RunFilters;
 }) {
   try {
-    return await prisma.autoAuditRun.create({ data: { ...opts, status: "RUNNING" } });
+    const { filters, ...rest } = opts;
+    return await prisma.autoAuditRun.create({
+      data: { ...rest, filters: filters as unknown as Prisma.InputJsonValue, status: "RUNNING" },
+    });
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
       throw new RunAlreadyClaimedError(`รอบ ${opts.runKey} ถูกรันไปแล้ว`);
@@ -110,6 +119,7 @@ export async function runningRun() {
 async function auditVisit(
   v: { vn: string; hn: string; reuseFormId?: string },
   targetDate: string,
+  owner: { username: string; name: string },
 ): Promise<RunResultItem> {
   try {
     if (v.reuseFormId) {
@@ -131,12 +141,15 @@ async function auditVisit(
 
     const created = await prisma.case.create({
       data: {
-        caseNumber: await nextCaseNumber(),
+        caseNumber: await caseNumberFor(parsed.data.hn ?? v.hn, parsed.data.serviceDate ?? targetDate),
         title: `ตรวจอัตโนมัติ OPD ${targetDate}`,
         hosxpPatientRef: parsed.data.hn ?? (v.hn || null),
         hosxpVisitRef: v.vn,
-        createdBy: AUTO_AUDIT_USER,
-        createdByName: AUTO_AUDIT_NAME,
+        // เจ้าของเคส = คนที่กดรัน (รอบตามเวลาไม่มีคนกด → "ตรวจอัตโนมัติ (AI)")
+        // ส่วนฟอร์มยังเป็นของ AUTO_AUDIT_USER เสมอ — planVisits ใช้แยกฟอร์มของรอบอัตโนมัติ
+        // ออกจากฟอร์มที่คนกรอกเอง
+        createdBy: owner.username,
+        createdByName: owner.name,
       },
     });
 
@@ -180,11 +193,24 @@ export async function runAutoAudit(opts: {
   visitLimit?: number | null;
   /** resume: id ของรอบที่หยุดไว้ */
   resumedFrom?: string;
+  /** ชื่อที่แสดงของคนกดรัน — เป็นผู้สร้างเคส */
+  startedByName?: string | null;
+  /** แผนก/ช่วงเวลา — ไม่ระบุ = แผนกตามที่ตั้งค่าไว้ ทั้งวัน */
+  filters?: Partial<RunFilters>;
 }) {
   const settings = await loadSettings();
   const runDate = bangkokParts(opts.now ?? new Date()).date;
   const targetDate = opts.targetDate ?? targetDateFor(runDate, settings.targetDay);
   const visitLimit = opts.visitLimit !== undefined ? opts.visitLimit : visitLimitOf(settings.maxVisits);
+  const filters: RunFilters = {
+    departments: opts.filters?.departments ?? settings.departments,
+    shift: opts.filters?.shift ?? null,
+    timeFrom: opts.filters?.timeFrom ?? null,
+    timeTo: opts.filters?.timeTo ?? null,
+  };
+  const owner = opts.startedBy
+    ? { username: opts.startedBy, name: opts.startedByName || opts.startedBy }
+    : { username: AUTO_AUDIT_USER, name: AUTO_AUDIT_NAME };
 
   if (await runningRun()) {
     throw new RunAlreadyClaimedError("มีรอบตรวจที่กำลังทำงานอยู่ — รอให้เสร็จก่อน");
@@ -200,8 +226,10 @@ export async function runAutoAudit(opts: {
     targetDate,
     trigger: opts.trigger,
     startedBy: opts.startedBy ?? null,
+    startedByName: opts.startedByName ?? null,
     visitLimit,
     resumedFrom: opts.resumedFrom ?? null,
+    filters,
   });
 
   const results: RunResultItem[] = [];
@@ -217,7 +245,9 @@ export async function runAutoAudit(opts: {
   try {
     if (!isHosxpEnabled()) throw new Error("ยังไม่ได้ตั้งค่าเชื่อมต่อ HOSxP");
 
-    const visits = (await listVisitsByDate(targetDate, 2000, { opdOnly: true, withDiag: false })).filter((v) => v.hn);
+    const visits = (await listVisitsByDate(targetDate, 2000, { opdOnly: true, withDiag: false })).filter(
+      (v) => v.hn && matchesFilters(v, filters),
+    );
     found = visits.length;
 
     // ฟอร์มที่มีอยู่แล้วของ visit วันนี้ + มีผลตรวจเสร็จแล้วหรือยัง (ดูกติกาใน planVisits)
@@ -248,7 +278,7 @@ export async function runAutoAudit(opts: {
     assertAiAvailable();
 
     for (const v of plan.todo) {
-      results.push(await auditVisit(v, targetDate));
+      results.push(await auditVisit(v, targetDate, owner));
 
       // โควตาหมดกลางรอบ → หยุดเลย visit ที่เหลือจะโดน 429 ทุกตัวอยู่ดี
       // visit ที่ค้างอยู่ (รวมตัวที่เพิ่งโดน 429) จะถูกตรวจต่อในรอบ resume
@@ -330,6 +360,8 @@ export async function resumePausedRun(now: Date = new Date()) {
     visitLimit: remaining,
     resumedFrom: paused.id,
     startedBy: paused.startedBy,
+    startedByName: paused.startedByName,
+    filters: (paused.filters ?? {}) as Partial<RunFilters>,
     now,
   });
 }

@@ -88,7 +88,7 @@ export async function findUser(username: string): Promise<UserRecord | null> {
     displayName: String(row.name ?? row.user ?? "").trim(),
     // คนที่ยังไม่ถูกตั้ง role (คอลัมน์เพิ่งเพิ่มฝั่ง ppc-hos) → USER
     // ต้อง fallback เสมอ ไม่งั้น role เป็น undefined แล้ว proxy จะปฏิเสธทุกอย่าง
-    role: String(row.role ?? "USER").toUpperCase(),
+    role: (String(row.role ?? "").trim() || "USER").toUpperCase(),
     passwordHash: String(row.passweb ?? ""),
   };
 }

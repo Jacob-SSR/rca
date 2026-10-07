@@ -10,6 +10,9 @@ import { buildRecordDocx, recordDocxFileName, type HospitalInfo } from "@/lib/fo
 import { DOCX_MIME } from "@/lib/docx/parse";
 import { parseDocx } from "@/lib/docx/parse";
 import type { RecordFormInput } from "@/lib/form/schema";
+import { caseNumberBase } from "@/lib/form/case-number";
+
+export { caseNumberBase };
 
 export function hospitalInfo(): HospitalInfo {
   return {
@@ -17,6 +20,37 @@ export function hospitalInfo(): HospitalInfo {
     code: process.env.HOSPITAL_CODE || undefined,
   };
 }
+
+/**
+ * เลขที่เคส = HN-วันที่มารับบริการ (ปี พ.ศ.) เช่น 690000258-25690506
+ * อ่านแล้วรู้ทันทีว่าเป็นของคนไหน มาวันไหน — ตรงกับที่เจ้าหน้าที่ค้นใน HOSxP
+ *
+ * - คนเดียวมาหลายครั้งในวันเดียว (มีจริง ดู Visit List ของ HOSxP) → ต่อท้าย -2, -3
+ * - ยังไม่รู้วันที่มา → ใช้วันนี้
+ * - ยังไม่รู้ HN (เช่นอัปโหลดไฟล์ หรือกรอกเองโดยไม่ใส่ HN) → RCA-YYYYMMDD-NNN แบบเดิม
+ *   แล้วเปลี่ยนเป็นแบบ HN ให้เองตอนบันทึกฟอร์มที่มี HN (ดู PATCH /api/forms/[id])
+ *
+ * ⚠️ HN เป็นข้อมูลระบุตัวผู้ป่วย แต่เลขที่เคสไม่ถูกส่งเข้า AI
+ *    (AI ได้แค่ข้อความเอกสารที่ผ่าน sanitizePHI แล้ว ไม่ได้ชื่อไฟล์หรือเลขเคส)
+ */
+export async function caseNumberFor(hn?: string | null, serviceDate?: string | null): Promise<string> {
+  const base = caseNumberBase(hn, serviceDate);
+  if (!base) return nextCaseNumber();
+
+  const taken = new Set(
+    (
+      await prisma.case.findMany({
+        where: { OR: [{ caseNumber: base }, { caseNumber: { startsWith: `${base}-` } }] },
+        select: { caseNumber: true },
+      })
+    ).map((c) => c.caseNumber),
+  );
+  if (!taken.has(base)) return base;
+  for (let n = 2; ; n++) if (!taken.has(`${base}-${n}`)) return `${base}-${n}`;
+}
+
+/** เลขเคสแบบเดิมที่ยังไม่มี HN — เปลี่ยนเป็นแบบ HN ได้เมื่อรู้ HN แล้ว */
+export const isFallbackCaseNumber = (caseNumber: string) => caseNumber.startsWith("RCA-");
 
 /** RCA-YYYYMMDD-NNN โดย NNN นับเฉพาะเคสของวันนั้น */
 export async function nextCaseNumber(): Promise<string> {

@@ -215,7 +215,8 @@ async function checkHosxp(): Promise<Result> {
       const find = async (table: string) => {
         const [rows] = await c.query<mysql.RowDataPacket[]>(
           `SELECT table_schema AS db FROM information_schema.tables
-            WHERE table_name = ? ORDER BY (table_schema = ?) DESC, table_schema LIMIT 1`,
+            WHERE table_name = ?
+            ORDER BY (table_schema = ?) DESC, COALESCE(table_rows, 0) DESC, table_schema LIMIT 1`,
           [table, preferred],
         );
         return rows[0] ? String(rows[0].db) : "";
@@ -242,9 +243,17 @@ async function checkHosxp(): Promise<Result> {
         missing: tables.filter((t) => !found.get(t)),
       }));
 
+      // ฐานที่มีตาราง ovst หลายฐาน (ฐานจริง + ฐานสำรอง/ทดสอบ) — ต้องเห็นว่าเลือกฐานไหน
+      // ถ้าเลือกฐานสำเนาที่ข้อมูลไม่ครบ รายการ visit ของผู้ป่วยจะขาดหาย
+      const [ovstDbs] = await c.query<mysql.RowDataPacket[]>(
+        `SELECT table_schema AS db, COALESCE(table_rows, 0) AS n FROM information_schema.tables
+          WHERE table_name = 'ovst' ORDER BY n DESC`,
+      );
+      const ovstCandidates = ovstDbs.map((x) => ({ db: String(x.db), rows: Number(x.n) }));
+
       const missingIcd = GROUPS["ตรวจรหัส ICD (A2/A4)"].filter((t) => !found.get(t));
       if (!depDb || !pttDb)
-        return { depDb, pttDb, dep: 0, ptt: 0, sample: [] as string[], missingIcd, groupStatus };
+        return { depDb, pttDb, dep: 0, ptt: 0, sample: [] as string[], missingIcd, groupStatus, ovstCandidates, ovstDb: found.get("ovst") ?? "" };
 
       const [dep] = await c.query<mysql.RowDataPacket[]>(
         `SELECT COUNT(*) AS n FROM \`${depDb}\`.kskdepartment`,
@@ -264,6 +273,8 @@ async function checkHosxp(): Promise<Result> {
         sample: sample.map((x) => String(x.department)),
         missingIcd,
         groupStatus,
+        ovstCandidates,
+        ovstDb: found.get("ovst") ?? "",
       };
     },
   );
@@ -307,7 +318,14 @@ async function checkHosxp(): Promise<Result> {
             ? `   ✅ ${g.label}`
             : `   ⚠️ ${g.label} — อ่านไม่ได้: ${g.missing.join(", ")} (ต้องกรอกเอง)`,
         )
-        .join("\n"),
+        .join("\n") +
+      (r.value.ovstCandidates.length > 1
+        ? `\n   ⚠️ พบตาราง ovst ${r.value.ovstCandidates.length} ฐาน — ระบบใช้ฐาน ${r.value.ovstDb}:\n` +
+          r.value.ovstCandidates
+            .map((x) => `      ${x.db === r.value.ovstDb ? "→" : " "} ${x.db} (~${x.rows.toLocaleString()} visit)`)
+            .join("\n") +
+          `\n   ถ้าไม่ใช่ฐานจริงของ HOSxP ให้ตั้ง HOSXP_DB_NAME=<ชื่อฐานจริง> ใน .env`
+        : ""),
   };
 }
 

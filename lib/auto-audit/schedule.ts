@@ -35,6 +35,8 @@ export const settingsSchema = z.object({
     .min(1, "เลือกวันอย่างน้อย 1 วัน")
     .transform((d) => [...new Set(d)].sort()),
   targetDay: z.enum(["yesterday", "today"]),
+  /** รหัสแผนก (depcode) ที่ให้ตรวจ — ว่าง = ทุกแผนก */
+  departments: z.array(z.string().trim().min(1).max(20)).max(200).default([]),
   maxVisits: z
     .number({ error: "ใส่จำนวนราย" })
     .int()
@@ -50,7 +52,59 @@ export const DEFAULT_SETTINGS: AutoAuditSettings = {
   weekdays: [0, 1, 2, 3, 4, 5, 6],
   targetDay: "yesterday",
   maxVisits: 20,
+  departments: [],
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ตัวกรองของรอบตรวจ: แผนก + ช่วงเวลาที่มา (หรือเวร)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** เวรมาตรฐานของโรงพยาบาล — ช่วงเวลาคิดจากเวลาที่ผู้ป่วยมา (vsttime) ของวันเดียวกัน */
+export const SHIFTS = {
+  morning: { label: "เวรเช้า", from: "08:00", to: "16:00" },
+  afternoon: { label: "เวรบ่าย", from: "16:00", to: "24:00" },
+  night: { label: "เวรดึก", from: "00:00", to: "08:00" },
+} as const;
+
+export type ShiftKey = keyof typeof SHIFTS;
+
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$|^24:00$/;
+
+export const runFiltersSchema = z
+  .object({
+    departments: z.array(z.string().trim().min(1).max(20)).max(200).default([]),
+    shift: z.enum(["morning", "afternoon", "night"]).nullish(),
+    timeFrom: z.string().regex(HHMM, "เวลาต้องเป็น ชม:นาที").nullish(),
+    timeTo: z.string().regex(HHMM, "เวลาต้องเป็น ชม:นาที").nullish(),
+  })
+  .refine((f) => !f.timeFrom === !f.timeTo, { message: "ใส่เวลาให้ครบทั้งเริ่มและสิ้นสุด" })
+  .refine((f) => !f.timeFrom || f.timeFrom !== f.timeTo, { message: "เวลาเริ่มกับสิ้นสุดต้องไม่เท่ากัน" });
+
+export type RunFilters = z.infer<typeof runFiltersSchema>;
+
+/** ช่วงเวลาที่ใช้จริง — เลือกเวรมา ใช้เวลาของเวร, ใส่เวลาเอง ใช้เวลาที่ใส่ */
+export function timeRangeOf(f: RunFilters): { from: string; to: string } | null {
+  if (f.shift) return { from: SHIFTS[f.shift].from, to: SHIFTS[f.shift].to };
+  if (f.timeFrom && f.timeTo) return { from: f.timeFrom, to: f.timeTo };
+  return null;
+}
+
+/**
+ * visit นี้เข้าเงื่อนไขของรอบไหม
+ * ช่วงเวลา: from ≤ เวลา < to · ถ้า from > to ถือว่าข้ามเที่ยงคืน (เช่น 20:00–02:00)
+ */
+export function matchesFilters(v: { depcode?: string; time: string }, f: RunFilters): boolean {
+  if (f.departments.length > 0 && !f.departments.includes((v.depcode ?? "").trim())) return false;
+
+  const range = timeRangeOf(f);
+  if (range) {
+    const t = v.time.slice(0, 5);
+    if (!/^\d{2}:\d{2}$/.test(t)) return false;
+    const inRange = range.from < range.to ? t >= range.from && t < range.to : t >= range.from || t < range.to;
+    if (!inRange) return false;
+  }
+  return true;
+}
 
 export function parseWeekdays(s: string): number[] {
   return [...new Set(s.split(",").map((x) => Number(x.trim())))]

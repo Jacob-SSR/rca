@@ -44,16 +44,19 @@ function test(name: string, fn: () => void | Promise<void>) {
 async function main() {
   console.log("\n── deny by default ──");
 
-  await test("role ที่ไม่รู้จัก → ไม่มีสิทธิ์อะไรเลย", () => {
-    assert.deepEqual(capabilitiesForRole("PHARMACY"), []);
-    assert.deepEqual(capabilitiesForRole("อะไรก็ไม่รู้"), []);
+  await test("ไม่มี role (ยังไม่ล็อกอิน) → ไม่มีสิทธิ์อะไรเลย", () => {
     assert.deepEqual(capabilitiesForRole(null), []);
     assert.deepEqual(capabilitiesForRole(undefined), []);
+    assert.deepEqual(capabilitiesForRole(""), []);
   });
 
-  await test("USER (ยังไม่ตั้ง role) → ยังไม่มีสิทธิ์", () => {
-    assert.deepEqual(capabilitiesForRole("USER"), []);
-    assert.equal(canAccessPath("USER", "/"), false);
+  await test("ทุกบัญชีที่ล็อกอินได้ ใช้งานหลักได้ (ดู + ตรวจ) แต่ไม่ได้ manage", () => {
+    for (const r of ["USER", "PHARMACY", "อะไรก็ไม่รู้", "NURSE", "NURSE_OPD"]) {
+      assert.equal(hasCapability(r, "view"), true, r);
+      assert.equal(hasCapability(r, "review"), true, r);
+      assert.equal(hasCapability(r, "manage"), false, r);
+    }
+    assert.equal(canAccessPath("USER", "/"), true);
   });
 
   await test("path ที่ไม่ตรงกฎไหนเลย ต้องใช้สิทธิ์ view เป็นอย่างน้อย", () => {
@@ -90,39 +93,23 @@ async function main() {
     }
   });
 
-  await test("NURSE ตรวจได้แต่ลบไม่ได้", () => {
-    assert.equal(hasCapability("NURSE", "view"), true);
-    assert.equal(hasCapability("NURSE", "review"), true);
-    assert.equal(hasCapability("NURSE", "manage"), false);
-  });
-
-  await test("พยาบาลรายหน่วย ดูได้อย่างเดียว", () => {
-    for (const r of ["NURSE_OPD", "NURSE_IPD", "NURSE_ER", "NURSE_LR", "NURSE_IC"]) {
-      assert.equal(hasCapability(r, "view"), true, r);
-      assert.equal(hasCapability(r, "review"), false, r);
-      assert.equal(hasCapability(r, "manage"), false, r);
-    }
-  });
-
   await test("role รับได้ทั้งตัวเล็กตัวใหญ่", () => {
     assert.equal(hasCapability("doctor", "manage"), true);
-    assert.equal(hasCapability("Nurse_Opd", "view"), true);
+    assert.equal(hasCapability("Nurse_Opd", "review"), true);
   });
 
   console.log("\n── สิทธิ์ตาม method ──");
 
-  await test("NURSE_OPD อ่านรายการเคสได้ แต่สั่งตรวจไม่ได้", () => {
-    assert.equal(canAccessRequest("NURSE_OPD", "/api/cases", "GET"), true);
-    assert.equal(canAccessRequest("NURSE_OPD", "/api/cases", "POST"), false);
-    assert.equal(canAccessRequest("NURSE_OPD", "/api/review", "POST"), false);
+  await test("ทุก role อ่าน/สั่งตรวจ/กดตรวจอัตโนมัติเองได้", () => {
+    for (const r of ["USER", "NURSE_OPD"]) {
+      assert.equal(canAccessRequest(r, "/api/cases", "GET"), true, r);
+      assert.equal(canAccessRequest(r, "/api/review", "POST"), true, r);
+      assert.equal(canAccessRequest(r, "/api/auto-audit/run", "POST"), true, r);
+    }
   });
 
-  await test("NURSE สั่งตรวจได้", () => {
-    assert.equal(canAccessRequest("NURSE", "/api/review", "POST"), true);
-  });
-
-  await test("คนไม่มีสิทธิ์เลย อ่านก็ไม่ได้", () => {
-    assert.equal(canAccessRequest("USER", "/api/cases", "GET"), false);
+  await test("ไม่ได้ล็อกอิน อ่านก็ไม่ได้", () => {
+    assert.equal(canAccessRequest(null, "/api/cases", "GET"), false);
   });
 
   await test("/api/admin ต้องมีสิทธิ์ manage", () => {

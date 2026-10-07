@@ -5,7 +5,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { createRecordFormSchema } from "@/lib/form/schema";
-import { nextCaseNumber } from "@/lib/form/service";
+import { caseNumberFor } from "@/lib/form/service";
 import { requireCapability } from "@/lib/auth/session";
 import { authErrorResponse } from "@/lib/auth/api";
 
@@ -85,9 +85,12 @@ export async function POST(req: NextRequest) {
   } else {
     const created = await prisma.case.create({
       data: {
-        caseNumber: await nextCaseNumber(),
+        caseNumber: await caseNumberFor(fields.hn, fields.serviceDate),
         title: caseTitle || null,
         hosxpPatientRef: fields.hn ?? null,
+        // เจ้าของเคส = คนที่ล็อกอินอยู่ (ไม่งั้นรายการเคสขึ้น "ไม่ทราบ" และเจ้าของแก้/ลบเคสตัวเองไม่ได้)
+        createdBy: session.username,
+        createdByName: session.name,
       },
     });
     targetCaseId = created.id;

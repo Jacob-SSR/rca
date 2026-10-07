@@ -304,8 +304,11 @@ model AutoAuditSetting {
   /// ตรวจ visit ของวันไหน: "yesterday" (ทั้งวันของเมื่อวาน) | "today" (ถึงเวลาที่รัน)
   targetDay String @default("yesterday") @db.VarChar(20)
 
-  /// จำนวน visit สูงสุดต่อรอบ — คุมค่าใช้จ่าย AI (สุ่มจากทั้งวัน)
+  /// จำนวน visit สูงสุดต่อรอบ — คุมค่าใช้จ่าย AI (สุ่มจากทั้งวัน) · 0 = ทุกราย
   maxVisits Int @default(20)
+
+  /// แผนกที่ให้ตรวจ — รหัส depcode ของ HOSxP คั่นด้วยจุลภาค · ว่าง = ทุกแผนก
+  departments String? @db.Text
 
   updatedBy String?  @db.VarChar(100)
   updatedAt DateTime @updatedAt
@@ -337,6 +340,10 @@ model AutoAuditRun {
   /// id ของรอบที่หยุดรอโควตา ซึ่งรอบนี้มาตรวจต่อ
   resumedFrom String? @db.VarChar(30)
 
+  /// ตัวกรองของรอบนี้ { departments: string[], timeFrom: "HH:mm", timeTo: "HH:mm", shift }
+  /// เก็บไว้ให้รอบ resume ตรวจต่อด้วยเงื่อนไขเดิม และแสดงในประวัติ
+  filters Json?
+
   found    Int @default(0)
   reviewed Int @default(0)
   skipped  Int @default(0)
@@ -350,6 +357,8 @@ model AutoAuditRun {
   error   String? @db.Text
 
   startedBy  String?   @db.VarChar(100)
+  /// ชื่อที่แสดงของคนกดรัน — ใช้เป็น "ผู้สร้าง" ของเคสที่รอบนี้สร้าง
+  startedByName String? @db.VarChar(200)
   startedAt  DateTime  @default(now())
   finishedAt DateTime?
 

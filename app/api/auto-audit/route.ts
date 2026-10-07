@@ -1,12 +1,14 @@
-// app/api/admin/auto-audit/route.ts
-// GET — ค่าตั้งค่าตรวจอัตโนมัติ + ประวัติรอบล่าสุด
-// PUT — บันทึกค่าตั้งค่า (เปิด/ปิด เวลา วัน จำนวนต่อรอบ)
+// app/api/auto-audit/route.ts
+// GET — ค่าตั้งค่าตรวจอัตโนมัติ + ประวัติรอบล่าสุด (ทุกคนที่ล็อกอินดูได้)
+// PUT — บันทึกตารางเวลาของทั้งระบบ (เปิด/ปิด เวลา วัน จำนวน แผนก) — เฉพาะสิทธิ์ manage
 //
-// อยู่ใต้ /api/admin → ต้องมีสิทธิ์ manage (proxy.ts ล็อกให้ + เช็คซ้ำที่นี่)
+// ทุกคนกด "ตรวจเดี๋ยวนี้" ของแผนกตัวเองได้ (ดู ./run) แต่ตารางเวลามีชุดเดียวทั้งโรงพยาบาล
+// ถ้าใครก็แก้ได้ คนหนึ่งเปลี่ยนแผนก/เวลาแล้วรอบของอีกหน่วยจะหายไปเงียบ ๆ
 
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireCapability } from "@/lib/auth/session";
+import { hasCapability } from "@/lib/auth/permissions";
 import { authErrorResponse } from "@/lib/auth/api";
 import { isHosxpEnabled } from "@/lib/hosxp/env";
 import { autoRunKey, bangkokParts, nextRun, settingsSchema } from "@/lib/auto-audit/schedule";
@@ -16,8 +18,9 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET() {
+  let session;
   try {
-    await requireCapability("manage");
+    session = await requireCapability("view");
   } catch (e) {
     return authErrorResponse(e) ?? NextResponse.json({ error: "Internal" }, { status: 500 });
   }
@@ -32,6 +35,7 @@ export async function GET() {
   ]);
 
   return NextResponse.json({
+    canManage: hasCapability(session.role, "manage"),
     settings,
     nextRun: nextRun(settings, now, !!ranToday),
     hosxpEnabled: isHosxpEnabled(),

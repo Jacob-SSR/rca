@@ -16,7 +16,7 @@ type Status = {
   quota: { blocked: false } | { blocked: true; scope: "minute" | "day"; resetAt: string; since: string };
 };
 
-export default function AiStatusCard() {
+export default function AiStatusCard({ canManage }: { canManage: boolean }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [probe, setProbe] = useState<{ ok: boolean; error?: string } | null>(null);
   const [busy, setBusy] = useState<null | "probe" | "clear">(null);
@@ -112,6 +112,7 @@ export default function AiStatusCard() {
             </div>
           </dl>
 
+          {canManage ? (
           <div className="flex flex-col gap-2 md:items-end">
             <button type="button" className="btn btn-sm" disabled={busy !== null || !status.configured} onClick={() => act("probe")}>
               {busy === "probe" ? (
@@ -128,6 +129,7 @@ export default function AiStatusCard() {
               </button>
             ) : null}
           </div>
+          ) : null}
 
           {probe ? (
             <p

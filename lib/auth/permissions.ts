@@ -15,40 +15,35 @@ export type Capability =
   | "manage"; // ลบเคส แก้ timeline ของคนอื่น จัดการเกณฑ์
 
 /**
- * role จาก `users.role` (ตารางเดียวกับ ppc-hos-10667) → สิทธิ์ใน RCA
+ * ทุกบัญชีที่ล็อกอินได้ ใช้งานหลักได้ทั้งหมด — ดูผล, กรอกฟอร์ม, อัปโหลด, สั่งตรวจด้วย AI,
+ * กด "ตรวจเดี๋ยวนี้" ของแผนกตัวเอง
  *
- * เกณฑ์ที่ใช้ตัดสิน: การตรวจคุณภาพการบันทึกเวชระเบียนเป็นงานของ
- * เวชระเบียน/ประกัน (FINANCE) แพทย์ (DOCTOR) และผู้บริหาร (DIRECTOR)
- * พยาบาลควรเห็นผลของหน่วยตัวเองได้เพื่อนำไปปรับปรุง แต่ไม่ต้องสั่งตรวจ
+ * เดิมจำกัดตาม role (พยาบาลรายหน่วยดูได้อย่างเดียว, USER เข้าไม่ได้) แต่หน้างานจริง
+ * ต้องให้ทุกหน่วยตรวจเวชระเบียนของหน่วยตัวเองได้ จึงเปิดให้ทุกคน
  *
- * role ที่ไม่อยู่ในตารางนี้ → ไม่มีสิทธิ์อะไรเลย (deny by default)
+ * ที่ยังสงวนไว้ (manage): ลบ/แก้เคสของคนอื่น และแก้ "ตารางเวลาตรวจอัตโนมัติ" ของทั้งระบบ
+ * — เคสของตัวเองยังแก้/ลบได้เสมอ (ดู lib/auth/ownership.ts)
  */
+export const BASE_CAPABILITIES: readonly Capability[] = ["view", "review"];
+
+/** role ที่ได้สิทธิ์ผู้ดูแลระบบเพิ่ม (role จาก `users.role` ตารางเดียวกับ ppc-hos-10667) */
 export const ROLE_CAPABILITIES: Record<string, readonly Capability[]> = {
   ADMIN: ["view", "review", "manage"],
   IT: ["view", "review", "manage"],
   DIRECTOR: ["view", "review", "manage"],
   DOCTOR: ["view", "review", "manage"],
-
   // เวชระเบียน / งานประกัน — เป็นเจ้าของงานตรวจคุณภาพตัวจริง
   FINANCE: ["view", "review", "manage"],
-
-  // หัวหน้าพยาบาล — ตรวจได้ ลบไม่ได้
-  NURSE: ["view", "review"],
-
-  // พยาบาลรายหน่วย — ดูผลได้อย่างเดียว เอาไปปรับปรุงการบันทึกของหน่วยตัวเอง
-  NURSE_OPD: ["view"],
-  NURSE_IPD: ["view"],
-  NURSE_ER: ["view"],
-  NURSE_LR: ["view"],
-  NURSE_IC: ["view"],
-
-  // ยังไม่ถูกจัดสายงาน — เข้าระบบได้แต่ยังไม่เห็นอะไร ต้องให้ ADMIN ตั้ง role ก่อน
-  USER: [],
 };
 
+/**
+ * สิทธิ์ของ role — ไม่มี role (ยังไม่ล็อกอิน) = ไม่มีสิทธิ์อะไรเลย
+ * มี role อะไรก็ตาม = อย่างน้อย BASE_CAPABILITIES
+ */
 export function capabilitiesForRole(role: string | null | undefined): readonly Capability[] {
-  const r = (role ?? "USER").toUpperCase();
-  return ROLE_CAPABILITIES[r] ?? [];
+  const r = (role ?? "").trim().toUpperCase();
+  if (r === "") return [];
+  return [...new Set([...BASE_CAPABILITIES, ...(ROLE_CAPABILITIES[r] ?? [])])];
 }
 
 export function hasCapability(
@@ -70,7 +65,7 @@ export function hasCapability(
 export const PUBLIC_PATHS = ["/login", "/api/auth/login", "/api/auth/logout", "/api/auth/me"];
 
 /** path ที่ต้องมีสิทธิ์ "review" */
-const REVIEW_PATHS = ["/api/review", "/api/cases", "/api/forms"];
+const REVIEW_PATHS = ["/api/review", "/api/cases", "/api/forms", "/api/auto-audit"];
 
 /** path ที่ต้องมีสิทธิ์ "manage" */
 const MANAGE_PATHS = ["/api/admin"];

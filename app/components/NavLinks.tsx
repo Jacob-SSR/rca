@@ -27,14 +27,14 @@ function PendingBar() {
   );
 }
 
-export default function NavLinks({ canManage }: { canManage: boolean }) {
+export default function NavLinks() {
   const pathname = usePathname();
 
   const items: Item[] = [
     { href: "/", label: "หน้าแรก", icon: "home" },
     { href: "/sheets", label: "แบบฟอร์ม", icon: "clipboard" },
     { href: "/reports", label: "Form A1", icon: "chart" },
-    ...(canManage ? [{ href: "/settings/auto-audit", label: "ตั้งค่า", icon: "sliders" as const }] : []),
+    { href: "/settings/auto-audit", label: "ตรวจอัตโนมัติ", icon: "sliders" },
   ];
 
   const isActive = (href: string) =>

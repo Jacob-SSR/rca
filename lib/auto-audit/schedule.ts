@@ -15,8 +15,17 @@ export const TARGET_DAYS = {
 
 export type TargetDay = keyof typeof TARGET_DAYS;
 
-/** สูงสุดต่อรอบ — กันตั้งค่าผิดแล้วยิง AI หลายพันครั้งในรอบเดียว */
+/** สูงสุดต่อรอบ (โหมดสุ่ม) — กันพิมพ์เลขผิดแล้วยิง AI หลายพันครั้ง */
 export const MAX_VISITS_CAP = 300;
+
+/**
+ * maxVisits = 0 คือ "ตรวจทุกรายของวัน" (ไม่สุ่ม)
+ * โควตา AI หมดกลางทาง → รอบหยุดรอ แล้วตรวจต่อเองหลังรีเซ็ต (ดู runner.ts)
+ */
+export const ALL_VISITS = 0;
+
+/** จำนวนที่รอบหนึ่งต้องตรวจ — null = ทุกราย */
+export const visitLimitOf = (maxVisits: number): number | null => (maxVisits === ALL_VISITS ? null : maxVisits);
 
 export const settingsSchema = z.object({
   enabled: z.boolean(),
@@ -26,7 +35,11 @@ export const settingsSchema = z.object({
     .min(1, "เลือกวันอย่างน้อย 1 วัน")
     .transform((d) => [...new Set(d)].sort()),
   targetDay: z.enum(["yesterday", "today"]),
-  maxVisits: z.number().int().min(1, "อย่างน้อย 1 ราย").max(MAX_VISITS_CAP, `ไม่เกิน ${MAX_VISITS_CAP} ราย`),
+  maxVisits: z
+    .number({ error: "ใส่จำนวนราย" })
+    .int()
+    .min(ALL_VISITS, "จำนวนต้องไม่ติดลบ")
+    .max(MAX_VISITS_CAP, `ไม่เกิน ${MAX_VISITS_CAP} ราย (ถ้าต้องการทุกราย เลือก "ตรวจทุกรายของวัน")`),
 });
 
 export type AutoAuditSettings = z.infer<typeof settingsSchema>;
@@ -115,4 +128,53 @@ export function sample<T>(items: T[], n: number, rand: () => number = Math.rando
     [a[i], a[j]] = [a[j], a[i]];
   }
   return a.slice(0, Math.max(0, n));
+}
+
+/** ฟอร์มที่มีอยู่แล้วของ visit หนึ่ง — ใช้ตัดสินว่าต้องตรวจ visit นั้นอีกไหม */
+export type ExistingForm = {
+  id: string;
+  hosxpVisitRef: string | null;
+  /** ฟอร์มที่รอบอัตโนมัติสร้างเอง (ไม่ใช่คนกรอก) */
+  byAutoAudit: boolean;
+  /** มีผลตรวจที่เสร็จสมบูรณ์ (COMPLETED) แล้ว */
+  completed: boolean;
+};
+
+/**
+ * เลือก visit ที่รอบนี้ต้องตรวจ
+ *
+ * "ตรวจแล้ว" = มีผลตรวจ COMPLETED เท่านั้น — ไม่ใช่แค่ "มีฟอร์ม"
+ * เพราะรอบอัตโนมัติสร้างเคส+ฟอร์มก่อนเรียก AI ถ้า AI ล้ม (เช่นโควตาหมด)
+ * visit นั้นจะมีฟอร์มค้างอยู่ ถ้านับว่าตรวจแล้วจะหลุดไปตลอดกาล
+ *
+ *   - มีผลตรวจ COMPLETED                       → ข้าม
+ *   - ฟอร์มที่คนกรอกเอง ยังไม่เสร็จ             → ข้าม (คนกำลังทำอยู่ อย่าไปแย่ง)
+ *   - ฟอร์มของรอบอัตโนมัติ ที่ตรวจไม่สำเร็จ    → ตรวจซ้ำ ใช้เคส/ฟอร์มเดิม (ไม่สร้างเคสซ้ำ)
+ *   - ยังไม่มีฟอร์ม                            → ตรวจใหม่
+ *
+ * limit = null → ทุกรายตามลำดับที่มา, ตัวเลข → สุ่มเท่านั้นราย
+ */
+export function planVisits<V extends { vn: string }>(
+  visits: V[],
+  forms: ExistingForm[],
+  limit: number | null,
+  rand: () => number = Math.random,
+): { todo: Array<V & { reuseFormId?: string }>; skipped: number } {
+  const byVn = new Map<string, ExistingForm[]>();
+  for (const f of forms) {
+    if (!f.hosxpVisitRef) continue;
+    byVn.set(f.hosxpVisitRef, [...(byVn.get(f.hosxpVisitRef) ?? []), f]);
+  }
+
+  const candidates: Array<V & { reuseFormId?: string }> = [];
+  for (const v of visits) {
+    const fs = byVn.get(v.vn) ?? [];
+    if (fs.some((f) => f.completed)) continue;
+    if (fs.some((f) => !f.byAutoAudit)) continue;
+    const retry = fs.find((f) => f.byAutoAudit);
+    candidates.push(retry ? { ...v, reuseFormId: retry.id } : { ...v });
+  }
+
+  const todo = limit === null ? candidates : sample(candidates, limit, rand);
+  return { todo, skipped: visits.length - candidates.length };
 }

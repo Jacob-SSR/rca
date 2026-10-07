@@ -324,10 +324,18 @@ model AutoAuditRun {
   /// วันที่ของ visit ที่ตรวจ (YYYY-MM-DD)
   targetDate String @db.VarChar(10)
 
-  /// "auto" | "manual"
+  /// "auto" | "manual" | "resume" (ตรวจต่อจากรอบที่หยุดรอโควตา)
   trigger String @db.VarChar(20)
   /// RUNNING | COMPLETED | FAILED
+  /// | PAUSED  (โควตา AI หมดกลางรอบ — ตัวตั้งเวลาจะตรวจต่อเองหลังรีเซ็ต)
+  /// | RESUMED (รอบที่หยุดไว้ ถูกรอบ "resume" รับช่วงไปตรวจต่อแล้ว)
   status  String @default("RUNNING") @db.VarChar(20)
+
+  /// จำนวนรายที่รอบนี้ต้องตรวจให้ได้ — null = ทุกรายของวัน
+  /// รอบ resume ได้ค่า = ของรอบเดิม − ที่รอบเดิมตรวจไปแล้ว
+  visitLimit  Int?
+  /// id ของรอบที่หยุดรอโควตา ซึ่งรอบนี้มาตรวจต่อ
+  resumedFrom String? @db.VarChar(30)
 
   found    Int @default(0)
   reviewed Int @default(0)

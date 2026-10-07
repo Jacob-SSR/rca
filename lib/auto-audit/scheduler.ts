@@ -10,7 +10,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { autoRunKey, isDue } from "@/lib/auto-audit/schedule";
-import { RunAlreadyClaimedError, loadSettings, runAutoAudit } from "@/lib/auto-audit/runner";
+import { RunAlreadyClaimedError, loadSettings, resumePausedRun, runAutoAudit } from "@/lib/auto-audit/runner";
 
 const TICK_MS = 60_000;
 
@@ -22,10 +22,21 @@ export async function tick(now = new Date()) {
   try {
     const settings = await loadSettings();
     const { due, runDate } = isDue(settings, now);
-    if (!due) return;
+    const already = due
+      ? await prisma.autoAuditRun.findUnique({ where: { runKey: autoRunKey(runDate) } })
+      : null;
 
-    const already = await prisma.autoAuditRun.findUnique({ where: { runKey: autoRunKey(runDate) } });
-    if (already) return;
+    if (!due || already) {
+      // ไม่มีรอบตามเวลาต้องรัน → ถ้ามีรอบที่หยุดรอโควตา AI และโควตากลับมาแล้ว ตรวจต่อ
+      // (ทำแม้ปิดตรวจอัตโนมัติไว้ — รอบที่กดรันเองแล้วหยุดรอโควตาก็ควรได้ตรวจจนครบ)
+      const resumed = await resumePausedRun(now);
+      if (resumed) {
+        console.log(
+          `auto-audit: จบรอบตรวจต่อ ${resumed.status} — ตรวจ ${resumed.reviewed} ราย, ไม่สำเร็จ ${resumed.failed}`,
+        );
+      }
+      return;
+    }
 
     console.log(`auto-audit: เริ่มรอบอัตโนมัติของวันที่ ${runDate}`);
     const run = await runAutoAudit({ trigger: "auto", now });

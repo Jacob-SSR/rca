@@ -9,10 +9,12 @@ import {
   isDue,
   nextRun,
   parseWeekdays,
+  planVisits,
   sample,
   settingsSchema,
   shiftDate,
   targetDateFor,
+  visitLimitOf,
 } from "@/lib/auto-audit/schedule";
 import { classifySearch, isValidThaiCid, maskCid, parsePatientQuery } from "@/lib/hosxp/search-query";
 
@@ -120,6 +122,46 @@ test("ชื่อ: ตัดคำนำหน้า แยกชื่อ/น�
   assert.deepEqual(parsePatientQuery("ใจดี"), { kind: "name", first: "ใจดี", last: null });
   assert.equal(parsePatientQuery("ก").kind, "invalid");
   assert.equal(parsePatientQuery("สม%").kind, "invalid");
+});
+
+// ── เลือก visit ที่ต้องตรวจ (ทุกราย / สุ่ม / ตรวจซ้ำรายที่ค้าง) ──────────────
+const visits = ["v1", "v2", "v3", "v4", "v5"].map((vn) => ({ vn, hn: `hn-${vn}` }));
+const form = (id: string, vn: string, byAutoAudit: boolean, completed: boolean) => ({
+  id,
+  hosxpVisitRef: vn,
+  byAutoAudit,
+  completed,
+});
+
+test("maxVisits 0 = ทุกราย (limit null), ตัวเลข = สุ่มเท่านั้น", () => {
+  assert.equal(visitLimitOf(0), null);
+  assert.equal(visitLimitOf(20), 20);
+  assert.equal(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, maxVisits: 0 }).success, true);
+  assert.equal(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, maxVisits: -1 }).success, false);
+});
+
+test("ทุกราย: ตรวจครบตามลำดับ ข้ามรายที่ตรวจเสร็จแล้ว", () => {
+  const p = planVisits(visits, [form("f2", "v2", true, true)], null);
+  assert.deepEqual(p.todo.map((v) => v.vn), ["v1", "v3", "v4", "v5"]);
+  assert.equal(p.skipped, 1);
+});
+
+test("รายที่รอบอัตโนมัติตรวจไม่สำเร็จ (เช่นโควตาหมด) ถูกตรวจซ้ำด้วยฟอร์มเดิม", () => {
+  const p = planVisits(visits, [form("f3", "v3", true, false)], null);
+  assert.equal(p.todo.find((v) => v.vn === "v3")?.reuseFormId, "f3");
+  assert.equal(p.skipped, 0);
+});
+
+test("ฟอร์มที่คนกรอกเองแต่ยังไม่ตรวจ ไม่ไปแย่ง — ข้าม", () => {
+  const p = planVisits(visits, [form("f4", "v4", false, false)], null);
+  assert.equal(p.todo.some((v) => v.vn === "v4"), false);
+  assert.equal(p.skipped, 1);
+});
+
+test("โหมดสุ่ม: ได้ไม่เกิน limit และไม่มีรายที่ตรวจเสร็จแล้ว", () => {
+  const p = planVisits(visits, [form("f1", "v1", false, true)], 2, () => 0.3);
+  assert.equal(p.todo.length, 2);
+  assert.equal(p.todo.some((v) => v.vn === "v1"), false);
 });
 
 console.log(`\n${failed === 0 ? "✅" : "❌"} ผ่าน ${passed} / ${passed + failed} เทสต์\n`);

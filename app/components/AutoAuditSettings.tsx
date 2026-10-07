@@ -10,6 +10,7 @@ import { Switch } from "@/app/components/AutoAuditPanel";
 import { formatThaiDateShort } from "@/lib/form/thai-date";
 import Icon from "@/app/components/Icon";
 import {
+  ALL_VISITS,
   MAX_VISITS_CAP,
   TARGET_DAYS,
   WEEKDAY_LABELS,
@@ -32,6 +33,8 @@ type Run = {
   avgPercent: string | null;
   results: RunItem[] | null;
   error: string | null;
+  visitLimit: number | null;
+  resumedFrom: string | null;
   startedBy: string | null;
   startedAt: string;
   finishedAt: string | null;
@@ -66,7 +69,11 @@ const STATUS: Record<string, { label: string; cls: string }> = {
   RUNNING: { label: "กำลังตรวจ…", cls: "bg-brand-50 text-brand-700" },
   COMPLETED: { label: "เสร็จ", cls: "bg-emerald-50 text-emerald-700" },
   FAILED: { label: "ล้มเหลว", cls: "bg-red-50 text-red-700" },
+  PAUSED: { label: "รอโควตา AI", cls: "bg-warn-50 text-warn-600" },
+  RESUMED: { label: "ตรวจต่อแล้ว", cls: "bg-zinc-100 text-zinc-600" },
 };
+
+const TRIGGER: Record<string, string> = { auto: "ตามเวลา", manual: "กดเอง", resume: "ตรวจต่อหลังโควตารีเซ็ต" };
 
 export default function AutoAuditSettings() {
   const [data, setData] = useState<Data | null>(null);
@@ -204,6 +211,18 @@ export default function AutoAuditSettings() {
         </p>
       ) : null}
 
+      {/* ── งานค้าง: รอบที่หยุดรอโควตา AI ─────────────────────────────────────── */}
+      {data.runs.some((r) => r.status === "PAUSED") ? (
+        <p className="alert animate-rise flex items-start gap-2 bg-warn-50 text-warn-600 ring-amber-200">
+          <Icon name="clock" className="mt-1" />
+          <span>
+            มีรอบที่หยุดรอโควตา AI (visit วันที่{" "}
+            {[...new Set(data.runs.filter((r) => r.status === "PAUSED").map((r) => formatThaiDateShort(r.targetDate)))].join(", ")})
+            — ระบบจะ<strong>ตรวจต่อเองเมื่อโควตารีเซ็ต</strong> ไม่ต้องกดอะไร
+          </span>
+        </p>
+      ) : null}
+
       {/* ── สวิตช์หลัก ─────────────────────────────────────────────────────── */}
       <section className="card card-pad animate-rise flex flex-wrap items-center justify-between gap-4">
         <div>
@@ -318,21 +337,44 @@ export default function AutoAuditSettings() {
           </div>
 
           <div>
-            <label className="label" htmlFor="aa-max">
-              จำนวนสูงสุดต่อรอบ (ราย)
-            </label>
-            <input
-              id="aa-max"
-              type="number"
-              min={1}
-              max={MAX_VISITS_CAP}
-              className="input tabular w-40"
-              value={Number.isFinite(form.maxVisits) ? form.maxVisits : ""}
-              onChange={(e) => patch({ maxVisits: e.target.valueAsNumber })}
-            />
+            <span className="label">จำนวนที่ตรวจต่อรอบ</span>
+            <div className="space-y-2">
+              <label className="flex items-center gap-2.5 text-base">
+                <input
+                  type="radio"
+                  name="aa-mode"
+                  className="size-4 accent-brand-600"
+                  checked={form.maxVisits === ALL_VISITS}
+                  onChange={() => patch({ maxVisits: ALL_VISITS })}
+                />
+                ตรวจทุกรายของวัน
+              </label>
+              <label className="flex flex-wrap items-center gap-2.5 text-base">
+                <input
+                  type="radio"
+                  name="aa-mode"
+                  className="size-4 accent-brand-600"
+                  checked={form.maxVisits !== ALL_VISITS}
+                  onChange={() => patch({ maxVisits: 20 })}
+                />
+                สุ่ม
+                <input
+                  id="aa-max"
+                  type="number"
+                  min={1}
+                  max={MAX_VISITS_CAP}
+                  aria-label="จำนวนรายที่สุ่ม"
+                  className="input tabular w-28 py-1.5"
+                  disabled={form.maxVisits === ALL_VISITS}
+                  value={form.maxVisits === ALL_VISITS ? "" : Number.isFinite(form.maxVisits) ? form.maxVisits : ""}
+                  onChange={(e) => patch({ maxVisits: e.target.valueAsNumber })}
+                />
+                ราย <span className="text-sm text-zinc-500">(สูงสุด {MAX_VISITS_CAP})</span>
+              </label>
+            </div>
             <span className="hint">
-              สุ่มจากผู้ป่วยนอกทั้งวัน (เฉพาะที่ยังไม่เคยตรวจ) — 1 รายใช้ AI 1 ครั้ง ตั้งสูงเกินจะเปลืองโควตา
-              (สูงสุด {MAX_VISITS_CAP})
+              1 รายใช้ AI 1 ครั้ง · ข้ามรายที่ตรวจเสร็จแล้ว · ถ้าโควตา AI หมดกลางทาง
+              ระบบหยุดรอแล้ว<strong>ตรวจต่อเองหลังโควตารีเซ็ต</strong>จนครบ
             </span>
           </div>
         </div>
@@ -427,7 +469,8 @@ export default function AutoAuditSettings() {
                         <td className="tabular whitespace-nowrap">
                           {thaiDateTime(r.startedAt)}
                           <span className="block text-xs text-zinc-500">
-                            {r.trigger === "auto" ? "ตามเวลา" : `กดเอง${r.startedBy ? ` · ${r.startedBy}` : ""}`}
+                            {TRIGGER[r.trigger] ?? r.trigger}
+                            {r.trigger === "manual" && r.startedBy ? ` · ${r.startedBy}` : ""}
                           </span>
                         </td>
                         <td className="tabular whitespace-nowrap">{formatThaiDateShort(r.targetDate)}</td>
@@ -437,6 +480,7 @@ export default function AutoAuditSettings() {
                         <td className="tabular text-right">
                           {r.reviewed}
                           <span className="block text-xs text-zinc-500">
+                            {r.visitLimit === null ? "ทุกราย · " : `เป้า ${r.visitLimit} · `}
                             จาก {r.found} ราย{r.skipped ? ` · ข้าม ${r.skipped}` : ""}
                           </span>
                         </td>
@@ -460,7 +504,11 @@ export default function AutoAuditSettings() {
                       {isOpen ? (
                         <tr>
                           <td colSpan={7} className="bg-zinc-50">
-                            {r.error ? <p className="alert alert-error mb-2">{r.error}</p> : null}
+                            {r.error ? (
+                              <p className={`alert mb-2 ${r.status === "PAUSED" || r.status === "RESUMED" ? "bg-warn-50 text-warn-600 ring-amber-200" : "alert-error"}`}>
+                                {r.error}
+                              </p>
+                            ) : null}
                             <ul className="space-y-1 text-sm">
                               {(r.results ?? []).map((it) => (
                                 <li key={it.vn} className="flex flex-wrap gap-x-3">
@@ -499,11 +547,22 @@ export default function AutoAuditSettings() {
                   : "bg-warn-50 text-warn-600 ring-amber-50"
               }`}
             >
-              <Icon name={finished.status === "COMPLETED" ? "check" : "alert"} size={28} strokeWidth={2.6} />
+              <Icon
+                name={finished.status === "COMPLETED" ? "check" : finished.status === "PAUSED" ? "clock" : "alert"}
+                size={28}
+                strokeWidth={2.6}
+              />
             </span>
             <h2 className="mt-4 text-2xl font-bold">
-              {finished.status === "COMPLETED" ? "ตรวจอัตโนมัติเสร็จแล้ว!" : "รอบตรวจหยุดกลางทาง"}
+              {finished.status === "COMPLETED"
+                ? "ตรวจอัตโนมัติเสร็จแล้ว!"
+                : finished.status === "PAUSED"
+                  ? "หยุดรอโควตา AI"
+                  : "รอบตรวจหยุดกลางทาง"}
             </h2>
+            {finished.status === "PAUSED" ? (
+              <p className="mt-1 text-zinc-600">รายที่เหลือจะถูกตรวจต่อเองเมื่อโควตารีเซ็ต ไม่ต้องกดอะไร</p>
+            ) : null}
             <p className="mt-1 text-zinc-500">visit วันที่ {finished.targetDate}</p>
             <dl className="mt-5 grid grid-cols-3 gap-2">
               {[

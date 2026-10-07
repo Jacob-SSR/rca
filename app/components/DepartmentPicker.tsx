@@ -1,39 +1,21 @@
 "use client";
 
-// เลือกแผนกจาก HOSxP ได้หลายแผนก — พิมพ์ค้นหา ติ๊กเลือก เห็นที่เลือกเป็นป้ายด้านบน
+// เลือกแผนก OPD ได้หลายแผนก — พิมพ์ค้นหา ติ๊กเลือก เห็นที่เลือกเป็นป้ายด้านบน
 // ไม่เลือกเลย = ทุกแผนก
 //
-// รายการแผนกมาจาก /api/hosxp/options (kskdepartment) โหลดครั้งเดียวต่อหน้า
+// รายการแผนกคือ OPD_DEPARTMENTS (ชุดเดียวกับ ppc-hos-10667) — ไม่ต้องต่อ HOSxP ก็เลือกได้
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Icon from "@/app/components/Icon";
+import { OPD_DEPARTMENTS } from "@/lib/departments";
 
 export type Department = { code: string; label: string };
 
-let cache: Promise<{ items: Department[]; reason?: string }> | null = null;
+const ITEMS: Department[] = OPD_DEPARTMENTS.map((d) => ({ code: d.code, label: d.label }));
 
-function loadDepartments() {
-  cache ??= fetch("/api/hosxp/options?kind=departments", { cache: "no-store" })
-    .then((r) => r.json())
-    .then((j) => ({ items: (j.items ?? []) as Department[], reason: j.available ? undefined : j.reason }))
-    .catch(() => ({ items: [] as Department[], reason: "โหลดรายการแผนกไม่สำเร็จ" }));
-  return cache;
-}
-
-/** โหลดรายการแผนก — ใช้แปลงรหัสเป็นชื่อในที่อื่นด้วย */
-export function useDepartments() {
-  const [state, setState] = useState<{ items: Department[]; reason?: string; loading: boolean }>({
-    items: [],
-    loading: true,
-  });
-  useEffect(() => {
-    let alive = true;
-    void loadDepartments().then((r) => alive && setState({ ...r, loading: false }));
-    return () => {
-      alive = false;
-    };
-  }, []);
-  return state;
+/** รายการแผนก OPD — คงรูปแบบ hook ไว้ ให้ผู้เรียกไม่ต้องรู้ว่ามาจากไหน */
+export function useDepartments(): { items: Department[]; reason?: string; loading: boolean } {
+  return { items: ITEMS, loading: false };
 }
 
 export function departmentNames(codes: string[], items: Department[]): string {

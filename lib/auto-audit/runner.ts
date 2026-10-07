@@ -15,6 +15,7 @@ import { recordFormSchema } from "@/lib/form/schema";
 import { caseNumberFor, generateDocumentFromForm, isFormEmpty } from "@/lib/form/service";
 import { reviewExistingDocument } from "@/lib/review/pipeline";
 import { AIQuotaError, assertAiAvailable } from "@/lib/ai";
+import { opdDepartmentLabel } from "@/lib/departments";
 import { currentQuotaBlock, quotaMessage } from "@/lib/ai/quota";
 import {
   DEFAULT_SETTINGS,
@@ -117,7 +118,7 @@ export async function runningRun() {
  * reuseFormId: ฟอร์มที่รอบก่อนสร้างไว้แต่ตรวจไม่สำเร็จ → ตรวจฟอร์มเดิม ไม่สร้างเคสซ้ำ
  */
 async function auditVisit(
-  v: { vn: string; hn: string; department?: string; reuseFormId?: string },
+  v: { vn: string; hn: string; department?: string; depcode?: string; reuseFormId?: string },
   targetDate: string,
   owner: { username: string; name: string },
 ): Promise<RunResultItem> {
@@ -150,8 +151,8 @@ async function auditVisit(
         // ออกจากฟอร์มที่คนกรอกเอง
         createdBy: owner.username,
         createdByName: owner.name,
-        // รอบอัตโนมัติไม่มีคนเลือกแผนก → ใช้คลินิกของ visit (ตรวจตามแผนกอยู่แล้ว)
-        department: v.department || parsed.data.department || null,
+        // รอบอัตโนมัติไม่มีคนเลือกแผนก → ใช้แผนก OPD ของ visit (ชื่อชุดเดียวกับตัวเลือกในฟอร์ม)
+        department: opdDepartmentLabel(v.depcode) || v.department || parsed.data.department || null,
       },
     });
 

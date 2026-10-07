@@ -315,8 +315,8 @@ export default function RecordFormEditor({ formId, initial, caseNumber, caseDepa
             items={departments.items}
             value={caseDept}
             disabled={busy !== null}
-            allowOther
-            placeholder={departments.loading ? "กำลังโหลดรายการแผนก…" : "พิมพ์เพื่อค้นหาแผนก…"}
+            allowOther={false}
+            placeholder="เลือกแผนก OPD…"
             ariaLabel="แผนกที่สร้างเคส"
             onChange={(v) => {
               setPickedDept(v);
@@ -326,7 +326,6 @@ export default function RecordFormEditor({ formId, initial, caseNumber, caseDepa
         </div>
         <span className="hint mt-0 w-full">
           แผนกของคุณที่เป็นคนตรวจเคสนี้ — ใช้แยกเคสของแต่ละหน่วยในรายการ (ระบบจำไว้ให้ครั้งหน้า)
-          {departments.items.length === 0 && !departments.loading ? " · พิมพ์ชื่อแผนกเองได้" : ""}
         </span>
       </section>
 

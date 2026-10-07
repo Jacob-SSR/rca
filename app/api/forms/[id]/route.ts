@@ -5,7 +5,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { recordFormSchema } from "@/lib/form/schema";
+import { caseDepartmentSchema, recordFormSchema } from "@/lib/form/schema";
 import { requireCapability } from "@/lib/auth/session";
 import { authErrorResponse } from "@/lib/auth/api";
 import { caseNumberFor, isFallbackCaseNumber } from "@/lib/form/service";
@@ -86,6 +86,12 @@ export async function PATCH(req: NextRequest, ctx: RouteContext<"/api/forms/[id]
     where: { id },
     data: { ...parsed.data, updatedBy: session.username },
   });
+
+  // แผนกที่สร้างเคส ส่งมาพร้อมฟอร์ม (ช่องอยู่บนหัวฟอร์ม) แต่เก็บที่เคส
+  const caseDept = caseDepartmentSchema.safeParse((body as { caseDepartment?: unknown })?.caseDepartment);
+  if (caseDept.success && caseDept.data !== "") {
+    await prisma.case.update({ where: { id: form.caseId }, data: { department: caseDept.data } });
+  }
 
   // HN เปลี่ยน → อัปเดตที่เคสด้วย จะได้ค้นหาจากเคสได้ตรงกัน
   // เคสที่ยังใช้เลขแบบเดิม (ตอนสร้างยังไม่รู้ HN) → เปลี่ยนเป็น HN-วันที่ ให้เลย

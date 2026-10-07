@@ -12,6 +12,8 @@ import FormFieldInput from "@/app/components/FormFieldInput";
 import HnPrefillBar from "@/app/components/HnPrefillBar";
 import AutoAuditPanel, { scoreTone } from "@/app/components/AutoAuditPanel";
 import Icon from "@/app/components/Icon";
+import Combobox from "@/app/components/Combobox";
+import { useDepartments } from "@/app/components/DepartmentPicker";
 import ReviewDialogs, { readReviewResponse, type ReviewOutcome } from "@/app/components/ReviewDialogs";
 
 // ── สวิตช์ตรวจอัตโนมัติ — จำไว้ในเครื่อง (ค่าตั้งต้น: เปิด) ─────────────────────
@@ -41,6 +43,30 @@ function subscribeAuto(l: () => void) {
   return () => autoListeners.delete(l);
 }
 
+// แผนกของผู้ใช้ที่เลือกล่าสุด — จำไว้ในเครื่อง ฟอร์มใหม่ครั้งต่อไปเลือกให้เอง
+// (คนหนึ่งมักอยู่แผนกเดียว ไม่ต้องเลือกซ้ำทุกครั้ง)
+const MY_DEPT_KEY = "rca.myDepartment";
+const deptListeners = new Set<() => void>();
+function readMyDept(): string {
+  try {
+    return localStorage.getItem(MY_DEPT_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+function writeMyDept(v: string) {
+  try {
+    localStorage.setItem(MY_DEPT_KEY, v);
+  } catch {
+    // โหมดส่วนตัว/ปิด storage — แค่จำไม่ได้ ไม่เป็นไร
+  }
+  deptListeners.forEach((l) => l());
+}
+function subscribeMyDept(l: () => void) {
+  deptListeners.add(l);
+  return () => deptListeners.delete(l);
+}
+
 /** หัวข้อเกณฑ์ → id ของ section ในหน้า (ใช้เลื่อนไปหา) */
 const sectionId = (key: string) => `section-${key}`;
 const SECTION_BY_CRITERION = new Map(
@@ -51,14 +77,21 @@ type Props = {
   formId?: string;
   initial: Partial<RecordFormInput>;
   caseNumber?: string;
+  /** แผนกที่สร้างเคส (Case.department) — ฟอร์มเดิมส่งมา, ฟอร์มใหม่ใช้ที่จำไว้ในเครื่อง */
+  caseDepartment?: string | null;
 };
 
 type Values = Record<string, string>;
 
 const toValues = (initial: Partial<RecordFormInput>): Values => blankFormValues(initial);
 
-export default function RecordFormEditor({ formId, initial, caseNumber }: Props) {
+export default function RecordFormEditor({ formId, initial, caseNumber, caseDepartment }: Props) {
   const router = useRouter();
+  const myDept = useSyncExternalStore(subscribeMyDept, readMyDept, () => "");
+  const [pickedDept, setPickedDept] = useState<string | null>(caseDepartment || null);
+  /** แผนกที่สร้าง — เลือกเองแล้วใช้ที่เลือก, ยังไม่เลือก: ฟอร์มใหม่ใช้ที่จำไว้ */
+  const caseDept = pickedDept ?? (formId ? "" : myDept);
+  const departments = useDepartments();
   const [values, setValues] = useState<Values>(() => toValues(initial));
   const [busy, setBusy] = useState<null | "save" | "generate" | "review">(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -96,6 +129,11 @@ export default function RecordFormEditor({ formId, initial, caseNumber }: Props)
    */
   function guard(): boolean {
     setSubmitted(true);
+    if (caseDept.trim() === "") {
+      setError("เลือกแผนกที่สร้างเคสก่อน (ด้านบนสุดของฟอร์ม)");
+      jumpTo("case-department");
+      return false;
+    }
     if (isBlank(values)) {
       setError("ฟอร์มยังว่างอยู่ — ค้นหาจาก HOSxP ในขั้นที่ 1 หรือกรอกเองก่อน");
       return false;
@@ -147,12 +185,12 @@ export default function RecordFormEditor({ formId, initial, caseNumber }: Props)
       ? await fetch(`/api/forms/${formId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(values),
+          body: JSON.stringify({ ...values, caseDepartment: caseDept }),
         })
       : await fetch("/api/forms", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(values),
+          body: JSON.stringify({ ...values, caseDepartment: caseDept }),
         });
 
     const json = await res.json();
@@ -259,6 +297,39 @@ export default function RecordFormEditor({ formId, initial, caseNumber }: Props)
 
   return (
     <div className="space-y-5 pb-4">
+      {/* ── แผนกที่สร้างเคส — บอกว่าเคสนี้เป็นของหน่วยไหน (ไม่ใช่คลินิกที่ผู้ป่วยมา) ── */}
+      <section
+        className={`card animate-rise flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 sm:px-5 ${
+          submitted && caseDept.trim() === "" ? "border-red-300 ring-2 ring-red-200" : ""
+        }`}
+      >
+        <label htmlFor="case-department" className="flex items-center gap-2.5 font-semibold whitespace-nowrap">
+          <span className="icon-orb">
+            <Icon name="layers" />
+          </span>
+          สร้างในนามแผนก <span className="text-red-700">*</span>
+        </label>
+        <div className="min-w-60 flex-1">
+          <Combobox
+            id="case-department"
+            items={departments.items}
+            value={caseDept}
+            disabled={busy !== null}
+            allowOther
+            placeholder={departments.loading ? "กำลังโหลดรายการแผนก…" : "พิมพ์เพื่อค้นหาแผนก…"}
+            ariaLabel="แผนกที่สร้างเคส"
+            onChange={(v) => {
+              setPickedDept(v);
+              if (v.trim()) writeMyDept(v.trim());
+            }}
+          />
+        </div>
+        <span className="hint mt-0 w-full">
+          แผนกของคุณที่เป็นคนตรวจเคสนี้ — ใช้แยกเคสของแต่ละหน่วยในรายการ (ระบบจำไว้ให้ครั้งหน้า)
+          {departments.items.length === 0 && !departments.loading ? " · พิมพ์ชื่อแผนกเองได้" : ""}
+        </span>
+      </section>
+
       {/* ── ขั้นตอนการใช้งาน — ให้เห็นตลอดว่าอยู่ตรงไหน ต้องทำอะไรต่อ ───────── */}
       <ol className="card animate-rise flex flex-wrap items-center gap-x-2 gap-y-2 px-4 py-3 text-sm sm:px-5">
         {caseNumber ? <li className="badge badge-brand me-2">เคส {caseNumber}</li> : null}

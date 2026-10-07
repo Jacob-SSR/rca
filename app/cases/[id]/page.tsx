@@ -52,6 +52,12 @@ export default async function CasePage({ params }: PageProps<"/cases/[id]">) {
           <>
             {c.title ? <p>{c.title}</p> : null}
             <p className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-zinc-500">
+              {c.department ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <Icon name="layers" size={16} />
+                  {c.department}
+                </span>
+              ) : null}
               <span className="inline-flex items-center gap-1.5">
                 <Icon name="user" size={16} />
                 {c.createdByName || c.createdBy || "ไม่ทราบ"}

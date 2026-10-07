@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { caseId, caseTitle, ...fields } = parsed.data;
+  const { caseId, caseTitle, caseDepartment, ...fields } = parsed.data;
 
   // ระบุ caseId มา → ต้องมีจริง ; ไม่ระบุ → สร้างเคสใหม่ให้
   let targetCaseId = caseId;
@@ -91,6 +91,8 @@ export async function POST(req: NextRequest) {
         // เจ้าของเคส = คนที่ล็อกอินอยู่ (ไม่งั้นรายการเคสขึ้น "ไม่ทราบ" และเจ้าของแก้/ลบเคสตัวเองไม่ได้)
         createdBy: session.username,
         createdByName: session.name,
+        // แผนกที่สร้าง — ไม่ได้เลือกมา ใช้คลินิกของ visit แทน (ยังดีกว่าว่าง)
+        department: caseDepartment || fields.department || null,
       },
     });
     targetCaseId = created.id;

@@ -57,9 +57,13 @@ export const recordFormSchema = z.object({
 export type RecordFormInput = z.infer<typeof recordFormSchema>;
 
 /** ตอนสร้างใหม่ ระบุ caseId ได้ (ไม่ระบุ = สร้างเคสใหม่ให้) */
+/** แผนกที่สร้างเคส (ไม่ใช่คลินิกที่ผู้ป่วยมา) — ดู Case.department */
+export const caseDepartmentSchema = z.string().trim().max(100);
+
 export const createRecordFormSchema = recordFormSchema.extend({
   caseId: z.string().trim().min(1).optional(),
   caseTitle: z.string().trim().max(200).optional(),
+  caseDepartment: caseDepartmentSchema.optional(),
 });
 
 export type CreateRecordFormInput = z.infer<typeof createRecordFormSchema>;

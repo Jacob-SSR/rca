@@ -74,6 +74,11 @@ model Case {
   /// ชื่อที่แสดง — เก็บซ้ำไว้เพื่อไม่ต้อง join ข้ามเซิร์ฟเวอร์ทุกครั้งที่แสดงรายการ
   createdByName String? @db.VarChar(200)
 
+  /// แผนกที่สร้าง/รับผิดชอบเคสนี้ (ชื่อจาก kskdepartment ของ HOSxP) — เลือกตอนสร้างฟอร์ม
+  /// คนละอย่างกับ RecordForm.department ซึ่งเป็นคลินิกที่ผู้ป่วยมารับบริการ (ลงในเอกสาร)
+  /// มีไว้ให้หลายหน่วยตรวจพร้อมกันแล้วแยกได้ว่าเคสไหนของหน่วยไหน
+  department String? @db.VarChar(100)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -85,6 +90,7 @@ model Case {
   @@index([hosxpPatientRef])
   @@index([hosxpVisitRef])
   @@index([createdBy])
+  @@index([department])
 }
 
 /// ฟอร์มบันทึกเวชระเบียน — ตัวที่ CRUD และ generate DOCX ออกมา (Phase 2)

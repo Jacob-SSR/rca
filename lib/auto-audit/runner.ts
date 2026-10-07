@@ -117,7 +117,7 @@ export async function runningRun() {
  * reuseFormId: ฟอร์มที่รอบก่อนสร้างไว้แต่ตรวจไม่สำเร็จ → ตรวจฟอร์มเดิม ไม่สร้างเคสซ้ำ
  */
 async function auditVisit(
-  v: { vn: string; hn: string; reuseFormId?: string },
+  v: { vn: string; hn: string; department?: string; reuseFormId?: string },
   targetDate: string,
   owner: { username: string; name: string },
 ): Promise<RunResultItem> {
@@ -150,6 +150,8 @@ async function auditVisit(
         // ออกจากฟอร์มที่คนกรอกเอง
         createdBy: owner.username,
         createdByName: owner.name,
+        // รอบอัตโนมัติไม่มีคนเลือกแผนก → ใช้คลินิกของ visit (ตรวจตามแผนกอยู่แล้ว)
+        department: v.department || parsed.data.department || null,
       },
     });
 

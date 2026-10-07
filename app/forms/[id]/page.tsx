@@ -25,7 +25,7 @@ export default async function FormPage({ params }: PageProps<"/forms/[id]">) {
   const form = await prisma.recordForm.findUnique({
     where: { id },
     include: {
-      case: { select: { id: true, caseNumber: true } },
+      case: { select: { id: true, caseNumber: true, department: true } },
       documents: {
         orderBy: { createdAt: "desc" },
         include: {
@@ -112,6 +112,7 @@ export default async function FormPage({ params }: PageProps<"/forms/[id]">) {
       <RecordFormEditor
         formId={form.id}
         caseNumber={form.case.caseNumber}
+        caseDepartment={form.case.department}
         initial={form as unknown as RecordFormInput}
       />
     </div>

@@ -10,8 +10,14 @@ import {
   nextRun,
   parseWeekdays,
   matchesFilters,
+  icdMatches,
+  parseIcdList,
+  passesDepartmentIcd,
   planVisits,
+  pruneRules,
+  quotasOf,
   runFiltersSchema,
+  runTarget,
   sample,
   settingsSchema,
   shiftDate,
@@ -162,9 +168,117 @@ test("ฟอร์มที่คนกรอกเองแต่ยังไ�
 });
 
 test("โหมดสุ่ม: ได้ไม่เกิน limit และไม่มีรายที่ตรวจเสร็จแล้ว", () => {
-  const p = planVisits(visits, [form("f1", "v1", false, true)], 2, () => 0.3);
+  const p = planVisits(visits, [form("f1", "v1", false, true)], 2, {}, () => 0.3);
   assert.equal(p.todo.length, 2);
   assert.equal(p.todo.some((v) => v.vn === "v1"), false);
+});
+
+// ── ไม่ตรวจคนเดิมซ้ำในวันเดียวกัน ─────────────────────────────────────────────
+test("คนเดียวกัน (HN เดียว) มาหลาย visit ในวันเดียว → ตรวจ visit เดียว", () => {
+  const vs = [
+    { vn: "a1", hn: "111" },
+    { vn: "a2", hn: "111" },
+    { vn: "b1", hn: "222" },
+  ];
+  const p = planVisits(vs, [], null);
+  assert.equal(p.todo.length, 2);
+  assert.equal(p.todo.filter((v) => v.hn === "111").length, 1);
+  assert.equal(p.skipped, 1);
+});
+
+test("visit อื่นของคนนี้ในวันเดียวกันตรวจไปแล้ว (แม้อยู่นอกตัวกรอง) → ข้ามทั้งคน", () => {
+  const day = [
+    { vn: "a1", hn: "111" },
+    { vn: "a2", hn: "111" },
+    { vn: "b1", hn: "222" },
+  ];
+  // รอบนี้กรองเหลือ a2 กับ b1 แต่ a1 (คนเดิม) ตรวจเสร็จไปแล้วในรอบก่อน
+  const p = planVisits([day[1], day[2]], [form("fa1", "a1", true, true)], null, { sameDay: day });
+  assert.deepEqual(p.todo.map((v) => v.vn), ["b1"]);
+});
+
+test("คนเดิมมีฟอร์มค้างของรอบก่อน → ใช้ visit นั้นตรวจซ้ำ ไม่สร้างเคสใหม่จาก visit อื่น", () => {
+  const vs = [
+    { vn: "a1", hn: "111" },
+    { vn: "a2", hn: "111" },
+  ];
+  const p = planVisits(vs, [form("fa2", "a2", true, false)], null, {}, () => 0);
+  assert.deepEqual(p.todo.map((v) => [v.vn, v.reuseFormId]), [["a2", "fa2"]]);
+});
+
+test("ชื่อซ้ำแต่ HN ต่างกัน = คนละคน ตรวจทั้งคู่ · ไม่มี HN ถือเป็นคนละคน", () => {
+  const vs = [
+    { vn: "x1", hn: "111" },
+    { vn: "x2", hn: "333" },
+    { vn: "x3", hn: "" },
+    { vn: "x4", hn: "" },
+  ];
+  assert.equal(planVisits(vs, [], null).todo.length, 4);
+});
+
+// ── จำนวนต่อรอบแยกแผนก ──────────────────────────────────────────────────────
+test("แผนกที่เซ็ตจำนวนไว้ สุ่มแยกแผนก · แผนกอื่นใช้จำนวนรวม", () => {
+  const vs = [
+    ...Array.from({ length: 6 }, (_, i) => ({ vn: `m${i}`, hn: `m${i}`, depcode: "010" })),
+    ...Array.from({ length: 6 }, (_, i) => ({ vn: `s${i}`, hn: `s${i}`, depcode: "020" })),
+    ...Array.from({ length: 6 }, (_, i) => ({ vn: `o${i}`, hn: `o${i}`, depcode: "030" })),
+  ];
+  const p = planVisits(vs, [], 2, { quotas: { "010": 3, "020": 1 } });
+  assert.equal(p.todo.filter((v) => v.depcode === "010").length, 3);
+  assert.equal(p.todo.filter((v) => v.depcode === "020").length, 1);
+  assert.equal(p.todo.filter((v) => v.depcode === "030").length, 2);
+  // quota 0 (รอบ resume ที่แผนกนั้นครบแล้ว) = ไม่ตรวจเพิ่ม ไม่ไหลไปใช้จำนวนรวม
+  const q = planVisits(vs, [], null, { quotas: { "010": 0 } });
+  assert.equal(q.todo.filter((v) => v.depcode === "010").length, 0);
+  assert.equal(q.todo.length, 12);
+});
+
+test("เป้าของรอบ = ผลรวมต่อแผนก (+ จำนวนรวม ถ้ายังมีแผนกที่ไม่ได้เซ็ต)", () => {
+  assert.equal(runTarget({ departments: ["010", "020"], quotas: { "010": 3, "020": 2 } }, 20), 5);
+  assert.equal(runTarget({ departments: ["010", "020"], quotas: { "010": 3 } }, 20), 23);
+  assert.equal(runTarget({ departments: [], quotas: {} }, null), null);
+  assert.equal(runTarget({ departments: ["010"], quotas: { "010": 3 } }, null), 3);
+});
+
+test("ตั้งค่าแยกรายแผนก: ตัดแผนกที่ไม่ได้เลือก/ไม่มีค่าออก · รหัส ICD ผิด = บันทึกไม่ได้", () => {
+  const ok = settingsSchema.parse({
+    ...DEFAULT_SETTINGS,
+    departments: ["010"],
+    departmentRules: {
+      "010": { quota: 5, icd10: ["e11.9", "I10-I15"] },
+      "020": { quota: 3, icd10: [] },
+    },
+  });
+  assert.deepEqual(ok.departmentRules, { "010": { quota: 5, icd10: ["E119", "I10-I15"] } });
+  assert.deepEqual(quotasOf(ok.departmentRules), { "010": 5 });
+  assert.equal(
+    settingsSchema.safeParse({ ...DEFAULT_SETTINGS, departments: ["010"], departmentRules: { "010": { quota: null, icd10: ["ไข้"] } } }).success,
+    false,
+  );
+  assert.deepEqual(pruneRules(["010"], { "010": { quota: null, icd10: [] } }), {});
+});
+
+// ── ICD-10 ──────────────────────────────────────────────────────────────────
+test("ICD-10: รหัสเต็ม / ขึ้นต้นด้วย / ช่วง · ใส่จุดหรือไม่ใส่ก็ได้", () => {
+  assert.deepEqual(parseIcdList("J02.9, e11 I10 - I15, ไข้, J02.9"), {
+    patterns: ["J029", "E11", "I10-I15"],
+    invalid: ["ไข้"],
+  });
+  assert.equal(icdMatches("E119", "E11"), true);
+  assert.equal(icdMatches("E10.9", "E11"), false);
+  assert.equal(icdMatches("I109", "I10-I15"), true);
+  assert.equal(icdMatches("I159", "I10-I15"), true);
+  assert.equal(icdMatches("I160", "I10-I15"), false);
+  assert.equal(icdMatches("J029", "J029"), true);
+  assert.equal(icdMatches("J02", "J029"), false);
+});
+
+test("ICD-10 ของแต่ละแผนก: แผนกที่เซ็ตไว้ต้องมีรหัส · แผนกที่ไม่ได้เซ็ต ผ่านหมด", () => {
+  const rules = { "010": { quota: null, icd10: ["E11", "I10"] } };
+  assert.equal(passesDepartmentIcd({ depcode: "010" }, ["J029", "E119"], rules), true);
+  assert.equal(passesDepartmentIcd({ depcode: "010" }, ["J029"], rules), false);
+  assert.equal(passesDepartmentIcd({ depcode: "010" }, [], rules), false);
+  assert.equal(passesDepartmentIcd({ depcode: "020" }, [], rules), true);
 });
 
 // ── ตัวกรองแผนก / เวร / ช่วงเวลา ─────────────────────────────────────────────

@@ -1,6 +1,7 @@
 "use client";
 
 // หน้าตั้งค่าตรวจอัตโนมัติด้วย AI — เปิด/ปิด, เวลา, วันในสัปดาห์, วันเป้าหมาย, จำนวนต่อรอบ
+// + เซ็ตแยกรายแผนก (จำนวนต่อรอบ + ICD-10 ที่ให้ตรวจ)
 // + ปุ่มรันเดี๋ยวนี้ (เลือกวันที่ได้) + ประวัติรอบที่ผ่านมา
 
 import Link from "next/link";
@@ -8,6 +9,7 @@ import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { AI_QUOTA_EVENT, Modal } from "@/app/components/ReviewDialogs";
 import DepartmentPicker, { departmentNames, useDepartments } from "@/app/components/DepartmentPicker";
 import { Switch } from "@/app/components/AutoAuditPanel";
+import { DepartmentRules, type Rules, rulesSummary } from "@/app/components/AuditTargetInputs";
 import { formatThaiDateShort } from "@/lib/form/thai-date";
 import Icon from "@/app/components/Icon";
 import {
@@ -17,7 +19,12 @@ import {
   type ShiftKey,
   TARGET_DAYS,
   WEEKDAY_LABELS,
+  hasSharedPool,
+  pruneRules,
+  quotasOf,
+  runTarget,
   settingsSchema,
+  visitLimitOf,
   type AutoAuditSettings as Settings,
   type TargetDay,
 } from "@/lib/auto-audit/schedule";
@@ -38,7 +45,13 @@ type Run = {
   error: string | null;
   visitLimit: number | null;
   resumedFrom: string | null;
-  filters: { departments?: string[]; shift?: ShiftKey | null; timeFrom?: string | null; timeTo?: string | null } | null;
+  filters: {
+    departments?: string[];
+    rules?: Rules;
+    shift?: ShiftKey | null;
+    timeFrom?: string | null;
+    timeTo?: string | null;
+  } | null;
   startedBy: string | null;
   startedByName: string | null;
   startedAt: string;
@@ -82,6 +95,18 @@ const STATUS: Record<string, { label: string; cls: string }> = {
 
 const TRIGGER: Record<string, string> = { auto: "ตามเวลา", manual: "กดเอง", resume: "ตรวจต่อหลังโควตารีเซ็ต" };
 
+/** แผนกที่เลือกอยู่มีรหัส ICD-10 ที่อ่านไม่ได้ไหม → ข้อความแจ้ง หรือ null */
+function invalidIcdMessage(departments: string[], invalid: Record<string, string[]>): string | null {
+  const bad = departments.flatMap((d) => invalid[d] ?? []);
+  return bad.length > 0 ? `รหัส ICD-10 ไม่ถูกต้อง: ${bad.join(", ")}` : null;
+}
+
+/** เป้าของรอบ เช่น "ตรวจทุกราย" / "เป้า 25 ราย" */
+function targetLabel(departments: string[], rules: Rules, visitLimit: number | null): string {
+  const t = runTarget({ departments, quotas: quotasOf(rules) }, visitLimit);
+  return t === null ? "ตรวจทุกราย" : `เป้า ${t} ราย`;
+}
+
 export default function AutoAuditSettings() {
   const [data, setData] = useState<Data | null>(null);
   const [form, setForm] = useState<Settings | null>(null);
@@ -95,6 +120,10 @@ export default function AutoAuditSettings() {
   const [runShift, setRunShift] = useState<"all" | ShiftKey | "custom">("all");
   const [runFrom, setRunFrom] = useState("08:00");
   const [runTo, setRunTo] = useState("12:00");
+  const [runRules, setRunRules] = useState<Rules | null>(null);
+  /** รหัส ICD-10 ที่พิมพ์แล้วอ่านไม่ได้ แยกตามแผนก — ของตั้งค่า / ของตรวจเดี๋ยวนี้ */
+  const [formIcdInvalid, setFormIcdInvalid] = useState<Record<string, string[]>>({});
+  const [runIcdInvalid, setRunIcdInvalid] = useState<Record<string, string[]>>({});
   const deps = useDepartments();
   const [open, setOpen] = useState<string | null>(null);
   /** รอบที่เพิ่งจบขณะเปิดหน้านี้อยู่ — แสดง popup สรุปผล */
@@ -121,9 +150,11 @@ export default function AutoAuditSettings() {
       }
     }
     if (resetForm) {
-      const { enabled, runTime, weekdays, targetDay, maxVisits, departments } = json.settings;
-      setForm({ enabled, runTime, weekdays, targetDay, maxVisits, departments });
+      const { enabled, runTime, weekdays, targetDay, maxVisits, departments, departmentRules } = json.settings;
+      setForm({ enabled, runTime, weekdays, targetDay, maxVisits, departments, departmentRules });
       setRunDepts((cur) => cur ?? departments);
+      setRunRules((cur) => cur ?? departmentRules);
+      setFormIcdInvalid({});
       setDirty(false);
     }
   }, []);
@@ -150,7 +181,10 @@ export default function AutoAuditSettings() {
   }
 
   const check = form ? settingsSchema.safeParse(form) : null;
-  const formError = check && !check.success ? check.error.issues[0]?.message : null;
+  const formError =
+    (form && invalidIcdMessage(form.departments, formIcdInvalid)) ||
+    (check && !check.success ? check.error.issues[0]?.message : null);
+  const runError = invalidIcdMessage(runDepts ?? [], runIcdInvalid);
 
   async function save(next?: Settings) {
     const body = next ?? form;
@@ -189,6 +223,7 @@ export default function AutoAuditSettings() {
         body: JSON.stringify({
           ...(runDate ? { targetDate: runDate } : {}),
           departments: runDepts ?? [],
+          rules: pruneRules(runDepts ?? [], runRules ?? {}),
           ...(runShift === "custom"
             ? { timeFrom: runFrom, timeTo: runTo }
             : runShift !== "all"
@@ -313,22 +348,46 @@ export default function AutoAuditSettings() {
             </label>
             <DepartmentPicker id="aa-run-deps" value={runDepts ?? []} onChange={setRunDepts} />
           </div>
+
+          <div className="md:col-span-2">
+            <DepartmentRules
+              departments={runDepts ?? []}
+              rules={runRules ?? {}}
+              onChange={setRunRules}
+              onInvalid={(d, bad) => setRunIcdInvalid((m) => ({ ...m, [d]: bad }))}
+              sharedHint={form.maxVisits === ALL_VISITS ? "ตรวจทุกราย" : `สุ่มรวมกัน ${form.maxVisits} ราย`}
+            />
+            <span className="hint">เริ่มจากค่าที่เซ็ตไว้ในตั้งค่า แก้ตรงนี้มีผลเฉพาะรอบนี้</span>
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-3 border-t border-zinc-200 px-5 py-4 sm:px-6">
           <button
             type="button"
             className="btn btn-primary"
-            disabled={starting || running || !data.hosxpEnabled || (runShift === "custom" && (!runFrom || !runTo || runFrom === runTo))}
+            disabled={
+              starting ||
+              running ||
+              !data.hosxpEnabled ||
+              !!runError ||
+              (runShift === "custom" && (!runFrom || !runTo || runFrom === runTo))
+            }
             onClick={() => void runNow()}
           >
             {running || starting ? <span className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent" /> : <Icon name="rocket" />}
             {running ? "มีรอบกำลังตรวจอยู่…" : starting ? "กำลังเริ่ม…" : "ตรวจเดี๋ยวนี้"}
           </button>
-          <span className="text-sm text-zinc-500">
-            {form.maxVisits === ALL_VISITS ? "ตรวจทุกราย" : `สุ่ม ${form.maxVisits} ราย`} ·{" "}
-            {departmentNames(runDepts ?? [], deps.items)}
-          </span>
+          {runError ? (
+            <span className="inline-flex items-center gap-1 text-sm text-red-700">
+              <Icon name="x" size={15} />
+              {runError}
+            </span>
+          ) : (
+            <span className="text-sm text-zinc-500">
+              {targetLabel(runDepts ?? [], pruneRules(runDepts ?? [], runRules ?? {}), visitLimitOf(form.maxVisits))} ·{" "}
+              {departmentNames(runDepts ?? [], deps.items)}
+            </span>
+          )}
         </div>
       </section>
 
@@ -502,7 +561,14 @@ export default function AutoAuditSettings() {
               </label>
             </div>
             <span className="hint">
-              1 รายใช้ AI 1 ครั้ง · ข้ามรายที่ตรวจเสร็จแล้ว · ถ้าโควตา AI หมดกลางทาง
+              {!hasSharedPool({ departments: form.departments, quotas: quotasOf(pruneRules(form.departments, form.departmentRules)) }) ? (
+                <>
+                  <strong>ไม่ได้ใช้</strong> — ทุกแผนกที่เลือกเซ็ตจำนวนแยกไว้แล้ว ({targetLabel(form.departments, pruneRules(form.departments, form.departmentRules), null)}) ·{" "}
+                </>
+              ) : Object.keys(quotasOf(form.departmentRules)).length > 0 ? (
+                "ใช้กับแผนกที่ไม่ได้เซ็ตจำนวนแยก · "
+              ) : null}
+              1 รายใช้ AI 1 ครั้ง · ข้ามรายที่ตรวจเสร็จแล้ว · ไม่ตรวจคนเดิมซ้ำในวันเดียวกัน · ถ้าโควตา AI หมดกลางทาง
               ระบบหยุดรอแล้ว<strong>ตรวจต่อเองหลังโควตารีเซ็ต</strong>จนครบ
             </span>
           </div>
@@ -512,6 +578,17 @@ export default function AutoAuditSettings() {
             </label>
             <DepartmentPicker id="aa-deps" value={form.departments} onChange={(d) => patch({ departments: d })} />
             <span className="hint">ไม่เลือก = ทุกแผนก · เป็นค่าตั้งต้นของ &ldquo;ตรวจเดี๋ยวนี้&rdquo; ด้วย</span>
+            <DepartmentRules
+              departments={form.departments}
+              rules={form.departmentRules}
+              onChange={(r) => patch({ departmentRules: r })}
+              onInvalid={(d, bad) => setFormIcdInvalid((m) => ({ ...m, [d]: bad }))}
+              sharedHint={form.maxVisits === ALL_VISITS ? "ตรวจทุกราย" : `สุ่มรวมกัน ${form.maxVisits} ราย`}
+            />
+            <span className="hint">
+              ICD-10 ใส่ได้ทั้งรหัสเต็ม (J02.9) ขึ้นต้นด้วย (E11 = ทุกรหัสย่อยของ E11) หรือช่วง (I10-I15) คั่นด้วยจุลภาค
+              — มีรหัสใดรหัสหนึ่ง (โรคหลักหรือโรคร่วม) จึงตรวจ ไม่มีก็ข้าม
+            </span>
           </div>
         </div>
 
@@ -580,6 +657,9 @@ export default function AutoAuditSettings() {
                           <span className="tabular whitespace-nowrap">{formatThaiDateShort(r.targetDate)}</span>
                           <span className="block max-w-56 text-xs text-zinc-500">
                             {departmentNames(r.filters?.departments ?? [], deps.items)}
+                            {Object.keys(r.filters?.rules ?? {}).length > 0
+                              ? ` (${rulesSummary(r.filters?.rules, new Map(deps.items.map((d) => [d.code, d.label])))})`
+                              : ""}
                             {r.filters?.shift
                               ? ` · ${SHIFTS[r.filters.shift].label}`
                               : r.filters?.timeFrom
@@ -593,7 +673,13 @@ export default function AutoAuditSettings() {
                         <td className="tabular text-right">
                           {r.reviewed}
                           <span className="block text-xs text-zinc-500">
-                            {r.visitLimit === null ? "ทุกราย · " : `เป้า ${r.visitLimit} · `}
+                            {(() => {
+                              const t = runTarget(
+                                { departments: r.filters?.departments ?? [], quotas: quotasOf(r.filters?.rules ?? {}) },
+                                r.visitLimit,
+                              );
+                              return t === null ? "ทุกราย · " : `เป้า ${t} · `;
+                            })()}
                             จาก {r.found} ราย{r.skipped ? ` · ข้าม ${r.skipped}` : ""}
                           </span>
                         </td>

@@ -316,6 +316,10 @@ model AutoAuditSetting {
   /// แผนกที่ให้ตรวจ — รหัส depcode ของ HOSxP คั่นด้วยจุลภาค · ว่าง = ทุกแผนก
   departments String? @db.Text
 
+  /// เซ็ตแยกรายแผนก { "depcode": { quota: จำนวน | null, icd10: ["E11", "I10-I15"] } }
+  ///   quota null = ใช้ maxVisits ร่วมกับแผนกอื่น · icd10 ว่าง = ทุกโรค
+  departmentRules Json?
+
   updatedBy String?  @db.VarChar(100)
   updatedAt DateTime @updatedAt
 }
@@ -346,7 +350,8 @@ model AutoAuditRun {
   /// id ของรอบที่หยุดรอโควตา ซึ่งรอบนี้มาตรวจต่อ
   resumedFrom String? @db.VarChar(30)
 
-  /// ตัวกรองของรอบนี้ { departments: string[], timeFrom: "HH:mm", timeTo: "HH:mm", shift }
+  /// ตัวกรองของรอบนี้ { departments: string[], rules: { depcode: { quota, icd10 } },
+  ///                    timeFrom: "HH:mm", timeTo: "HH:mm", shift }
   /// เก็บไว้ให้รอบ resume ตรวจต่อด้วยเงื่อนไขเดิม และแสดงในประวัติ
   filters Json?
 

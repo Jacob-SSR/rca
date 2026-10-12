@@ -27,6 +27,126 @@ export const ALL_VISITS = 0;
 /** จำนวนที่รอบหนึ่งต้องตรวจ — null = ทุกราย */
 export const visitLimitOf = (maxVisits: number): number | null => (maxVisits === ALL_VISITS ? null : maxVisits);
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ICD-10 ที่ให้ตรวจ — ตรวจเฉพาะ visit ที่มีรหัสตามที่ระบุ ไม่มี = ข้าม
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** รหัส ICD-10 แบบไม่มีจุด ตัวพิมพ์ใหญ่ — HOSxP เก็บ ovstdiag.icd10 แบบนี้ (E119 ไม่ใช่ E11.9) */
+export const normalizeIcd = (code: string) => code.toUpperCase().replace(/[\s.*]/g, "");
+
+const ICD_CODE = /^[A-Z]\d{2}[0-9A-Z]{0,4}$/;
+
+/**
+ * รูปแบบที่ใส่ได้: รหัสเต็ม (J02.9) · ขึ้นต้นด้วย (E11 = E11 ทุกตัวย่อย) · ช่วง (I10-I15)
+ * คืนรูปแบบที่ปรับแล้ว หรือ null ถ้าใช้ไม่ได้
+ */
+export function normalizeIcdPattern(raw: string): string | null {
+  const parts = raw.split(/\s*[-–]\s*/).map(normalizeIcd);
+  if (parts.length === 1) return ICD_CODE.test(parts[0]) ? parts[0] : null;
+  if (parts.length !== 2 || !parts.every((x) => ICD_CODE.test(x))) return null;
+  return parts[0] <= parts[1] ? `${parts[0]}-${parts[1]}` : null;
+}
+
+/** แยกข้อความที่ผู้ใช้พิมพ์ (คั่นด้วยจุลภาค/เว้นวรรค/ขึ้นบรรทัด) → รูปแบบที่ใช้ได้ + ตัวที่ผิด */
+export function parseIcdList(text: string): { patterns: string[]; invalid: string[] } {
+  const patterns: string[] = [];
+  const invalid: string[] = [];
+  // "I10 - I15" ต้องเป็นช่วงเดียว ไม่ใช่สามคำ
+  const tokens = text.replace(/\s*[-–]\s*/g, "-").split(/[\s,;]+/).filter(Boolean);
+  for (const t of tokens) {
+    const p = normalizeIcdPattern(t);
+    if (p === null) invalid.push(t);
+    else if (!patterns.includes(p)) patterns.push(p);
+  }
+  return { patterns, invalid };
+}
+
+/** รหัสนี้เข้ารูปแบบไหม — ขึ้นต้นด้วย หรือ อยู่ในช่วง (เทียบเท่าความยาวของปลายช่วง) */
+export function icdMatches(code: string, pattern: string): boolean {
+  const c = normalizeIcd(code);
+  const [from, to] = pattern.split("-");
+  if (to === undefined) return c.startsWith(from);
+  return c.slice(0, from.length) >= from && c.slice(0, to.length) <= to;
+}
+
+/** visit ที่มีรหัส ICD (ตัวใดก็ได้ ทั้งโรคหลักและโรคร่วม) เข้ารูปแบบใดรูปแบบหนึ่ง · ไม่ระบุรูปแบบ = ผ่านหมด */
+export function visitHasIcd(codes: string[], patterns: string[]): boolean {
+  if (patterns.length === 0) return true;
+  return codes.some((c) => patterns.some((p) => icdMatches(c, p)));
+}
+
+const icdListSchema = z
+  .array(z.string())
+  .max(200)
+  .default([])
+  .transform((list, ctx) => {
+    const out: string[] = [];
+    for (const raw of list) {
+      const p = normalizeIcdPattern(raw);
+      if (p === null) {
+        ctx.addIssue({ code: "custom", message: `รหัส ICD-10 ไม่ถูกต้อง: ${raw}` });
+        return z.NEVER;
+      }
+      if (!out.includes(p)) out.push(p);
+    }
+    return out;
+  });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ค่าที่เซ็ตแยกรายแผนก: จำนวนต่อรอบ + ICD-10 ที่ให้ตรวจ
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * quota: ตรวจกี่รายต่อรอบของแผนกนี้ · null = ใช้ "จำนวนที่ตรวจต่อรอบ" ร่วมกับแผนกอื่น
+ *        (รอบ resume ใช้ 0 = แผนกนี้ครบแล้ว ไม่ตรวจเพิ่ม)
+ * icd10: ตรวจเฉพาะ visit ของแผนกนี้ที่มีรหัสเหล่านี้ · ว่าง = ทุกโรค
+ */
+export type DepartmentRule = { quota: number | null; icd10: string[] };
+
+const rulesSchema = (minQuota: number) =>
+  z
+    .record(
+      z.string().trim().min(1).max(20),
+      z.object({
+        quota: z.number().int().min(minQuota).max(MAX_VISITS_CAP).nullable().default(null),
+        icd10: icdListSchema,
+      }),
+    )
+    .default({});
+
+/** ค่าที่เซ็ตไว้ของแผนกในตั้งค่า — อ่านจาก JSON ใน DB (ค่าเสียทิ้งไปทั้งก้อน) */
+export const savedRulesSchema = rulesSchema(1);
+
+/** เก็บเฉพาะแผนกที่เลือกอยู่และมีค่าจริง — ไม่เลือกแผนก (ทุกแผนก) = ไม่มีค่าแยกแผนก */
+export function pruneRules(
+  departments: string[],
+  rules: Record<string, DepartmentRule>,
+): Record<string, DepartmentRule> {
+  return Object.fromEntries(
+    Object.entries(rules).filter(([d, r]) => departments.includes(d) && (r.quota !== null || r.icd10.length > 0)),
+  );
+}
+
+/** { depcode: จำนวน } เฉพาะแผนกที่กำหนดจำนวนแยกไว้ */
+export function quotasOf(rules: Record<string, DepartmentRule>): Record<string, number> {
+  return Object.fromEntries(
+    Object.entries(rules).flatMap(([d, r]) => (r.quota === null ? [] : [[d, r.quota] as const])),
+  );
+}
+
+/** มีแผนกไหนกำหนด ICD-10 ไว้ไหม — ไม่มีก็ไม่ต้องอ่านรหัสวินิจฉัยจาก HOSxP */
+export const needsIcd = (rules: Record<string, DepartmentRule>) =>
+  Object.values(rules).some((r) => r.icd10.length > 0);
+
+/** visit นี้ผ่าน ICD-10 ของแผนกตัวเองไหม — แผนกที่ไม่ได้กำหนดรหัส ผ่านหมด */
+export function passesDepartmentIcd(
+  v: { depcode?: string },
+  codes: string[],
+  rules: Record<string, DepartmentRule>,
+): boolean {
+  return visitHasIcd(codes, rules[(v.depcode ?? "").trim()]?.icd10 ?? []);
+}
+
 export const settingsSchema = z.object({
   enabled: z.boolean(),
   runTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "เวลาต้องเป็น ชม:นาที เช่น 12:00"),
@@ -42,7 +162,12 @@ export const settingsSchema = z.object({
     .int()
     .min(ALL_VISITS, "จำนวนต้องไม่ติดลบ")
     .max(MAX_VISITS_CAP, `ไม่เกิน ${MAX_VISITS_CAP} ราย (ถ้าต้องการทุกราย เลือก "ตรวจทุกรายของวัน")`),
-});
+  /** เซ็ตแยกรายแผนก (จำนวนต่อรอบ + ICD-10) — ใส่ได้เฉพาะแผนกที่เลือก */
+  departmentRules: savedRulesSchema,
+}).transform((s) => ({ ...s, departmentRules: pruneRules(s.departments, s.departmentRules) }))
+  .refine((s) => Object.values(quotasOf(s.departmentRules)).reduce((a, b) => a + b, 0) <= MAX_VISITS_CAP, {
+    message: `จำนวนต่อแผนกรวมกันไม่เกิน ${MAX_VISITS_CAP} ราย`,
+  });
 
 export type AutoAuditSettings = z.infer<typeof settingsSchema>;
 
@@ -53,6 +178,7 @@ export const DEFAULT_SETTINGS: AutoAuditSettings = {
   targetDay: "yesterday",
   maxVisits: 20,
   departments: [],
+  departmentRules: {},
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -73,6 +199,8 @@ const HHMM = /^([01]\d|2[0-3]):[0-5]\d$|^24:00$/;
 export const runFiltersSchema = z
   .object({
     departments: z.array(z.string().trim().min(1).max(20)).max(200).default([]),
+    /** ค่าแยกรายแผนกของรอบนี้ — quota 0 = แผนกนี้ครบแล้ว (รอบ resume) ไม่ตรวจเพิ่ม */
+    rules: rulesSchema(0),
     shift: z.enum(["morning", "afternoon", "night"]).nullish(),
     timeFrom: z.string().regex(HHMM, "เวลาต้องเป็น ชม:นาที").nullish(),
     timeTo: z.string().regex(HHMM, "เวลาต้องเป็น ชม:นาที").nullish(),
@@ -81,6 +209,23 @@ export const runFiltersSchema = z
   .refine((f) => !f.timeFrom || f.timeFrom !== f.timeTo, { message: "เวลาเริ่มกับสิ้นสุดต้องไม่เท่ากัน" });
 
 export type RunFilters = z.infer<typeof runFiltersSchema>;
+
+type PoolInput = { departments: string[]; quotas: Record<string, number> };
+
+/** แผนกที่ไม่ได้กำหนดจำนวนแยก ยังมีให้ตรวจไหม (ไม่เลือกแผนก = ทุกแผนกที่เหลือ) */
+export function hasSharedPool(f: PoolInput): boolean {
+  return f.departments.length === 0 || f.departments.some((d) => !(d in f.quotas));
+}
+
+/**
+ * เป้าจำนวนรายของรอบ — null = ทุกราย
+ * = ผลรวมจำนวนต่อแผนก + จำนวนรวม (visitLimit) ของแผนกที่ไม่ได้กำหนดแยก
+ */
+export function runTarget(f: PoolInput, visitLimit: number | null): number | null {
+  const quota = Object.values(f.quotas).reduce((a, b) => a + b, 0);
+  if (!hasSharedPool(f)) return quota;
+  return visitLimit === null ? null : quota + visitLimit;
+}
 
 /** ช่วงเวลาที่ใช้จริง — เลือกเวรมา ใช้เวลาของเวร, ใส่เวลาเอง ใช้เวลาที่ใส่ */
 export function timeRangeOf(f: RunFilters): { from: string; to: string } | null {
@@ -206,12 +351,20 @@ export type ExistingForm = {
  *   - ฟอร์มของรอบอัตโนมัติ ที่ตรวจไม่สำเร็จ    → ตรวจซ้ำ ใช้เคส/ฟอร์มเดิม (ไม่สร้างเคสซ้ำ)
  *   - ยังไม่มีฟอร์ม                            → ตรวจใหม่
  *
+ * ⚠️ ไม่ตรวจคนเดิมซ้ำในวันเดียวกัน — นับคนด้วย HN (ไม่ใช่ชื่อ เพราะชื่อซ้ำกันได้ต่างคนกัน)
+ *    ผู้ป่วยคนเดียวมาหลาย visit ในวันเดียว (เช่น ไปหลายคลินิก) ตรวจแค่ visit เดียว
+ *    และถ้า visit ไหนของคนนั้นในวันนั้นตรวจไปแล้ว/มีคนกรอกอยู่ ก็ข้ามทั้งคน
+ *    คนเดิมแต่คนละวัน = คนละรอบการมา ตรวจได้ตามปกติ (รายการ visit ของรอบคือวันเดียวอยู่แล้ว)
+ *    sameDay = visit ทั้งหมดของวันนั้น (ก่อนกรองแผนก/เวร/ICD) ไว้รู้ว่า VN ไหนเป็นของใคร
+ *
  * limit = null → ทุกรายตามลำดับที่มา, ตัวเลข → สุ่มเท่านั้นราย
+ * quotas → แผนกที่กำหนดจำนวนไว้ สุ่มแยกแผนกละเท่านั้น ส่วนแผนกอื่นใช้ limit ร่วมกัน
  */
-export function planVisits<V extends { vn: string }>(
+export function planVisits<V extends { vn: string; hn?: string; depcode?: string }>(
   visits: V[],
   forms: ExistingForm[],
   limit: number | null,
+  opts: { quotas?: Record<string, number>; sameDay?: { vn: string; hn?: string }[] } = {},
   rand: () => number = Math.random,
 ): { todo: Array<V & { reuseFormId?: string }>; skipped: number } {
   const byVn = new Map<string, ExistingForm[]>();
@@ -219,16 +372,36 @@ export function planVisits<V extends { vn: string }>(
     if (!f.hosxpVisitRef) continue;
     byVn.set(f.hosxpVisitRef, [...(byVn.get(f.hosxpVisitRef) ?? []), f]);
   }
+  const taken = (vn: string) => (byVn.get(vn) ?? []).some((f) => f.completed || !f.byAutoAudit);
 
-  const candidates: Array<V & { reuseFormId?: string }> = [];
+  // ไม่มี HN = รู้ไม่ได้ว่าเป็นใคร → ถือเป็นคนละคนกัน (key ด้วย VN)
+  const person = (v: { vn: string; hn?: string }) => (v.hn ?? "").trim() || `vn:${v.vn}`;
+  const takenPeople = new Set<string>();
+  for (const v of [...(opts.sameDay ?? []), ...visits]) if (taken(v.vn)) takenPeople.add(person(v));
+
+  // หนึ่งคนหนึ่ง visit — มีฟอร์มค้างของรอบก่อนใช้ visit นั้น (ไม่สร้างเคสใหม่ให้คนเดิม) ไม่มีก็สุ่ม
+  const groups = new Map<string, Array<V & { reuseFormId?: string }>>();
   for (const v of visits) {
-    const fs = byVn.get(v.vn) ?? [];
-    if (fs.some((f) => f.completed)) continue;
-    if (fs.some((f) => !f.byAutoAudit)) continue;
-    const retry = fs.find((f) => f.byAutoAudit);
-    candidates.push(retry ? { ...v, reuseFormId: retry.id } : { ...v });
+    const who = person(v);
+    if (takenPeople.has(who)) continue;
+    const retry = (byVn.get(v.vn) ?? []).find((f) => f.byAutoAudit);
+    groups.set(who, [...(groups.get(who) ?? []), retry ? { ...v, reuseFormId: retry.id } : { ...v }]);
   }
+  const candidates = [...groups.values()].map(
+    (g) => g.find((v) => v.reuseFormId) ?? g[Math.floor(rand() * g.length)] ?? g[0],
+  );
 
-  const todo = limit === null ? candidates : sample(candidates, limit, rand);
+  const quotas = opts.quotas ?? {};
+  const shared = candidates.filter((v) => !((v.depcode ?? "").trim() in quotas));
+  const todo = [
+    ...Object.entries(quotas).flatMap(([dep, n]) =>
+      sample(
+        candidates.filter((v) => (v.depcode ?? "").trim() === dep),
+        n,
+        rand,
+      ),
+    ),
+    ...(limit === null ? shared : sample(shared, limit, rand)),
+  ];
   return { todo, skipped: visits.length - candidates.length };
 }

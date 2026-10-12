@@ -160,3 +160,29 @@ export async function lookupIcd(
     };
   }
 }
+
+/**
+ * รหัส ICD-10 ทุกตัวของทุก visit ผู้ป่วยนอกในวันนั้น { vn → [icd10] } — ใช้กรองรอบตรวจอัตโนมัติ
+ * query เดียวต่อวัน (join ด้วยวันที่) แทนการยิงทีละ VN
+ * ⚠️ throw ได้ — ผู้เรียกต้องจัดการเอง (กรองไม่ได้ ห้ามปล่อยให้ตรวจทุกโรคแทน)
+ */
+export async function opdIcdByDate(date: string): Promise<Map<string, string[]>> {
+  const [ovst, ovstdiag] = await Promise.all([qualify("ovst"), qualify("ovstdiag")]);
+  const rows = await hosxpSelect<Row>(
+    `SELECT d.vn AS vn, d.icd10 AS icd
+       FROM ${ovstdiag} d
+       JOIN ${ovst} o ON o.vn = d.vn
+      WHERE o.vstdate = ?
+      LIMIT 20000`,
+    [date],
+  );
+
+  const out = new Map<string, string[]>();
+  for (const r of rows) {
+    const vn = str(r.vn);
+    const icd = str(r.icd);
+    if (vn === "" || icd === "") continue;
+    out.set(vn, [...(out.get(vn) ?? []), icd]);
+  }
+  return out;
+}

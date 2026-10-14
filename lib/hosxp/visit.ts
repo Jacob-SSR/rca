@@ -230,20 +230,6 @@ export function formatPersonalHistory(r: Record<string, unknown>): string {
 }
 
 /**
- * บรรทัดคำวินิจฉัย — ชื่อโรคขึ้นก่อน รหัสอยู่ในวงเล็บเสมอ
- *
- * ⚠️ คู่มือ สนย. หน้า 5 เตือนตรงๆ ว่าห้ามใช้รหัส ICD แทนคำวินิจฉัย
- *    และเกณฑ์ DIAGNOSIS ให้ 0 คะแนนถ้าใช้รหัสแทนคำวินิจฉัย
- *    ถ้าเติมมาเป็นรหัสล้วน ฟอร์มจะถูกตัดคะแนนทันทีทั้งที่ยังไม่ได้ตรวจ
- */
-export function formatDiagnosisLine(name: unknown, code: unknown): string {
-  const n = clean(name);
-  const c = clean(code);
-  if (!n) return c ? `(${c})` : "";
-  return c ? `${n} (${c})` : n;
-}
-
-/**
  * บรรทัดรายการยา
  * เกณฑ์ TREATMENT ให้คะแนนเต็มเมื่อมี ชื่อยา + ขนาด + รูปแบบ + วิธีใช้ + ปริมาณ
  * ดึงมาให้ครบเท่าที่ HOSxP มี ส่วนที่ขาดคนกรอกต้องเติมเอง
@@ -429,6 +415,7 @@ async function findDoctorDiagText(vns: string[]): Promise<Map<string, string>> {
   const rows = await hosxpSelect<Row>(
     `SELECT vn, diag_text FROM ${table}
       WHERE vn IN (${ids.map(() => "?").join(", ")})
+      ORDER BY diag_datetime, ovst_doctor_diag_id
       LIMIT 500`,
     ids,
   );
@@ -642,24 +629,6 @@ async function findScreen(vn: string): Promise<ScreenData> {
   };
 }
 
-async function findDiagnosis(vn: string): Promise<string> {
-  const [ovstdiag, icd101] = await Promise.all([qualify("ovstdiag"), qualify("icd101")]);
-  const rows = await hosxpSelect<Row>(
-    `SELECT d.icd10, i.name
-       FROM ${ovstdiag} d
-       LEFT JOIN ${icd101} i ON i.code = d.icd10
-      WHERE d.vn = ?
-      ORDER BY d.diagtype, d.icd10
-      LIMIT 30`,
-    [vn],
-  );
-
-  return rows
-    .map((r) => formatDiagnosisLine(r.name, r.icd10))
-    .filter(Boolean)
-    .join("\n");
-}
-
 /**
  * การรักษา = ยาที่สั่ง + หัตถการ/ผ่าตัด
  *
@@ -857,7 +826,7 @@ export async function lookupVisit(opts: {
   // HN ของ visit ที่อ่านได้จริงมาก่อน — กันกรณีเลือก VN แล้ว HN ในช่องเป็นของคนอื่น
   const patientHn = found.hn !== "" ? found.hn : id;
 
-  const [patient, screen, diagnosis, drugs, lab, xray, procedures, doctorDiag] = await Promise.all([
+  const [patient, screen, drugs, lab, xray, procedures, doctorDiag] = await Promise.all([
     soft(
       "ข้อมูลผู้ป่วย (patient)",
       () => findPatient(patientHn, found.date),
@@ -865,17 +834,17 @@ export async function lookupVisit(opts: {
       issues,
     ),
     soft("ประวัติ/ตรวจร่างกาย (opdscreen)", () => findScreen(found.vn), EMPTY_SCREEN, issues),
-    soft("การวินิจฉัย (ovstdiag/icd101)", () => findDiagnosis(found.vn), "", issues),
     soft("รายการยา (opitemrece/drugitems)", () => findDrugs(found.vn), "", issues),
     soft("ผลแล็บ (lab_head/lab_order/lab_items)", () => findLab(found.vn), "", issues),
     soft("ผลเอกซเรย์ (xray_head)", () => findXray(found.vn), "", issues),
     // หัตถการไม่ใช่ทุกโรงพยาบาลที่บันทึก ไม่พบก็ไม่ต้องรายงานว่าพัง
     soft("หัตถการ (doctor_operation)", () => findProcedures(found.vn), ""),
-    // หมอบางคนพิมพ์คำวินิจฉัยไว้ที่นี่แทน ovst.diag_text — อ่านไม่ได้ก็ยังมีของ ovst
+    // คำวินิจฉัยตัวจริง — ตารางเดียวกับที่หน้า EMR ของ HOSxP อ่าน
     soft(
       "คำวินิจฉัยของแพทย์ (ovst_doctor_diag)",
       () => findDoctorDiagText([found.vn]).then((m) => m.get(found.vn) ?? ""),
       "",
+      issues,
     ),
   ]);
 
@@ -885,10 +854,10 @@ export async function lookupVisit(opts: {
   // การรักษา = ยา + หัตถการ ตามที่เกณฑ์ TREATMENT ระบุไว้
   const treatment = [drugs, procedures].filter((s) => s !== "").join("\n");
 
-  // diag_text ที่หมอพิมพ์เองมาก่อนรหัส ICD เพราะเป็น "คำวินิจฉัย" ตัวจริง
-  // (ทั้ง ovst_doctor_diag และ ovst.diag_text) มีทั้งคู่ก็เอามาทั้งคู่
-  // ให้คนตรวจเห็นว่าข้อความของหมอกับรหัสที่ให้ไว้ตรงกันหรือไม่
-  const diagnosisText = mergeDiagText(doctorDiag, found.diagText, diagnosis);
+  // ช่องคำวินิจฉัยใช้ diag_text ที่หมอพิมพ์เองจาก ovst_doctor_diag
+  // ไม่มีค่อยถอยไปใช้ ovst.diag_text — ไม่เอาชื่อโรค/รหัสจาก ovstdiag+icd101
+  // เพราะได้บรรทัดรหัสเปล่าๆ อย่าง "(9938)" และเกณฑ์ DIAGNOSIS ห้ามใช้รหัส ICD
+  const diagnosisText = doctorDiag !== "" ? doctorDiag : mergeDiagText(found.diagText);
 
   const values: Record<string, string> = {
     hn: patientHn,

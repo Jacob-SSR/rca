@@ -15,7 +15,6 @@ import { formatThaiDate, formatTime, isIsoDate } from "@/lib/form/thai-date";
 import {
   formatAge,
   formatChiefComplaint,
-  formatDiagnosisLine,
   formatDrugLine,
   formatLabLine,
   formatPersonalHistory,
@@ -278,22 +277,6 @@ async function main() {
     // มีแค่ตัวบนแล้วเขียน "BP 120/" ออกไปคือข้อมูลผิด
     assert.equal(formatVitalSigns({ bps: 120 }), "");
     assert.equal(formatVitalSigns({ bpd: 80 }), "");
-  });
-
-  await test("คำวินิจฉัย: ชื่อโรคขึ้นก่อนเสมอ รหัสอยู่ในวงเล็บ", () => {
-    // คู่มือ สนย. หน้า 5 ห้ามใช้รหัส ICD แทนคำวินิจฉัย
-    // เกณฑ์ DIAGNOSIS ให้ 0 คะแนนถ้าเจอรหัสแทนคำวินิจฉัย
-    assert.equal(
-      formatDiagnosisLine("Acute pharyngitis", "J029"),
-      "Acute pharyngitis (J029)",
-    );
-    assert.equal(formatDiagnosisLine("Acute pharyngitis", ""), "Acute pharyngitis");
-  });
-
-  await test("ไม่มีชื่อโรคก็ต้องไม่ออกมาเป็นรหัสเปล่าๆ", () => {
-    // ใส่วงเล็บไว้ให้เห็นชัดว่าเป็นรหัส ไม่ใช่คำวินิจฉัย คนกรอกจะได้รู้ว่าต้องเติม
-    assert.equal(formatDiagnosisLine("", "J029"), "(J029)");
-    assert.equal(formatDiagnosisLine(null, null), "");
   });
 
   await test("เอกซเรย์ที่ยังไม่มีผลอ่าน ต้องเขียนบอก ไม่ใช่ปล่อยว่าง", () => {

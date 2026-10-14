@@ -12,11 +12,18 @@
 //   • ป้ายบนกองเอกสาร = จำนวนเคสที่รอคิว · มีจุดแสงกะพริบที่คีย์บอร์ดระหว่างทำงาน
 //
 // ตำแหน่งทั้งหมดเป็น % ของภาพ (อัตราส่วน 3:2) — ย้าย/เปลี่ยนภาพต้องวัดตำแหน่งใหม่ใน SPOT
-// ภาพนิ่งจึงให้ตัวละครเดิน/พิมพ์จริงไม่ได้ — ความเคลื่อนไหวทั้งหมดอยู่ในชั้นที่ซ้อนทับ
+//
+// ── ทำให้ภาพนิ่งมีชีวิต (puppet) ──
+// ตัดส่วนของภาพเป็นชั้นโปร่งใส (public/scene/layer-*.webp, blink-*.webp, plant-*.webp) แล้วขยับทีละชั้น:
+//   หัว+แขนที่ท้าวคาง โยกรอบข้อศอก · กะพริบตา (แผ่นทาผิวทับลูกตา อยู่ในชั้นหัวจะได้โยกตาม)
+//   มือบนคีย์บอร์ดพิมพ์เป็นช่วงๆ ตอนทำงาน · หัวเพื่อนร่วมงานขยับ · ใบไม้ไหว
+// ชั้นตัดจากภาพต้นฉบับแล้วย่อด้วยวิธีเดียวกับภาพฉาก ตำแหน่งจึงตรงกันพอดีพิกเซล
+// เปลี่ยนภาพฉากต้องตัดชั้นใหม่และวัด LAYER ใหม่ทั้งหมด
+// ตัวละครเดินไปมาไม่ได้ (ภาพนิ่ง) — ที่ขยับได้คือส่วนที่ตัดไว้เท่านั้น
 // animation หยุดเองเมื่อผู้ใช้ตั้ง prefers-reduced-motion (ดู globals.css)
 
 import Image from "next/image";
-import { useSyncExternalStore, type CSSProperties } from "react";
+import { useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import Icon, { type IconName } from "@/app/components/Icon";
 import type { AuditStep } from "@/lib/auto-audit/progress";
 
@@ -96,6 +103,65 @@ const STEP_BUBBLE: Record<AuditStep, { icon: IconName; label: string }> = {
 
 const at = (p: { x: number; y: number }): CSSProperties => ({ left: `${p.x}%`, top: `${p.y}%` });
 
+/** กล่องของแต่ละชั้น (% ของภาพ) + จุดหมุน ox/oy (% ของกล่องชั้นนั้น) */
+type Box = { left: number; top: number; width: number; height: number; ox?: number; oy?: number };
+
+const LAYER: Record<string, Box> = {
+  head: { left: 38.646, top: 20.938, width: 18.021, height: 39.219, ox: 13.2, oy: 94.8 },
+  hand: { left: 41.458, top: 62.187, width: 10.417, height: 5.938 },
+  coworker: { left: 85.625, top: 8.438, width: 8.854, height: 15.313, ox: 49.9, oy: 98 },
+  plantDesk: { left: 25.521, top: 69.375, width: 9.167, height: 11.25, ox: 49.7, oy: 95.1 },
+  plantRight: { left: 82.604, top: 29.531, width: 10.104, height: 10.938, ox: 49.7, oy: 105 },
+  plantTop: { left: 32.812, top: 4.062, width: 8.125, height: 8.594, ox: 49.7, oy: 93.6 },
+};
+
+/** ตาหลับ — กล่องในภาพ แปลงเป็นตำแหน่งภายในชั้นหัวด้วย inside() */
+const BLINK_L: Box = { left: 42.083, top: 38.594, width: 2.5, height: 3.438 };
+const BLINK_R: Box = { left: 45.833, top: 39.219, width: 2.708, height: 3.906 };
+
+function inside(child: Box, parent: Box): Box {
+  return {
+    left: ((child.left - parent.left) / parent.width) * 100,
+    top: ((child.top - parent.top) / parent.height) * 100,
+    width: (child.width / parent.width) * 100,
+    height: (child.height / parent.height) * 100,
+  };
+}
+
+const boxStyle = (b: Box): CSSProperties => ({
+  left: `${b.left}%`,
+  top: `${b.top}%`,
+  width: `${b.width}%`,
+  height: `${b.height}%`,
+});
+
+/** ชั้นภาพหนึ่งชิ้น — กล่องนอกวางตำแหน่ง กล่องในขยับ (animation) รอบจุดหมุนของชั้น */
+function Layer({
+  src,
+  box,
+  className,
+  style,
+  children,
+}: {
+  src: string;
+  box: Box;
+  className?: string;
+  style?: CSSProperties;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="absolute" style={boxStyle(box)}>
+      <div
+        className={`absolute inset-0 ${className ?? ""}`}
+        style={{ transformOrigin: `${box.ox ?? 50}% ${box.oy ?? 50}%`, ...style }}
+      >
+        <Image src={src} alt="" fill unoptimized draggable={false} />
+        {children}
+      </div>
+    </div>
+  );
+}
+
 export default function OfficeScene({
   step = "lookup",
   cheer = 0,
@@ -141,6 +207,24 @@ export default function OfficeScene({
         className="object-cover"
         draggable={false}
       />
+
+      {/* ── ชั้นที่ขยับได้ (puppet) — อยู่ใต้ชั้นแสงตามเวลา จะได้มืด/สว่างตามห้อง ── */}
+      <Layer src="/scene/plant-top.webp" box={LAYER.plantTop} className="scene-leaf" style={{ animationDuration: "5.1s" }} />
+      <Layer src="/scene/plant-right.webp" box={LAYER.plantRight} className="scene-leaf" style={{ animationDuration: "4.3s", animationDelay: "-1.7s" }} />
+      <Layer src="/scene/plant-desk.webp" box={LAYER.plantDesk} className="scene-leaf" style={{ animationDuration: "3.7s", animationDelay: "-0.9s" }} />
+      <Layer src="/scene/layer-coworker.webp" box={LAYER.coworker} className="scene-nod" />
+      {/* หัว + แขนท้าวคาง: ว่าง = โยกเหม่อช้าๆ · ทำงาน = พยักเล็กน้อยแบบตั้งใจ */}
+      <Layer src="/scene/layer-head.webp" box={LAYER.head} className={idle ? "scene-daydream" : "scene-focus"}>
+        <div className="absolute inset-0 scene-blink">
+          <div className="absolute" style={boxStyle(inside(BLINK_L, LAYER.head))}>
+            <Image src="/scene/blink-l.webp" alt="" fill unoptimized draggable={false} />
+          </div>
+          <div className="absolute" style={boxStyle(inside(BLINK_R, LAYER.head))}>
+            <Image src="/scene/blink-r.webp" alt="" fill unoptimized draggable={false} />
+          </div>
+        </div>
+      </Layer>
+      {idle ? null : <Layer src="/scene/layer-hand.webp" box={LAYER.hand} className="scene-type" />}
 
       {/* ── ฟ้าในหน้าต่างตามเวลาจริง ── */}
       {tint.window ? (

@@ -33,7 +33,7 @@ export async function GET(_req: NextRequest, ctx: RouteContext<"/api/reviews/[id
 
   const buffer = await buildReviewDocx(review, timeline);
 
-  const fileName = `RCA-${review.case.caseNumber}-${review.id.slice(-6)}.docx`;
+  const fileName = `MRA-${review.case.caseNumber}-${review.id.slice(-6)}.docx`;
 
   return new NextResponse(new Uint8Array(buffer), {
     headers: {

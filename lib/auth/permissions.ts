@@ -1,14 +1,14 @@
 // lib/auth/permissions.ts
-// จุดเดียวที่กำหนดว่า role ไหนทำอะไรได้ในระบบ RCA
+// จุดเดียวที่กำหนดว่า role ไหนทำอะไรได้ในระบบ MRA
 //
-// ยืมโครงจาก ppc-hos-10667/lib/permissions.ts แต่ feature ของ RCA ต่างกันมาก
+// ยืมโครงจาก ppc-hos-10667/lib/permissions.ts แต่ feature ของ MRA ต่างกันมาก
 // ที่นั่นมีหลายสิบ dashboard แยกตามสายงาน ที่นี่มีงานเดียวคือตรวจคุณภาพเวชระเบียน
 // จึงไม่แบ่งตามสายงาน แต่แบ่งตาม "ทำอะไรกับผลตรวจได้"
 //
 // ไฟล์นี้เป็น pure TypeScript ไม่มี dependency ภายนอก
 // → import ได้ทั้งจาก proxy.ts (edge) และจาก component ฝั่ง client
 
-/** ระดับสิทธิ์ในระบบ RCA */
+/** ระดับสิทธิ์ในระบบ MRA */
 export type Capability =
   | "view" // ดูผลตรวจ
   | "review" // อัปโหลด/สร้างเอกสารและสั่งตรวจ

@@ -1,4 +1,4 @@
-# RCA — Phase 2 Spec: ฟอร์มบันทึกเวชระเบียน (CRUD) + HOSxP prefill
+# MRA (Medical Record Audit) — Phase 2 Spec: ฟอร์มบันทึกเวชระเบียน (CRUD) + HOSxP prefill
 
 สถานะ: **ร่างเพื่อตรวจ** — ยังไม่เริ่ม implement
 ฉบับนี้เขียนทับร่างเดิมที่เข้าใจโจทย์ผิด (ร่างเดิมคิดว่า HOSxP เป็นต้นทางของการตรวจ)

@@ -206,9 +206,9 @@ async function main() {
   });
 
   await test("ชื่อไฟล์ไม่มีชื่อผู้ป่วยปนอยู่", () => {
-    const name = recordDocxFileName(FULL, "RCA-20260814-001");
+    const name = recordDocxFileName(FULL, "MRA-20260814-001");
     assert.ok(!name.includes("สมชาย"));
-    assert.ok(name.includes("RCA-20260814-001"));
+    assert.ok(name.includes("MRA-20260814-001"));
     assert.ok(name.endsWith(".docx"));
   });
 

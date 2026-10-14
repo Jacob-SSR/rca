@@ -332,7 +332,7 @@ async function checkHosxp(): Promise<Result> {
 async function main() {
   console.log("\nตรวจการเชื่อมต่อทั้งหมด\n" + "═".repeat(60) + "\n");
 
-  line("ฐานข้อมูลของ RCA (DATABASE_URL)", await checkAppDb());
+  line("ฐานข้อมูลของ MRA (DATABASE_URL)", await checkAppDb());
   line("ฐานผู้ใช้สำหรับ login (AUTH_DB_*)", await checkAuthDb());
   line("HOSxP (HOSXP_DB_*)", await checkHosxp());
 

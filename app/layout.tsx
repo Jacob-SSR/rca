@@ -11,7 +11,7 @@ import AiQuotaBanner from "@/app/components/AiQuotaBanner";
 import Icon from "@/app/components/Icon";
 
 export const metadata: Metadata = {
-  title: "RCA — ตรวจคุณภาพการบันทึกข้อมูลผู้ป่วยนอก",
+  title: "MRA — ตรวจคุณภาพการบันทึกข้อมูลผู้ป่วยนอก",
   description: "ระบบช่วยตรวจคุณภาพเอกสาร OPD ตามเกณฑ์ สนย. (Form A1) โรงพยาบาลพลับพลาชัย",
 };
 

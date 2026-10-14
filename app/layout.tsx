@@ -8,6 +8,7 @@ import Backdrop from "@/app/components/Backdrop";
 import Spotlight from "@/app/components/Spotlight";
 import BrandLogo from "@/app/components/BrandLogo";
 import AiQuotaBanner from "@/app/components/AiQuotaBanner";
+import AutoAuditWidget from "@/app/components/AutoAuditWidget";
 import Icon from "@/app/components/Icon";
 
 export const metadata: Metadata = {
@@ -64,6 +65,8 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
             ระบบภายในโรงพยาบาลพลับพลาชัย — คะแนนตัดสินโดย Rule Engine ตามเกณฑ์ ไม่ใช่ดุลยพินิจของ AI
           </span>
         </footer>
+        {/* ห้องทำงานพิกเซลมุมขวาล่าง — บอกว่ามีรอบตรวจอัตโนมัติทำงานอยู่ไหม */}
+        {session ? <AutoAuditWidget /> : null}
       </body>
     </html>
   );

@@ -10,7 +10,7 @@
 import Link from "next/link";
 import { Fragment, useEffect, useState } from "react";
 import Icon, { type IconName } from "@/app/components/Icon";
-import ScanningDoc from "@/app/components/ScanningDoc";
+import AuditMascot from "@/app/components/AuditMascot";
 import ShinyText from "@/app/components/reactbits/ShinyText";
 import { pctTone } from "@/app/components/ScoreBadge";
 import { formatThaiDateShort } from "@/lib/form/thai-date";
@@ -131,7 +131,10 @@ export default function AutoAuditLive({
         </div>
 
         {preparing ? (
-          <p className="text-center text-zinc-600">{PHASE_TEXT[live.phase]}</p>
+          <div className="flex flex-col items-center gap-2">
+            <AuditMascot step="lookup" className="w-[232px] max-w-full overflow-hidden rounded-2xl ring-1 ring-brand-100" />
+            <p className="text-center text-zinc-600">{PHASE_TEXT[live.phase]}</p>
+          </div>
         ) : null}
 
         {/* ── ขั้นตอนของรายที่กำลังตรวจ ──────────────────────────────────── */}
@@ -173,10 +176,17 @@ export default function AutoAuditLive({
         {current ? (
           <div
             key={current.vn}
-            className="flex animate-rise items-center gap-4 rounded-2xl bg-gradient-to-r from-brand-50 to-white p-4 ring-1 ring-brand-100"
+            className="flex animate-rise flex-col items-center gap-4 rounded-2xl bg-gradient-to-r from-brand-50 to-white p-4 ring-1 ring-brand-100 sm:flex-row"
           >
-            <ScanningDoc className="hidden shrink-0 scale-75 sm:block" />
-            <div className="min-w-0 flex-1">
+            {/* น้องผู้ตรวจทำท่าตามขั้นที่ทำอยู่ — กระโดดดีใจทุกครั้งที่ตรวจเสร็จหนึ่งราย */}
+            <AuditMascot
+              step={current.step}
+              cheer={done}
+              job={current.vn}
+              pending={live ? Math.max(0, live.total - live.done - 1) : 0}
+              className="w-full max-w-[348px] shrink-0 overflow-hidden rounded-2xl ring-1 ring-brand-100 sm:w-[232px]"
+            />
+            <div className="w-full min-w-0 flex-1">
               <p className="text-sm text-zinc-500">
                 กำลังตรวจรายที่ {Math.min(done + 1, total ?? done + 1)}
                 {total ? ` จาก ${total}` : ""}

@@ -3,7 +3,10 @@
 // app/components/OfficeScene.tsx
 // ฉากออฟฟิศพิกเซลของน้องผู้ตรวจ — ภาพประกอบการ์ดความคืบหน้าและวิดเจ็ตตรวจอัตโนมัติ
 //
-// ฉากหลักเป็นภาพนิ่ง (public/scene/office.webp — ภาพที่ผู้ใช้ให้มา) แล้วซ้อน animation ทับให้ภาพมีชีวิต:
+// ฉากเป็นภาพนิ่งที่ผู้ใช้ให้มา สองฉาก เฟดสลับตามสถานะ:
+//   ทำงาน  → public/scene/office.webp (ท้าวคางดูจอ)
+//   ว่างงาน → public/scene/coffee.webp (จิบกาแฟแก้วลายแมว — ยกแก้วจิบเป็นจังหวะ มีไอร้อน)
+// แล้วซ้อน animation ทับให้ภาพมีชีวิต:
 //   • ฟ้าในหน้าต่างตามเวลาจริง (เวลาไทย): เช้าอมส้ม / กลางวันตามภาพ / เย็นสีพระอาทิตย์ตก
 //     / กลางคืนมืด มีพระจันทร์ ดาว ไฟตามตึก — ห้องมืดลงแต่แสงจอส่องหน้า
 //   • ฟองความคิดเหนือหัวบอกขั้นที่ทำ (ค้นหา / เขียนฟอร์ม / สร้างเอกสาร / AI ตรวจ) · ว่าง = แก้วกาแฟ
@@ -15,7 +18,8 @@
 //
 // ── ทำให้ภาพนิ่งมีชีวิต (puppet) ──
 // ตัดส่วนของภาพเป็นชั้นโปร่งใส (public/scene/layer-*.webp, blink-*.webp, plant-*.webp) แล้วขยับทีละชั้น:
-//   หัว+แขนที่ท้าวคาง โยกรอบข้อศอก · กะพริบตา (แผ่นทาผิวทับลูกตา อยู่ในชั้นหัวจะได้โยกตาม)
+//   หัว (ฉากทำงาน: พยักแบบตั้งใจ · ฉากกาแฟ: ยกแก้วจิบรอบข้อมือ)
+//   กะพริบตา (แผ่นทาผิวทับลูกตา อยู่ในชั้นหัวจะได้ขยับตาม)
 //   ปุ่มคีย์บอร์ดใต้นิ้วสว่างเป็นช่วงๆ ตอนทำงาน (เหมือนกำลังกด) · หัวเพื่อนร่วมงานขยับ · ใบไม้ไหว
 // ไม่ขยับชั้นมือ — ในวิดเจ็ตขนาดเล็กเลื่อนได้ไม่ถึงพิกเซลจอ ดูเป็นภาพกระตุกมากกว่าพิมพ์
 // ภาพฉากซ่อมก้อนดำใต้นิ้ว (ภาพต้นฉบับวาดเมาส์กับคีย์บอร์ดกลืนกัน) ให้เป็นแถวปุ่มคีย์บอร์ดต่อเนื่องแล้ว
@@ -109,6 +113,7 @@ const at = (p: { x: number; y: number }): CSSProperties => ({ left: `${p.x}%`, t
 /** กล่องของแต่ละชั้น (% ของภาพ) + จุดหมุน ox/oy (% ของกล่องชั้นนั้น) */
 type Box = { left: number; top: number; width: number; height: number; ox?: number; oy?: number };
 
+/** ฉากทำงาน (public/scene/office.webp) — ท้าวคาง ตาดูจอ */
 const LAYER: Record<string, Box> = {
   head: { left: 38.646, top: 20.938, width: 18.021, height: 39.219, ox: 13.2, oy: 94.8 },
   coworker: { left: 85.625, top: 8.438, width: 8.854, height: 15.313, ox: 49.9, oy: 98 },
@@ -116,10 +121,24 @@ const LAYER: Record<string, Box> = {
   plantRight: { left: 82.604, top: 29.531, width: 10.104, height: 10.938, ox: 49.7, oy: 105 },
   plantTop: { left: 32.812, top: 4.062, width: 8.125, height: 8.594, ox: 49.7, oy: 93.6 },
 };
-
-/** ตาหลับ — กล่องในภาพ แปลงเป็นตำแหน่งภายในชั้นหัวด้วย inside() */
 const BLINK_L: Box = { left: 42.083, top: 38.594, width: 2.5, height: 3.438 };
 const BLINK_R: Box = { left: 45.833, top: 39.219, width: 2.708, height: 3.906 };
+
+/** ฉากจิบกาแฟ (public/scene/coffee.webp) — ตอนว่างงาน */
+const COFFEE: Record<string, Box> = {
+  sip: { left: 38.125, top: 20.312, width: 16.667, height: 30.156, ox: 25.2, oy: 97.2 },
+  coworker: { left: 86.042, top: 9.062, width: 8.542, height: 13.75, ox: 49.8, oy: 96.7 },
+  plantDesk: { left: 25.521, top: 68.438, width: 9.688, height: 11.562, ox: 49.7, oy: 100.7 },
+  plantRight: { left: 83.958, top: 30.781, width: 9.167, height: 9.688, ox: 50, oy: 110.7 },
+  plantTop: { left: 32.5, top: 4.375, width: 8.333, height: 8.906, ox: 49.8, oy: 91.2 },
+  plantMid: { left: 70.729, top: 24.375, width: 7.292, height: 9.844, ox: 50.5, oy: 97.6 },
+  plantMonitor: { left: 24.375, top: 35.312, width: 5.938, height: 7.5, ox: 50, oy: 104.7 },
+};
+const COFFEE_BLINK_L: Box = { left: 41.979, top: 36.094, width: 2.083, height: 3.594 };
+const COFFEE_BLINK_R: Box = { left: 46.25, top: 37.969, width: 2.396, height: 3.594 };
+const COFFEE_FACE = { x: 45, y: 38 };
+/** ขอบแก้วฝั่งซ้าย (ห่างหน้า) — ไอร้อนลอยจากตรงนี้แล้วเฉียงออกซ้าย ไม่บังตา */
+const COFFEE_STEAM = { x: 39.3, y: 43 };
 
 function inside(child: Box, parent: Box): Box {
   return {
@@ -164,6 +183,67 @@ function Layer({
   );
 }
 
+/** ภาพฉากเต็ม — ย่อไว้แล้ว (960×640) จึงไม่ผ่าน /_next/image (ตัวย่อรูปดึงไฟล์โดยไม่มี cookie แล้วโดน proxy บล็อก) */
+function Backdrop({ src }: { src: string }) {
+  return <Image src={src} alt="" fill unoptimized className="object-cover" draggable={false} />;
+}
+
+/** ตากะพริบ — แผ่นตาหลับวางในชั้นหัว จะได้โยกไปด้วยกัน */
+function Blink({ head, left, right, prefix }: { head: Box; left: Box; right: Box; prefix: string }) {
+  return (
+    <div className="absolute inset-0 scene-blink">
+      <div className="absolute" style={boxStyle(inside(left, head))}>
+        <Image src={`/scene/${prefix}blink-l.webp`} alt="" fill unoptimized draggable={false} />
+      </div>
+      <div className="absolute" style={boxStyle(inside(right, head))}>
+        <Image src={`/scene/${prefix}blink-r.webp`} alt="" fill unoptimized draggable={false} />
+      </div>
+    </div>
+  );
+}
+
+/** ฉากทำงาน: ท้าวคางดูจอ พยักแบบตั้งใจ กะพริบตา · เพื่อนร่วมงานขยับ · ใบไม้ไหว */
+function WorkScene() {
+  return (
+    <>
+      <Backdrop src="/scene/office.webp" />
+      <Layer src="/scene/plant-top.webp" box={LAYER.plantTop} className="scene-leaf" style={{ animationDuration: "5.1s" }} />
+      <Layer src="/scene/plant-right.webp" box={LAYER.plantRight} className="scene-leaf" style={{ animationDuration: "4.3s", animationDelay: "-1.7s" }} />
+      <Layer src="/scene/plant-desk.webp" box={LAYER.plantDesk} className="scene-leaf" style={{ animationDuration: "3.7s", animationDelay: "-0.9s" }} />
+      <Layer src="/scene/layer-coworker.webp" box={LAYER.coworker} className="scene-nod" />
+      <Layer src="/scene/layer-head.webp" box={LAYER.head} className="scene-focus">
+        <Blink head={LAYER.head} left={BLINK_L} right={BLINK_R} prefix="" />
+      </Layer>
+    </>
+  );
+}
+
+/** ฉากจิบกาแฟ (ว่างงาน): ยกแก้วจิบเป็นจังหวะ ไอร้อนลอย กะพริบตา · เพื่อนร่วมงานพิมพ์ · ใบไม้ไหว */
+function CoffeeScene() {
+  return (
+    <>
+      <Backdrop src="/scene/coffee.webp" />
+      <Layer src="/scene/coffee-plant-top.webp" box={COFFEE.plantTop} className="scene-leaf" style={{ animationDuration: "5.1s" }} />
+      <Layer src="/scene/coffee-plant-mid.webp" box={COFFEE.plantMid} className="scene-leaf" style={{ animationDuration: "4.6s", animationDelay: "-2.2s" }} />
+      <Layer src="/scene/coffee-plant-right.webp" box={COFFEE.plantRight} className="scene-leaf" style={{ animationDuration: "4.3s", animationDelay: "-1.7s" }} />
+      <Layer src="/scene/coffee-plant-monitor.webp" box={COFFEE.plantMonitor} className="scene-leaf" style={{ animationDuration: "3.9s", animationDelay: "-0.4s" }} />
+      <Layer src="/scene/coffee-plant-desk.webp" box={COFFEE.plantDesk} className="scene-leaf" style={{ animationDuration: "3.7s", animationDelay: "-0.9s" }} />
+      <Layer src="/scene/coffee-coworker.webp" box={COFFEE.coworker} className="scene-nod" />
+      <Layer src="/scene/coffee-sip.webp" box={COFFEE.sip} className="scene-sip">
+        <Blink head={COFFEE.sip} left={COFFEE_BLINK_L} right={COFFEE_BLINK_R} prefix="coffee-" />
+      </Layer>
+      {/* ไอร้อนจากแก้ว — สามสายลอยขึ้นคนละจังหวะ */}
+      {[0, 1, 2].map((i) => (
+        <span
+          key={i}
+          className="absolute h-[4%] w-[0.7%] rounded-full bg-white/60 blur-[1px] scene-steam"
+          style={{ ...at({ x: COFFEE_STEAM.x - i * 0.9, y: COFFEE_STEAM.y - 4 }), animationDelay: `${-i * 0.8}s` }}
+        />
+      ))}
+    </>
+  );
+}
+
 export default function OfficeScene({
   step = "lookup",
   cheer = 0,
@@ -193,6 +273,7 @@ export default function OfficeScene({
   const part = dayPart(hour ?? realHour);
   const tint = TINT[part];
   const bubble = idle ? { icon: "coffee" as IconName, label: "พักจิบกาแฟ" } : STEP_BUBBLE[step];
+  const face = idle ? COFFEE_FACE : SPOT.face;
 
   return (
     <div
@@ -200,32 +281,13 @@ export default function OfficeScene({
       role="img"
       aria-label={idle ? "น้องผู้ตรวจนั่งพักจิบกาแฟ" : `น้องผู้ตรวจกำลัง${bubble.label}`}
     >
-      <Image
-        src="/scene/office.webp"
-        alt=""
-        fill
-        // ย่อไว้แล้ว (960×640) — ไม่ผ่าน /_next/image เพราะตัวย่อรูปดึงไฟล์โดยไม่มี cookie แล้วโดน proxy บล็อก
-        unoptimized
-        className="object-cover"
-        draggable={false}
-      />
-
-      {/* ── ชั้นที่ขยับได้ (puppet) — อยู่ใต้ชั้นแสงตามเวลา จะได้มืด/สว่างตามห้อง ── */}
-      <Layer src="/scene/plant-top.webp" box={LAYER.plantTop} className="scene-leaf" style={{ animationDuration: "5.1s" }} />
-      <Layer src="/scene/plant-right.webp" box={LAYER.plantRight} className="scene-leaf" style={{ animationDuration: "4.3s", animationDelay: "-1.7s" }} />
-      <Layer src="/scene/plant-desk.webp" box={LAYER.plantDesk} className="scene-leaf" style={{ animationDuration: "3.7s", animationDelay: "-0.9s" }} />
-      <Layer src="/scene/layer-coworker.webp" box={LAYER.coworker} className="scene-nod" />
-      {/* หัว + แขนท้าวคาง: ว่าง = โยกเหม่อช้าๆ · ทำงาน = พยักเล็กน้อยแบบตั้งใจ */}
-      <Layer src="/scene/layer-head.webp" box={LAYER.head} className={idle ? "scene-daydream" : "scene-focus"}>
-        <div className="absolute inset-0 scene-blink">
-          <div className="absolute" style={boxStyle(inside(BLINK_L, LAYER.head))}>
-            <Image src="/scene/blink-l.webp" alt="" fill unoptimized draggable={false} />
-          </div>
-          <div className="absolute" style={boxStyle(inside(BLINK_R, LAYER.head))}>
-            <Image src="/scene/blink-r.webp" alt="" fill unoptimized draggable={false} />
-          </div>
-        </div>
-      </Layer>
+      {/* ── ฉากทำงาน / ฉากจิบกาแฟ — เฟดสลับตามสถานะ (ทั้งสองฉากอยู่ใต้ชั้นแสงตามเวลา) ── */}
+      <div className={`absolute inset-0 transition-opacity duration-700 ${idle ? "opacity-0" : "opacity-100"}`}>
+        <WorkScene />
+      </div>
+      <div className={`absolute inset-0 transition-opacity duration-700 ${idle ? "opacity-100" : "opacity-0"}`}>
+        <CoffeeScene />
+      </div>
 
       {/* ── ฟ้าในหน้าต่างตามเวลาจริง ── */}
       {tint.window ? (
@@ -270,7 +332,7 @@ export default function OfficeScene({
         <div
           className="absolute inset-0 scene-glow"
           style={{
-            background: `radial-gradient(18% 20% at ${SPOT.face.x}% ${SPOT.face.y}%, rgba(170, 205, 255, 0.55), transparent 70%),
+            background: `radial-gradient(18% 20% at ${face.x}% ${face.y}%, rgba(170, 205, 255, 0.55), transparent 70%),
                          radial-gradient(16% 22% at ${SPOT.monitor.x}% ${SPOT.monitor.y}%, rgba(150, 190, 255, 0.35), transparent 70%)`,
             mixBlendMode: "screen",
           }}

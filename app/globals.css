@@ -522,10 +522,11 @@ details[open] > :not(summary) {
 .scene-cheer { animation: scene-cheer 1.4s ease-out both; }
 /* puppet — จังหวะไม่สม่ำเสมอให้ดูเป็นคนจริง (กะพริบเว้นช่วงไม่เท่ากัน บางทีสองครั้งติด) */
 .scene-blink { opacity: 0; animation: scene-blink 5.3s steps(1) infinite; }
-.scene-daydream { animation: scene-daydream 9s ease-in-out infinite; }
 .scene-focus { animation: scene-focus 4.2s ease-in-out infinite; }
 .scene-nod { animation: scene-nod 3.1s steps(1) infinite; }
 .scene-leaf { animation: scene-leaf 4s ease-in-out infinite; }
+.scene-sip { animation: scene-sip 6.5s ease-in-out infinite; }
+.scene-steam { opacity: 0; animation: scene-steam 2.4s ease-out infinite; }
 /* แฟ้มลอยจากชั้นมาวางบนกองเอกสาร — ตำแหน่งต้น/ปลายมาจาก --from-* / --to-* */
 .scene-fly { animation: scene-fly 1.6s cubic-bezier(0.4, 0, 0.3, 1) both; }
 
@@ -556,12 +557,6 @@ details[open] > :not(summary) {
   91.5% { opacity: 1; }
   93% { opacity: 0; }
 }
-@keyframes scene-daydream {
-  0%, 100% { transform: rotate(0deg) translateY(0); }
-  30% { transform: rotate(-0.9deg) translateY(-0.4%); }
-  55% { transform: rotate(-0.4deg) translateY(0); }
-  80% { transform: rotate(0.6deg) translateY(-0.3%); }
-}
 @keyframes scene-focus {
   0%, 100% { transform: rotate(0deg); }
   40% { transform: rotate(0.5deg) translateY(0.3%); }
@@ -573,6 +568,18 @@ details[open] > :not(summary) {
   45% { transform: translateY(0); }
   70% { transform: translateY(1%); }
   78% { transform: translateY(0); }
+}
+/* ยกแก้วขึ้นจิบ (เอียงหัว+แก้วรอบข้อมือ) แล้ววางลงพัก */
+@keyframes scene-sip {
+  0%, 100% { transform: rotate(0deg) translateY(0); }
+  30% { transform: rotate(-1.4deg) translateY(-1%); }
+  52% { transform: rotate(-1.4deg) translateY(-1%); }
+  72% { transform: rotate(0.3deg) translateY(0.2%); }
+}
+@keyframes scene-steam {
+  0% { transform: translateY(0) scaleY(0.6); opacity: 0; }
+  25% { opacity: 0.8; }
+  100% { transform: translateY(-140%) translateX(-60%) scaleY(1.2); opacity: 0; }
 }
 @keyframes scene-leaf {
   0%, 100% { transform: rotate(-1.2deg); }

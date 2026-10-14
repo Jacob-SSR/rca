@@ -15,7 +15,7 @@ const createCaseSchema = z.object({
   title: z.string().trim().max(200).optional(),
 });
 
-/** RCA-YYYYMMDD-NNN โดย NNN นับเฉพาะเคสของวันนั้น */
+/** MRA-YYYYMMDD-NNN โดย NNN นับเฉพาะเคสของวันนั้น */
 async function nextCaseNumber(): Promise<string> {
   const now = new Date();
   const ymd = [
@@ -23,7 +23,7 @@ async function nextCaseNumber(): Promise<string> {
     String(now.getMonth() + 1).padStart(2, "0"),
     String(now.getDate()).padStart(2, "0"),
   ].join("");
-  const prefix = `RCA-${ymd}-`;
+  const prefix = `MRA-${ymd}-`;
 
   const latest = await prisma.case.findFirst({
     where: { caseNumber: { startsWith: prefix } },

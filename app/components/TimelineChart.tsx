@@ -1,15 +1,20 @@
 "use client";
 
-// กราฟลำดับเหตุการณ์ตามชั่วโมง — แกน x คือเวลาจริง แต่ละแถวคือหนึ่งเหตุการณ์
+// ไทม์ไลน์ลำดับเหตุการณ์แนวตั้ง — อ่านจากบนลงล่างตามเวลา แบ่งหัวข้อตามวัน
 //
-// ทำไมไม่ใช่จุดบนเส้นเดียว: เหตุการณ์ใน ER มักห่างกันไม่กี่นาที (10:05, 10:05, 10:06)
-// วางบนเส้นเดียวป้ายจะทับกันอ่านไม่ออก — แยกแถวแล้วยังเห็น "ช่องว่างของเวลา"
-// ซึ่งคือสิ่งที่คนทำ RCA ต้องการดู (รออะไรนานตรงไหน)
+// ทำไมไม่ใช้แกนเวลาแนวนอนแบบเดิม: เหตุการณ์ในเคสเดียวมีทั้งประวัติเก่า (วัคซีนเมื่อปีก่อน)
+// และเหตุการณ์วันมารับบริการที่ห่างกันไม่กี่นาที วางบนแกนเดียวจุดจะกองชิดขอบ
+// ช่วงรอได้เป็นหมื่นชั่วโมงและป้ายทับกันอ่านไม่ออก
+// แนวตั้งแต่ละเหตุการณ์มีแถวของตัวเอง ระยะห่างบอกด้วยข้อความเสมอ
+// ความยาวเส้นเชื่อมยาวขึ้นตามเวลาที่รอ (สเกล log มีเพดาน) พอให้กะได้ด้วยตา
 //
-// สีเดียว (brand) เพราะมีชุดข้อมูลเดียว ช่วงที่รอนานใช้สีเตือนพร้อมป้ายข้อความ
-// ไม่ใช้สีอย่างเดียวบอกความหมาย
+// สิ่งที่คนทำ RCA ต้องการดูคือ "รออะไรนานตรงไหน"
+//   ห่าง ≥ gapWarnMin แต่ไม่ถึงวัน → สีเตือน + ป้าย "รอ …"
+//   ห่างตั้งแต่ 1 วัน → เส้นประสีเทา "ห่าง … วัน" (ประวัติคนละครั้ง ไม่ใช่การรอ)
+// ไม่ใช้สีอย่างเดียวบอกความหมาย — มีข้อความกำกับทุกช่วง
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo } from "react";
+import Icon from "@/app/components/Icon";
 
 type Event = { eventTime: string; title: string };
 
@@ -19,7 +24,8 @@ type Props = {
   gapWarnMin?: number;
 };
 
-const HOUR = 60 * 60 * 1000;
+const MIN = 60 * 1000;
+const DAY = 24 * 60 * MIN;
 
 function parse(local: string): number | null {
   if (!local) return null;
@@ -32,215 +38,186 @@ function hhmm(t: number): string {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-/** 125 นาที → "2 ชม. 5 นาที" */
+const dayKey = (t: number) => new Date(t).toDateString();
+
+function thaiDate(t: number): string {
+  return new Intl.DateTimeFormat("th-TH", { day: "numeric", month: "short", year: "numeric" }).format(new Date(t));
+}
+
+function thaiDay(t: number): string {
+  return new Intl.DateTimeFormat("th-TH", { weekday: "short", day: "numeric", month: "short", year: "numeric" }).format(
+    new Date(t),
+  );
+}
+
+/**
+ * 125 นาที → "2 ชม. 5 นาที" · ตั้งแต่ 1 วัน → "3 วัน 4 ชม." (ไม่ลงนาที)
+ * ตั้งแต่ 30 วัน → "9 เดือน 13 วัน" · ตั้งแต่ 365 วัน → "5 ปี 8 เดือน" (ประมาณ เดือนละ 30 วัน)
+ */
 export function formatDuration(ms: number): string {
   const total = Math.round(ms / 60000);
+  const days = Math.floor(total / (24 * 60));
+  if (days >= 365) {
+    const y = Math.floor(days / 365);
+    const mo = Math.floor((days % 365) / 30);
+    return mo === 0 ? `${y} ปี` : `${y} ปี ${mo} เดือน`;
+  }
+  if (days >= 30) {
+    const mo = Math.floor(days / 30);
+    const d = days % 30;
+    return d === 0 ? `${mo} เดือน` : `${mo} เดือน ${d} วัน`;
+  }
+  if (total >= 24 * 60) {
+    const d = Math.floor(total / (24 * 60));
+    const h = Math.floor((total % (24 * 60)) / 60);
+    return h === 0 ? `${d} วัน` : `${d} วัน ${h} ชม.`;
+  }
   const h = Math.floor(total / 60);
   const m = total % 60;
   if (h === 0) return `${m} นาที`;
   return m === 0 ? `${h} ชม.` : `${h} ชม. ${m} นาที`;
 }
 
-export default function TimelineChart({ events, gapWarnMin = 30 }: Props) {
-  const [hover, setHover] = useState<number | null>(null);
+/** ความยาวเส้นเชื่อม (px) ตามเวลาที่ห่าง — log เพื่อให้นาทีกับชั่วโมงต่างกันพอเห็น แต่ไม่ยาวเกิน */
+function railLength(gapMs: number): number {
+  const minutes = gapMs / MIN;
+  return Math.round(Math.min(72, 14 + 12 * Math.log2(1 + minutes / 5)));
+}
 
+export default function TimelineChart({ events, gapWarnMin = 30 }: Props) {
   const data = useMemo(() => {
     const timed = events
       .map((e) => ({ title: e.title.trim(), t: parse(e.eventTime) }))
       .filter((e): e is { title: string; t: number } => e.t !== null && e.title !== "")
       .sort((a, b) => a.t - b.t);
     const untimed = events.filter((e) => e.title.trim() !== "" && parse(e.eventTime) === null);
-
     if (timed.length === 0) return null;
-
-    const first = timed[0].t;
-    const last = timed[timed.length - 1].t;
-    // ขยายแกนให้ลงชั่วโมงเต็มทั้งสองข้าง — อ่านเวลาจากเส้นกริดได้ทันที
-    const start = Math.floor(first / HOUR) * HOUR;
-    const end = Math.max(Math.ceil(last / HOUR) * HOUR, start + HOUR);
-    const span = end - start;
-
-    const ticks: number[] = [];
-    for (let t = start; t <= end; t += HOUR) ticks.push(t);
-    // ช่วงสั้น (≤ 4 ชม.) ใส่เส้นย่อยทุก 15 นาทีให้กะเวลาได้ละเอียดขึ้น
-    const minor: number[] = [];
-    if (span <= 4 * HOUR) {
-      for (let t = start; t < end; t += HOUR / 4) if ((t - start) % HOUR !== 0) minor.push(t);
-    }
 
     const rows = timed.map((e, i) => {
       const gap = i === 0 ? 0 : e.t - timed[i - 1].t;
+      const newDay = i === 0 || dayKey(e.t) !== dayKey(timed[i - 1].t);
       return {
         ...e,
-        x: ((e.t - start) / span) * 100,
-        prevX: i === 0 ? null : ((timed[i - 1].t - start) / span) * 100,
         gap,
-        longGap: i > 0 && gap >= gapWarnMin * 60000,
-        elapsed: e.t - first,
+        newDay,
+        /** ห่างข้ามวันจากเหตุการณ์ก่อน — ไม่ใช่ "การรอ" */
+        apart: i > 0 && gap >= DAY,
+        longGap: i > 0 && gap >= gapWarnMin * MIN && gap < DAY,
       };
     });
 
-    const dayChanges = new Date(first).toDateString() !== new Date(last).toDateString();
+    // วันล่าสุด = วันมารับบริการโดยมาก — สรุปเวลาของวันนั้นแยกให้เห็น
+    const last = timed[timed.length - 1].t;
+    const lastDay = timed.filter((e) => dayKey(e.t) === dayKey(last));
 
     return {
       rows,
       untimed,
-      ticks,
-      minor,
-      start,
-      span,
-      total: last - first,
+      first: timed[0].t,
+      days: new Set(timed.map((e) => dayKey(e.t))).size,
+      lastDay: { from: lastDay[0].t, to: last, count: lastDay.length },
       longGaps: rows.filter((r) => r.longGap).length,
-      dayChanges,
     };
   }, [events, gapWarnMin]);
 
   if (!data) {
     return (
-      <p className="rounded-lg border border-dashed border-zinc-300 px-4 py-6 text-center text-zinc-500">
-        ใส่เวลาให้เหตุการณ์อย่างน้อย 1 รายการ แล้วกราฟจะขึ้นที่นี่
+      <p className="rounded-xl border border-dashed border-zinc-300 px-4 py-6 text-center text-zinc-500">
+        ใส่เวลาให้เหตุการณ์อย่างน้อย 1 รายการ แล้วลำดับเหตุการณ์จะขึ้นที่นี่
       </p>
     );
   }
 
-  const pos = (t: number) => ((t - data.start) / data.span) * 100;
-
   return (
-    <figure className="space-y-3">
+    <figure className="space-y-4">
       {/* ── ตัวเลขสรุป ── */}
-      <div className="flex flex-wrap gap-x-6 gap-y-1 text-base">
-        <span className="text-zinc-600">
-          รวมทั้งหมด <strong className="tabular text-zinc-900">{formatDuration(data.total)}</strong>
+      <div className="flex flex-wrap gap-2">
+        <span className="badge tabular">
+          <Icon name="activity" size={14} />
+          {data.rows.length} เหตุการณ์
         </span>
-        <span className="text-zinc-600">
-          <strong className="tabular text-zinc-900">{data.rows.length}</strong> เหตุการณ์
+        {data.days > 1 ? (
+          <span className="badge tabular">
+            <Icon name="calendar" size={14} />
+            {thaiDate(data.first)} – {thaiDate(data.lastDay.to)}
+          </span>
+        ) : null}
+        <span className="badge badge-brand tabular">
+          <Icon name="clock" size={14} />
+          {data.days > 1 ? "วันล่าสุด " : ""}
+          {hhmm(data.lastDay.from)}–{hhmm(data.lastDay.to)} น.
+          {data.lastDay.count > 1 ? ` · ${formatDuration(data.lastDay.to - data.lastDay.from)}` : ""}
         </span>
         {data.longGaps > 0 ? (
-          <span className="text-warn-600">
-            ⚠ ช่วงที่ห่างกัน ≥ {gapWarnMin} นาที{" "}
-            <strong className="tabular">{data.longGaps}</strong> ช่วง
+          <span className="badge tabular bg-warn-50 text-warn-600 ring-amber-200">
+            <Icon name="alert" size={14} />
+            รอนาน ≥ {gapWarnMin} นาที {data.longGaps} ช่วง
           </span>
         ) : null}
       </div>
 
-      <div className="overflow-x-auto">
-        <div className="relative min-w-[560px] pb-1 pe-6 ps-[12rem]">
-          {/* ── แกนเวลา (บน) ── */}
-          <div className="relative h-6 text-sm text-zinc-500">
-            {data.ticks.map((t) => (
-              <span
-                key={t}
-                className="tabular absolute -translate-x-1/2"
-                style={{ left: `${pos(t)}%` }}
-              >
-                {hhmm(t)}
+      <ol className="relative">
+        {data.rows.map((r, i) => (
+          <Fragment key={i}>
+            {/* ช่วงห่างจากเหตุการณ์ก่อนหน้า — วางบนเส้นแกนเดียวกับจุด */}
+            {i > 0 ? (
+              <li aria-hidden className="grid grid-cols-[3.5rem_1.75rem_1fr] items-center gap-x-3">
+                <span />
+                <span className="flex justify-center">
+                  <span
+                    className={`w-0.5 rounded-full ${
+                      r.apart
+                        ? "border-l-2 border-dashed border-zinc-300 bg-transparent"
+                        : r.longGap
+                          ? "bg-warn-600"
+                          : "bg-brand-200"
+                    }`}
+                    style={{ height: r.apart ? 28 : railLength(r.gap) }}
+                  />
+                </span>
+                <span
+                  className={`tabular text-xs ${
+                    r.apart ? "text-zinc-400" : r.longGap ? "font-semibold text-warn-600" : "text-zinc-400"
+                  }`}
+                >
+                  {r.apart ? `ห่าง ${formatDuration(r.gap)}` : r.gap === 0 ? "เวลาเดียวกัน" : `${r.longGap ? "⚠ รอ " : "+"}${formatDuration(r.gap)}`}
+                </span>
+              </li>
+            ) : null}
+
+            {/* หัววัน — หลังช่วงห่าง ให้ป้าย "ห่าง … วัน" อยู่ระหว่างสองวัน */}
+            {r.newDay ? (
+              <li className={`flex items-center gap-2 ${i === 0 ? "" : "mt-1 mb-1"}`}>
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-zinc-100 px-3 py-0.5 text-sm font-medium text-zinc-600 ring-1 ring-zinc-200">
+                  <Icon name="calendar" size={14} />
+                  {thaiDay(r.t)}
+                </span>
+              </li>
+            ) : null}
+
+            {/* เหตุการณ์ */}
+            <li
+              className="group grid grid-cols-[3.5rem_1.75rem_1fr] items-start gap-x-3 rounded-xl py-1 transition-colors hover:bg-brand-50/60"
+              aria-label={`${hhmm(r.t)} ${r.title}${i > 0 ? ` (ห่างจากก่อนหน้า ${formatDuration(r.gap)})` : ""}`}
+            >
+              <span className="tabular pt-0.5 text-right font-semibold text-zinc-700">{hhmm(r.t)}</span>
+              <span className="flex justify-center pt-1.5">
+                <span
+                  className={`size-3.5 rounded-full ring-4 transition-transform group-hover:scale-125 ${
+                    r.longGap ? "bg-warn-600 ring-warn-50" : "bg-brand-600 ring-brand-50"
+                  }`}
+                />
               </span>
-            ))}
-          </div>
-
-          <div className="relative">
-            {/* กริด — จางให้ข้อมูลเด่น */}
-            {data.minor.map((t) => (
-              <div
-                key={`m${t}`}
-                aria-hidden
-                className="absolute inset-y-0 border-l border-dashed border-zinc-100"
-                style={{ left: `${pos(t)}%` }}
-              />
-            ))}
-            {data.ticks.map((t) => (
-              <div
-                key={t}
-                aria-hidden
-                className="absolute inset-y-0 border-l border-zinc-200"
-                style={{ left: `${pos(t)}%` }}
-              />
-            ))}
-
-            <ol>
-              {data.rows.map((r, i) => {
-                const active = hover === i;
-                return (
-                  <li
-                    key={i}
-                    className={`relative h-9 ${active ? "bg-brand-50/70" : ""}`}
-                    onMouseEnter={() => setHover(i)}
-                    onMouseLeave={() => setHover(null)}
-                    onFocus={() => setHover(i)}
-                    onBlur={() => setHover(null)}
-                    tabIndex={0}
-                    aria-label={`${hhmm(r.t)} ${r.title}${i > 0 ? ` (ห่างจากก่อนหน้า ${formatDuration(r.gap)})` : ""}`}
-                  >
-                    {/* ป้ายชื่อเหตุการณ์ อยู่ซ้ายของพื้นที่กราฟ */}
-                    <span
-                      className="absolute top-1/2 -translate-y-1/2 truncate pe-3 text-sm text-zinc-700"
-                      style={{ left: "-12rem", width: "12rem" }}
-                      title={r.title}
-                    >
-                      <span className="tabular text-zinc-500">{hhmm(r.t)}</span> {r.title}
-                    </span>
-
-                    {/* ช่วงรอจากเหตุการณ์ก่อนหน้า */}
-                    {r.prevX !== null && r.x > r.prevX ? (
-                      <span
-                        aria-hidden
-                        className={`absolute top-1/2 h-[3px] -translate-y-1/2 rounded-full ${
-                          r.longGap ? "bg-warn-600" : "bg-brand-200"
-                        }`}
-                        style={{ left: `${r.prevX}%`, width: `${r.x - r.prevX}%` }}
-                      />
-                    ) : null}
-
-                    {/* จุดเหตุการณ์ — วงขาวรอบจุดกันจุดที่เวลาเดียวกันกลืนกัน */}
-                    <span
-                      aria-hidden
-                      className={`absolute top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full ring-2 ring-surface ${
-                        active ? "bg-brand-700 size-4" : "bg-brand-600"
-                      }`}
-                      style={{ left: `${r.x}%` }}
-                    />
-
-                    {/* ป้ายช่วงรอที่นานเกินเกณฑ์ — บอกด้วยข้อความ ไม่ใช่สีอย่างเดียว */}
-                    {r.longGap && r.prevX !== null ? (
-                      <span
-                        className="tabular absolute top-0 -translate-x-1/2 text-xs font-medium text-warn-600"
-                        style={{ left: `${(r.prevX + r.x) / 2}%` }}
-                      >
-                        รอ {formatDuration(r.gap)}
-                      </span>
-                    ) : null}
-
-                    {/* tooltip */}
-                    {active ? (
-                      <span
-                        role="tooltip"
-                        className="pointer-events-none absolute bottom-full z-10 mb-1 w-max max-w-xs -translate-x-1/2 rounded-md border border-zinc-200 bg-surface px-3 py-2 text-sm shadow-md"
-                        style={{ left: `${Math.min(Math.max(r.x, 12), 88)}%` }}
-                      >
-                        <span className="block font-medium text-zinc-900">{r.title}</span>
-                        <span className="tabular block text-zinc-600">
-                          {hhmm(r.t)} · นาทีที่ +{Math.round(r.elapsed / 60000)} จากเหตุการณ์แรก
-                        </span>
-                        {i > 0 ? (
-                          <span className="tabular block text-zinc-600">
-                            ห่างจากก่อนหน้า {formatDuration(r.gap)}
-                          </span>
-                        ) : null}
-                      </span>
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ol>
-          </div>
-        </div>
-      </div>
+              <span className="min-w-0 pt-0.5 break-words text-zinc-800">{r.title}</span>
+            </li>
+          </Fragment>
+        ))}
+      </ol>
 
       <figcaption className="text-sm text-zinc-500">
-        แกนนอนคือเวลา (ชั่วโมง) · เส้นระหว่างจุดคือช่วงเวลาที่ผ่านไป · ชี้/แตะที่แถวเพื่อดูรายละเอียด
-        {data.dayChanges ? " · เหตุการณ์ข้ามวัน — ดูวันที่ในรายการด้านล่าง" : ""}
+        เรียงจากเก่าไปใหม่ · ตัวเลขระหว่างจุดคือเวลาที่ห่างจากเหตุการณ์ก่อนหน้า · ห่างตั้งแต่ 1 วันขึ้นไปเป็นเส้นประ
         {data.untimed.length > 0
-          ? ` · มี ${data.untimed.length} เหตุการณ์ที่ยังไม่ใส่เวลา จึงไม่แสดงในกราฟ`
+          ? ` · มี ${data.untimed.length} เหตุการณ์ที่ยังไม่ใส่เวลา จึงไม่แสดงที่นี่`
           : ""}
       </figcaption>
     </figure>

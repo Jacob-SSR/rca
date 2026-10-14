@@ -13,6 +13,7 @@ import { authErrorResponse } from "@/lib/auth/api";
 import { isHosxpEnabled } from "@/lib/hosxp/env";
 import { autoRunKey, bangkokParts, nextRun, settingsSchema } from "@/lib/auto-audit/schedule";
 import { loadSettings, runningRun, saveSettings } from "@/lib/auto-audit/runner";
+import { liveProgress } from "@/lib/auto-audit/progress";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -39,7 +40,8 @@ export async function GET() {
     settings,
     nextRun: nextRun(settings, now, !!ranToday),
     hosxpEnabled: isHosxpEnabled(),
-    running: running ? { id: running.id, targetDate: running.targetDate } : null,
+    // live = กำลังทำรายไหน ขั้นไหน — null ถ้ารอบนี้รันอยู่ process อื่น (ใช้ตัวเลขจาก runs แทน)
+    running: running ? { id: running.id, targetDate: running.targetDate, live: liveProgress(running.id) } : null,
     runs,
   });
 }

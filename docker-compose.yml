@@ -1,6 +1,6 @@
-# docker-compose.yml — RCA ยืนด้วยตัวเองทั้ง stack
+# docker-compose.yml — MRA ยืนด้วยตัวเองทั้ง stack
 #
-# แอป + MySQL + phpMyAdmin ของ RCA เอง ไม่แตะ km และไม่ต่อ network ของ km เลย
+# แอป + MySQL + phpMyAdmin ของ MRA เอง ไม่แตะ km และไม่ต่อ network ของ km เลย
 # `docker compose up -d` ครั้งแรก MySQL จะสร้าง database + user ให้อัตโนมัติ
 # ตามค่าใน .env — ไม่ต้องล็อกอิน root ไปรัน SQL เอง
 #
@@ -8,13 +8,13 @@
 #   3000 · 3100 · 3300 · 3500        ระบบอื่น
 #   3001 km api · 8080 phpMyAdmin ของ km · 3307 MySQL ของ km · 6380 Redis ของ km
 #
-# ── ของ RCA ──────────────────────────────────────────────────────────────────
-#   3800  RCA (แอป)
-#   8089  phpMyAdmin ของ RCA
-#   3308  MySQL ของ RCA
+# ── ของ MRA ──────────────────────────────────────────────────────────────────
+#   3800  MRA (แอป)
+#   8089  phpMyAdmin ของ MRA
+#   3308  MySQL ของ MRA
 #
 # หมายเหตุ: สเปกข้อ 3 เขียนไว้ว่าใช้ MySQL ตัวเดียวกับ km-system
-# ตรงนี้เลือกแยก instance ตามที่ตกลงกันภายหลัง เพื่อให้ RCA ไม่ผูกกับ stack ของ km
+# ตรงนี้เลือกแยก instance ตามที่ตกลงกันภายหลัง เพื่อให้ MRA ไม่ผูกกับ stack ของ km
 
 services:
   rca:
@@ -69,7 +69,7 @@ services:
       mysql:
         condition: service_started
 
-  # ── MySQL ของ RCA ────────────────────────────────────────────────────────────
+  # ── MySQL ของ MRA ────────────────────────────────────────────────────────────
   # image mysql สร้าง MYSQL_DATABASE + MYSQL_USER ให้เองตอนบูตครั้งแรก
   # และ grant สิทธิ์ทั้งหมดบน database นั้นให้ user นั้นโดยอัตโนมัติ
   #
@@ -116,7 +116,7 @@ services:
       retries: 40
       start_period: 180s
 
-  # ── phpMyAdmin ของ RCA ───────────────────────────────────────────────────────
+  # ── phpMyAdmin ของ MRA ───────────────────────────────────────────────────────
   # ⚠️ เปิดเฉพาะวง LAN โรงพยาบาล ห้าม forward ออกอินเทอร์เน็ต
   phpmyadmin:
     image: phpmyadmin:5

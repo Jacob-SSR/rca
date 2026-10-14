@@ -854,10 +854,10 @@ export async function lookupVisit(opts: {
   // การรักษา = ยา + หัตถการ ตามที่เกณฑ์ TREATMENT ระบุไว้
   const treatment = [drugs, procedures].filter((s) => s !== "").join("\n");
 
-  // ช่องคำวินิจฉัยใช้ diag_text ที่หมอพิมพ์เองจาก ovst_doctor_diag
-  // ไม่มีค่อยถอยไปใช้ ovst.diag_text — ไม่เอาชื่อโรค/รหัสจาก ovstdiag+icd101
-  // เพราะได้บรรทัดรหัสเปล่าๆ อย่าง "(9938)" และเกณฑ์ DIAGNOSIS ห้ามใช้รหัส ICD
-  const diagnosisText = doctorDiag !== "" ? doctorDiag : mergeDiagText(found.diagText);
+  // ช่องคำวินิจฉัยใช้ diag_text ที่หมอพิมพ์เองจาก ovst_doctor_diag อย่างเดียว
+  // ไม่ถอยไปใช้ ovst.diag_text หรือชื่อโรค/รหัสจาก ovstdiag+icd101 — ช่องว่าง
+  // จึงแปลว่าหมอไม่ได้คีย์คำวินิจฉัยจริง และจะขึ้นในรายการ "ยังไม่มีข้อมูล"
+  const diagnosisText = doctorDiag;
 
   const values: Record<string, string> = {
     hn: patientHn,

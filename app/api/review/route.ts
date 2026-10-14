@@ -47,7 +47,7 @@ async function ensureCase(caseId: string | null, session: Session): Promise<stri
   ).padStart(2, "0")}`;
   const created = await prisma.case.create({
     data: {
-      caseNumber: `RCA-${ymd}-${now.getTime().toString().slice(-6)}`,
+      caseNumber: `MRA-${ymd}-${now.getTime().toString().slice(-6)}`,
       createdBy: session.username,
       createdByName: session.name,
     },

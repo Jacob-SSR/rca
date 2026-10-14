@@ -27,7 +27,7 @@ export function hospitalInfo(): HospitalInfo {
  *
  * - คนเดียวมาหลายครั้งในวันเดียว (มีจริง ดู Visit List ของ HOSxP) → ต่อท้าย -2, -3
  * - ยังไม่รู้วันที่มา → ใช้วันนี้
- * - ยังไม่รู้ HN (เช่นอัปโหลดไฟล์ หรือกรอกเองโดยไม่ใส่ HN) → RCA-YYYYMMDD-NNN แบบเดิม
+ * - ยังไม่รู้ HN (เช่นอัปโหลดไฟล์ หรือกรอกเองโดยไม่ใส่ HN) → MRA-YYYYMMDD-NNN แบบเดิม
  *   แล้วเปลี่ยนเป็นแบบ HN ให้เองตอนบันทึกฟอร์มที่มี HN (ดู PATCH /api/forms/[id])
  *
  * ⚠️ HN เป็นข้อมูลระบุตัวผู้ป่วย แต่เลขที่เคสไม่ถูกส่งเข้า AI
@@ -49,10 +49,11 @@ export async function caseNumberFor(hn?: string | null, serviceDate?: string | n
   for (let n = 2; ; n++) if (!taken.has(`${base}-${n}`)) return `${base}-${n}`;
 }
 
-/** เลขเคสแบบเดิมที่ยังไม่มี HN — เปลี่ยนเป็นแบบ HN ได้เมื่อรู้ HN แล้ว */
-export const isFallbackCaseNumber = (caseNumber: string) => caseNumber.startsWith("RCA-");
+/** เลขเคสแบบเดิมที่ยังไม่มี HN — เปลี่ยนเป็นแบบ HN ได้เมื่อรู้ HN แล้ว
+ *  RCA- คือเลขเคสที่ออกก่อนเปลี่ยนชื่อระบบเป็น MRA */
+export const isFallbackCaseNumber = (caseNumber: string) => /^(MRA|RCA)-/.test(caseNumber);
 
-/** RCA-YYYYMMDD-NNN โดย NNN นับเฉพาะเคสของวันนั้น */
+/** MRA-YYYYMMDD-NNN โดย NNN นับเฉพาะเคสของวันนั้น */
 export async function nextCaseNumber(): Promise<string> {
   const now = new Date();
   const ymd = [
@@ -60,7 +61,7 @@ export async function nextCaseNumber(): Promise<string> {
     String(now.getMonth() + 1).padStart(2, "0"),
     String(now.getDate()).padStart(2, "0"),
   ].join("");
-  const prefix = `RCA-${ymd}-`;
+  const prefix = `MRA-${ymd}-`;
 
   const latest = await prisma.case.findFirst({
     where: { caseNumber: { startsWith: prefix } },

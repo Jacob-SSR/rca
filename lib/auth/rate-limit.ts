@@ -2,7 +2,7 @@
 // Rate limiter แบบ sliding window เก็บใน memory ของ process
 //
 // ppc-hos-10667 ใช้ Redis เพราะรันหลาย instance และมี rate limit หลายจุด
-// RCA รัน container เดียว ไม่มี Redis ในระบบ — เก็บใน memory จึงพอ
+// MRA รัน container เดียว ไม่มี Redis ในระบบ — เก็บใน memory จึงพอ
 // และไม่ต้องเพิ่ม service ใหม่มาให้ดูแล
 //
 // ข้อจำกัดที่ยอมรับ: รีสตาร์ต container แล้วตัวนับหาย

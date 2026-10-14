@@ -26,6 +26,9 @@ function greeting(): string {
   return "สวัสดีตอนเย็น";
 }
 
+/** คอลัมน์ของรายการเคส (จอใหญ่) — หัวกับแถวใช้ชุดเดียวกันจะได้ตรงกันเสมอ */
+const CASE_COLS = "grid-cols-[minmax(12.5rem,1.6fr)_minmax(0,1.2fr)_minmax(0,1fr)_9.5rem_6.5rem_8.5rem] gap-x-4";
+
 function thaiDate(d: Date): string {
   return new Intl.DateTimeFormat("th-TH", {
     dateStyle: "medium",
@@ -212,75 +215,85 @@ export default async function Home(props: PageProps<"/">) {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>เลขที่เคส</th>
-                  <th>แผนกที่สร้าง</th>
-                  <th>ผู้สร้าง</th>
-                  <th>วันที่สร้าง</th>
-                  <th className="text-center">ฟอร์ม</th>
-                  <th className="text-center">เอกสาร</th>
-                  <th>คะแนนล่าสุด</th>
-                </tr>
-              </thead>
-              <tbody>
-                {cases.map((c) => {
-                  const r = c.reviews[0];
-                  return (
-                    <tr key={c.id}>
-                      <td>
-                        <Link href={`/cases/${c.id}`} className="link inline-flex items-center gap-1.5 font-medium whitespace-nowrap">
+          <ul className="divide-y divide-zinc-100">
+            {/* หัวคอลัมน์ — จอใหญ่เท่านั้น จอเล็กแต่ละแถวบอกตัวเองว่าอะไรคืออะไร */}
+            <li aria-hidden className="hidden items-center gap-4 border-b border-zinc-200 bg-zinc-50 px-6 py-3 text-sm font-semibold tracking-wide text-zinc-500 lg:flex">
+              <div className={`grid flex-1 ${CASE_COLS}`}>
+                <span>เลขที่เคส</span>
+                <span>แผนกที่สร้าง</span>
+                <span>ผู้สร้าง</span>
+                <span>วันที่สร้าง</span>
+                <span className="text-center">ฟอร์ม / เอกสาร</span>
+                <span>คะแนนล่าสุด</span>
+              </div>
+              <span className="w-[22px]" />
+            </li>
+            {cases.map((c) => {
+              const r = c.reviews[0];
+              const dept = c.department || c.forms[0]?.department || null;
+              const creator = c.createdByName || c.createdBy || null;
+              const score = !r ? (
+                <span className="text-sm text-zinc-400">ยังไม่ตรวจ</span>
+              ) : r.status !== "COMPLETED" ? (
+                <span className="badge bg-warn-50 text-warn-600">
+                  <Icon name="clock" size={14} />
+                  {r.status}
+                </span>
+              ) : (
+                <ScoreBadge total={r.totalScore} max={r.maxScore} percentage={r.percentage?.toString() ?? null} />
+              );
+              return (
+                <li key={c.id}>
+                  {/* ทั้งแถวกดได้ → หน้าเคส (ผลตรวจทุกครั้งอยู่ในนั้น) */}
+                  <Link href={`/cases/${c.id}`} className="row-link" aria-label={`เปิดเคส ${c.caseNumber}`}>
+                    {/* จอเล็ก: เลขเคส + คะแนนบรรทัดแรก รายละเอียดบรรทัดล่าง */}
+                    <div className="min-w-0 flex-1 lg:hidden">
+                      {/* เลขเคสไม่ตัดกลางตัวเลข — ที่ไม่พอคะแนนจะลงไปบรรทัดถัดไปเอง */}
+                      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                        <span className="tabular font-semibold whitespace-nowrap text-brand-700">{c.caseNumber}</span>
+                        <span className="shrink-0">{score}</span>
+                      </div>
+                      {c.title ? <p className="truncate text-sm text-zinc-600">{c.title}</p> : null}
+                      <p className="mt-1 text-sm text-zinc-500">
+                        {[dept, creator, thaiDate(c.createdAt)].filter(Boolean).join(" · ")}
+                        {isOwner(session, c) ? <span className="badge badge-brand ml-2">ของฉัน</span> : null}
+                      </p>
+                    </div>
+
+                    {/* จอใหญ่: คอลัมน์ตรงกับหัว */}
+                    <div className={`hidden min-w-0 flex-1 items-center lg:grid ${CASE_COLS}`}>
+                      <span className="min-w-0">
+                        <span className="tabular flex items-center gap-1.5 font-semibold whitespace-nowrap text-brand-700">
                           <Icon name="folder" size={16} className="text-brand-300" />
                           {c.caseNumber}
-                        </Link>
-                        {c.title ? (
-                          <div className="text-sm text-zinc-500">{c.title}</div>
-                        ) : null}
-                      </td>
-                      <td className="text-zinc-600">
-                        {c.department || c.forms[0]?.department || <span className="text-zinc-400">—</span>}
-                      </td>
-                      <td className="whitespace-nowrap text-zinc-600">
-                        {c.createdByName || c.createdBy || (
-                          <span className="text-zinc-400">— ไม่ทราบ —</span>
-                        )}
-                        {isOwner(session, c) ? (
-                          <span className="badge badge-brand ml-2">ของฉัน</span>
-                        ) : null}
-                      </td>
-                      <td className="tabular whitespace-nowrap text-zinc-600">
-                        {thaiDate(c.createdAt)}
-                      </td>
-                      <td className="tabular text-center text-zinc-600">{c._count.forms}</td>
-                      <td className="tabular text-center text-zinc-600">
-                        {c._count.documents}
-                      </td>
-                      <td>
-                        {!r ? (
-                          <span className="text-zinc-400">—</span>
-                        ) : r.status !== "COMPLETED" ? (
-                          <span className="badge bg-warn-50 text-warn-600">
-                            <Icon name="clock" size={14} />
-                            {r.status}
-                          </span>
-                        ) : (
-                          <Link href={`/reviews/${r.id}`}>
-                            <ScoreBadge
-                              total={r.totalScore}
-                              max={r.maxScore}
-                              percentage={r.percentage?.toString() ?? null}
-                            />
-                          </Link>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                        </span>
+                        {c.title ? <span className="block truncate text-sm text-zinc-500">{c.title}</span> : null}
+                      </span>
+                      <span className="truncate text-zinc-600">{dept ?? <span className="text-zinc-400">—</span>}</span>
+                      <span className="min-w-0 text-zinc-600">
+                        <span className="block truncate">{creator ?? <span className="text-zinc-400">ไม่ทราบ</span>}</span>
+                        {isOwner(session, c) ? <span className="badge badge-brand mt-0.5">ของฉัน</span> : null}
+                      </span>
+                      <span className="tabular text-sm text-zinc-600">{thaiDate(c.createdAt)}</span>
+                      <span className="tabular flex items-center justify-center gap-3 text-sm text-zinc-500">
+                        <span className="inline-flex items-center gap-1" title="ฟอร์ม">
+                          <Icon name="fileText" size={15} />
+                          {c._count.forms}
+                        </span>
+                        <span className="inline-flex items-center gap-1" title="เอกสาร">
+                          <Icon name="layers" size={15} />
+                          {c._count.documents}
+                        </span>
+                      </span>
+                      <span>{score}</span>
+                    </div>
+
+                    <Icon name="chevronRight" size={22} className="row-link-chevron" />
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
         )}
       </section>
     </div>

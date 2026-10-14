@@ -72,13 +72,13 @@ export default function TimelineEditor({ caseId, initialEvents }: Props) {
         ลำดับเหตุการณ์ <span className="text-base font-normal text-zinc-500">(แก้ไขได้)</span>
       </h2>
 
-      {/* กราฟตามชั่วโมง — วาดจากแถวที่กำลังแก้อยู่ ไม่ต้องกดบันทึกก่อนก็เห็น */}
+      {/* ไทม์ไลน์ — วาดจากแถวที่กำลังแก้อยู่ ไม่ต้องกดบันทึกก่อนก็เห็น */}
       <div className="border-b border-zinc-200 px-5 py-5 sm:px-6">
-        <h3 className="mb-3 text-base font-semibold text-zinc-800">กราฟลำดับเหตุการณ์ตามเวลา</h3>
         <TimelineChart events={rows} />
       </div>
 
       <div className="px-5 py-5 sm:px-6">
+        <h3 className="mb-3 text-base font-semibold text-zinc-800">แก้ไขเหตุการณ์</h3>
         {rows.length === 0 ? (
           <p className="text-zinc-500">ยังไม่มีเหตุการณ์</p>
         ) : (

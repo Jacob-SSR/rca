@@ -11,7 +11,7 @@ type Props = {
   size?: "sm" | "lg";
 };
 
-function tone(pct: number | null): string {
+export function pctTone(pct: number | null): string {
   if (pct === null) return "bg-zinc-100 text-zinc-600";
   if (pct >= 80) return "bg-good-50 text-good-600";
   if (pct >= 60) return "bg-warn-50 text-warn-600";
@@ -34,7 +34,7 @@ export default function ScoreBadge({ total, max, percentage, size = "sm" }: Prop
 
   return (
     <span
-      className={`tabular inline-flex items-baseline gap-2 rounded-lg font-semibold ${cls} ${tone(pct)}`}
+      className={`tabular inline-flex items-baseline gap-2 rounded-lg font-semibold ${cls} ${pctTone(pct)}`}
     >
       <span>
         {total}/{max}

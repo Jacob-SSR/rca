@@ -516,15 +516,14 @@ details[open] > :not(summary) {
    ───────────────────────────────────────────────────────────────────────────── */
 .scene-float { animation: scene-float 2.4s steps(2) infinite; }
 .scene-pop { animation: scene-pop 0.35s cubic-bezier(0.3, 1.6, 0.5, 1) both; }
-.scene-tap { opacity: 0; animation: scene-tap 0.5s steps(1) infinite; }
+.scene-key { opacity: 0; animation: scene-key 2.6s steps(1) infinite; }
 .scene-twinkle { animation: scene-twinkle 1.6s steps(1) infinite; }
 .scene-glow { animation: scene-glow 3s ease-in-out infinite; }
 .scene-cheer { animation: scene-cheer 1.4s ease-out both; }
-/* puppet — จังหวะไม่สม่ำเสมอให้ดูเป็นคนจริง (กะพริบเว้นช่วงไม่เท่ากัน บางทีสองครั้งติด, พิมพ์รัวสลับหยุดคิด) */
+/* puppet — จังหวะไม่สม่ำเสมอให้ดูเป็นคนจริง (กะพริบเว้นช่วงไม่เท่ากัน บางทีสองครั้งติด) */
 .scene-blink { opacity: 0; animation: scene-blink 5.3s steps(1) infinite; }
 .scene-daydream { animation: scene-daydream 9s ease-in-out infinite; }
 .scene-focus { animation: scene-focus 4.2s ease-in-out infinite; }
-.scene-type { animation: scene-type 2.6s steps(1) infinite; }
 .scene-nod { animation: scene-nod 3.1s steps(1) infinite; }
 .scene-leaf { animation: scene-leaf 4s ease-in-out infinite; }
 /* แฟ้มลอยจากชั้นมาวางบนกองเอกสาร — ตำแหน่งต้น/ปลายมาจาก --from-* / --to-* */
@@ -532,7 +531,14 @@ details[open] > :not(summary) {
 
 @keyframes scene-float { 0% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
 @keyframes scene-pop { from { transform: scale(0.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-@keyframes scene-tap { 0% { opacity: 0.9; } 50% { opacity: 0; } }
+@keyframes scene-key {
+  0% { opacity: 0.85; }
+  6% { opacity: 0; }
+  14% { opacity: 0.85; }
+  20% { opacity: 0; }
+  30% { opacity: 0.85; }
+  36%, 100% { opacity: 0; }
+}
 @keyframes scene-twinkle { 0% { opacity: 1; } 50% { opacity: 0.2; } }
 @keyframes scene-glow { 0%, 100% { opacity: 0.85; } 50% { opacity: 1; } }
 @keyframes scene-cheer {
@@ -560,17 +566,6 @@ details[open] > :not(summary) {
   0%, 100% { transform: rotate(0deg); }
   40% { transform: rotate(0.5deg) translateY(0.3%); }
   60% { transform: rotate(0.4deg) translateY(0.3%); }
-}
-@keyframes scene-type {
-  0% { transform: translate(0, 0); }
-  6% { transform: translate(0, 4%); }
-  12% { transform: translate(0, 0); }
-  18% { transform: translate(0.6%, 4%); }
-  24% { transform: translate(0, 0); }
-  30% { transform: translate(0, 4%); }
-  36% { transform: translate(0.6%, 0); }
-  42% { transform: translate(0, 4%); }
-  48%, 100% { transform: translate(0, 0); }
 }
 @keyframes scene-nod {
   0% { transform: translateY(0); }

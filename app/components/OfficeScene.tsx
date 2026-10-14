@@ -16,7 +16,9 @@
 // ── ทำให้ภาพนิ่งมีชีวิต (puppet) ──
 // ตัดส่วนของภาพเป็นชั้นโปร่งใส (public/scene/layer-*.webp, blink-*.webp, plant-*.webp) แล้วขยับทีละชั้น:
 //   หัว+แขนที่ท้าวคาง โยกรอบข้อศอก · กะพริบตา (แผ่นทาผิวทับลูกตา อยู่ในชั้นหัวจะได้โยกตาม)
-//   มือบนคีย์บอร์ดพิมพ์เป็นช่วงๆ ตอนทำงาน · หัวเพื่อนร่วมงานขยับ · ใบไม้ไหว
+//   ปุ่มคีย์บอร์ดใต้นิ้วสว่างเป็นช่วงๆ ตอนทำงาน (เหมือนกำลังกด) · หัวเพื่อนร่วมงานขยับ · ใบไม้ไหว
+// ไม่ขยับชั้นมือ — ในวิดเจ็ตขนาดเล็กเลื่อนได้ไม่ถึงพิกเซลจอ ดูเป็นภาพกระตุกมากกว่าพิมพ์
+// ภาพฉากซ่อมก้อนดำใต้นิ้ว (ภาพต้นฉบับวาดเมาส์กับคีย์บอร์ดกลืนกัน) ให้เป็นแถวปุ่มคีย์บอร์ดต่อเนื่องแล้ว
 // ชั้นตัดจากภาพต้นฉบับแล้วย่อด้วยวิธีเดียวกับภาพฉาก ตำแหน่งจึงตรงกันพอดีพิกเซล
 // เปลี่ยนภาพฉากต้องตัดชั้นใหม่และวัด LAYER ใหม่ทั้งหมด
 // ตัวละครเดินไปมาไม่ได้ (ภาพนิ่ง) — ที่ขยับได้คือส่วนที่ตัดไว้เท่านั้น
@@ -34,7 +36,8 @@ const SPOT = {
   face: { x: 47, y: 39 },
   bubble: { x: 59, y: 21 },
   cheer: { x: 37, y: 30 },
-  keyboard: { x: 41, y: 68 },
+  /** ปุ่มคีย์บอร์ดใต้ปลายนิ้ว */
+  keyboard: { x: 42.7, y: 65.4 },
   monitor: { x: 25, y: 52 },
   /** กองเอกสารหน้าโต๊ะ — ป้ายคิว + ปลายทางของแฟ้มที่ลอยมา */
   stack: { x: 47, y: 79 },
@@ -108,7 +111,6 @@ type Box = { left: number; top: number; width: number; height: number; ox?: numb
 
 const LAYER: Record<string, Box> = {
   head: { left: 38.646, top: 20.938, width: 18.021, height: 39.219, ox: 13.2, oy: 94.8 },
-  hand: { left: 41.458, top: 62.187, width: 10.417, height: 5.938 },
   coworker: { left: 85.625, top: 8.438, width: 8.854, height: 15.313, ox: 49.9, oy: 98 },
   plantDesk: { left: 25.521, top: 69.375, width: 9.167, height: 11.25, ox: 49.7, oy: 95.1 },
   plantRight: { left: 82.604, top: 29.531, width: 10.104, height: 10.938, ox: 49.7, oy: 105 },
@@ -224,7 +226,6 @@ export default function OfficeScene({
           </div>
         </div>
       </Layer>
-      {idle ? null : <Layer src="/scene/layer-hand.webp" box={LAYER.hand} className="scene-type" />}
 
       {/* ── ฟ้าในหน้าต่างตามเวลาจริง ── */}
       {tint.window ? (
@@ -276,16 +277,17 @@ export default function OfficeScene({
         />
       ) : null}
 
-      {/* ── จุดแสงกะพริบที่คีย์บอร์ด (กำลังพิมพ์) ── */}
+      {/* ── ปุ่มคีย์บอร์ดใต้นิ้วสว่างเป็นช่วงๆ (กำลังกด) — ขนาด/สีเท่าปุ่มจริงในภาพ ── */}
       {idle ? null : (
         <>
           {[
             { x: SPOT.keyboard.x, y: SPOT.keyboard.y, d: "0s" },
-            { x: SPOT.keyboard.x + 2.5, y: SPOT.keyboard.y + 1.5, d: "-0.25s" },
+            { x: SPOT.keyboard.x + 1.1, y: SPOT.keyboard.y + 0.9, d: "-0.9s" },
+            { x: SPOT.keyboard.x - 1.1, y: SPOT.keyboard.y + 1, d: "-1.7s" },
           ].map((k, i) => (
             <span
               key={i}
-              className="absolute size-[1.1%] -translate-1/2 bg-white/90 scene-tap"
+              className="absolute h-[0.8%] w-[0.9%] -translate-1/2 rounded-[1px] bg-[#aeb2cc] scene-key"
               style={{ ...at(k), animationDelay: k.d }}
             />
           ))}

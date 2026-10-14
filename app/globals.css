@@ -527,8 +527,16 @@ details[open] > :not(summary) {
 .scene-leaf { animation: scene-leaf 4s ease-in-out infinite; }
 .scene-sip { animation: scene-sip 6.5s ease-in-out infinite; }
 .scene-steam { opacity: 0; animation: scene-steam 2.4s ease-out infinite; }
-/* แฟ้มลอยจากชั้นมาวางบนกองเอกสาร — ตำแหน่งต้น/ปลายมาจาก --from-* / --to-* */
-.scene-fly { animation: scene-fly 1.6s cubic-bezier(0.4, 0, 0.3, 1) both; }
+/* สลับฉาก: ฉากพักวน 3 ฉาก ฉากละ 20 วินาที · ฉากหยิบแฟ้มเล่นครั้งเดียวตอนเริ่มเคสใหม่ */
+.scene-idle-cycle { animation: scene-idle-cycle 60s linear infinite; }
+.scene-enter { animation: scene-enter 0.6s ease-out both; }
+.scene-fetch-once { animation: scene-fetch-once 4.5s ease-in-out both; pointer-events: none; }
+.scene-munch { animation: scene-munch 1.6s ease-in-out infinite; }
+.scene-breathe { animation: scene-breathe 4.8s ease-in-out infinite; }
+.scene-zz { opacity: 0; animation: scene-zz 2.7s ease-out infinite; }
+.scene-type { animation: scene-type 0.9s steps(1) infinite; }
+.scene-paper { animation: scene-paper 1.8s ease-in-out infinite; }
+.scene-click { opacity: 0; animation: scene-click 2.2s ease-out infinite; }
 
 @keyframes scene-float { 0% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
 @keyframes scene-pop { from { transform: scale(0.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
@@ -585,13 +593,52 @@ details[open] > :not(summary) {
   0%, 100% { transform: rotate(-1.2deg); }
   50% { transform: rotate(1.4deg); }
 }
-@keyframes scene-fly {
-  0% { left: var(--from-x); top: var(--from-y); opacity: 0; transform: scale(0.6); }
-  12% { opacity: 1; transform: scale(1); }
-  50% { left: calc((var(--from-x) + var(--to-x)) / 2); top: calc(var(--to-y) - 30%); }
-  88% { left: var(--to-x); top: var(--to-y); opacity: 1; transform: scale(1); }
-  100% { left: var(--to-x); top: var(--to-y); opacity: 0; transform: scale(0.8); }
+@keyframes scene-idle-cycle {
+  0%, 31% { opacity: 1; }
+  34%, 97% { opacity: 0; }
+  100% { opacity: 1; }
 }
+@keyframes scene-enter { from { opacity: 0; } to { opacity: 1; } }
+@keyframes scene-fetch-once {
+  0% { opacity: 0; }
+  8%, 78% { opacity: 1; }
+  100% { opacity: 0; }
+}
+/* เคี้ยวขนม — หัว+มือขยับขึ้นลงเล็กๆ เป็นจังหวะ แล้วหยุดพัก */
+@keyframes scene-munch {
+  0%, 60%, 100% { transform: translateY(0) rotate(0deg); }
+  15% { transform: translateY(0.5%) rotate(0.3deg); }
+  30% { transform: translateY(0) rotate(0deg); }
+  45% { transform: translateY(0.5%) rotate(0.3deg); }
+}
+/* หายใจตอนงีบ — ช้าและลึก */
+@keyframes scene-breathe {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-0.8%) rotate(-0.5deg); }
+}
+@keyframes scene-zz {
+  0% { transform: translate(0, 0) scale(0.6); opacity: 0; }
+  20% { opacity: 1; }
+  100% { transform: translate(40%, -120%) scale(1.1); opacity: 0; }
+}
+/* มือพิมพ์ — กดลงเป็นจังหวะไม่สม่ำเสมอ (มือซ้าย/ขวาเลื่อนจังหวะด้วย delay) */
+@keyframes scene-type {
+  0% { transform: translateY(0); }
+  12% { transform: translateY(3%); }
+  24% { transform: translateY(0); }
+  48% { transform: translateY(3%); }
+  58% { transform: translateY(0); }
+}
+@keyframes scene-paper {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(-1.5deg) translateY(1%); }
+}
+@keyframes scene-click {
+  0% { transform: scale(0.3); opacity: 0.9; }
+  25% { transform: scale(1); opacity: 0; }
+  100% { opacity: 0; }
+}
+
 
 /* ─────────────────────────────────────────────────────────────────────────────
    เคารพผู้ที่ไม่ต้องการการเคลื่อนไหว

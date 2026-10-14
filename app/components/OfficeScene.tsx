@@ -3,28 +3,22 @@
 // app/components/OfficeScene.tsx
 // ฉากออฟฟิศพิกเซลของน้องผู้ตรวจ — ภาพประกอบการ์ดความคืบหน้าและวิดเจ็ตตรวจอัตโนมัติ
 //
-// ฉากเป็นภาพนิ่งที่ผู้ใช้ให้มา สองฉาก เฟดสลับตามสถานะ:
-//   ทำงาน  → public/scene/office.webp (ท้าวคางดูจอ)
-//   ว่างงาน → public/scene/coffee.webp (จิบกาแฟแก้วลายแมว — ยกแก้วจิบเป็นจังหวะ มีไอร้อน)
+// ฉากเป็นภาพนิ่งที่ผู้ใช้ให้มา (public/scene/<ฉาก>.webp) เลือกตามสถานะจริง:
+//   ว่างงาน            → วน coffee (จิบกาแฟ) → snack (กินขนม) → nap (งีบ มี zZ) ฉากละ 20 วินาที
+//   ค้นข้อมูล/ฟอร์ม/เอกสาร → type (พิมพ์คีย์บอร์ดสองมือ)
+//   AI กำลังตรวจ        → review (ท้าวคาง มือจับเมาส์ ดูจอ — มีวงคลิกที่เมาส์)
+//   เริ่มเคสใหม่ (job เปลี่ยน) → fetch (เอื้อมหยิบแฟ้มจากชั้น) ซ้อนขึ้นมาราว 4 วินาทีแล้วเฟดออก
 // แล้วซ้อน animation ทับให้ภาพมีชีวิต:
 //   • ฟ้าในหน้าต่างตามเวลาจริง (เวลาไทย): เช้าอมส้ม / กลางวันตามภาพ / เย็นสีพระอาทิตย์ตก
 //     / กลางคืนมืด มีพระจันทร์ ดาว ไฟตามตึก — ห้องมืดลงแต่แสงจอส่องหน้า
-//   • ฟองความคิดเหนือหัวบอกขั้นที่ทำ (ค้นหา / เขียนฟอร์ม / สร้างเอกสาร / AI ตรวจ) · ว่าง = แก้วกาแฟ
-//   • เริ่มเคสใหม่ (job เปลี่ยน) → แฟ้มลอยจากชั้นด้านขวามาวางบนกองเอกสาร
-//   • ตรวจเสร็จหนึ่งราย (cheer เปลี่ยน) → ✓ +1 เด้งเหนือหัว
-//   • ป้ายบนกองเอกสาร = จำนวนเคสที่รอคิว · มีจุดแสงกะพริบที่คีย์บอร์ดระหว่างทำงาน
-//
-// ตำแหน่งทั้งหมดเป็น % ของภาพ (อัตราส่วน 3:2) — ย้าย/เปลี่ยนภาพต้องวัดตำแหน่งใหม่ใน SPOT
+//   • ฟองความคิดเหนือหัวบอกขั้นที่ทำ (ค้นหา / เขียนฟอร์ม / สร้างเอกสาร / AI ตรวจ)
+//   • ตรวจเสร็จหนึ่งราย (cheer เปลี่ยน) → ✓ +1 เด้ง · ป้ายมุมซ้ายล่าง = จำนวนเคสที่รอคิว
 //
 // ── ทำให้ภาพนิ่งมีชีวิต (puppet) ──
-// ตัดส่วนของภาพเป็นชั้นโปร่งใส (public/scene/layer-*.webp, blink-*.webp, plant-*.webp) แล้วขยับทีละชั้น:
-//   หัว (ฉากทำงาน: พยักแบบตั้งใจ · ฉากกาแฟ: ยกแก้วจิบรอบข้อมือ)
-//   กะพริบตา (แผ่นทาผิวทับลูกตา อยู่ในชั้นหัวจะได้ขยับตาม)
-//   ปุ่มคีย์บอร์ดใต้นิ้วสว่างเป็นช่วงๆ ตอนทำงาน (เหมือนกำลังกด) · หัวเพื่อนร่วมงานขยับ · ใบไม้ไหว
-// ไม่ขยับชั้นมือ — ในวิดเจ็ตขนาดเล็กเลื่อนได้ไม่ถึงพิกเซลจอ ดูเป็นภาพกระตุกมากกว่าพิมพ์
-// ภาพฉากซ่อมก้อนดำใต้นิ้ว (ภาพต้นฉบับวาดเมาส์กับคีย์บอร์ดกลืนกัน) ให้เป็นแถวปุ่มคีย์บอร์ดต่อเนื่องแล้ว
-// ชั้นตัดจากภาพต้นฉบับแล้วย่อด้วยวิธีเดียวกับภาพฉาก ตำแหน่งจึงตรงกันพอดีพิกเซล
-// เปลี่ยนภาพฉากต้องตัดชั้นใหม่และวัด LAYER ใหม่ทั้งหมด
+// ตัดส่วนของภาพเป็นชั้นโปร่งใส (public/scene/<ฉาก>-<ชั้น>.webp) แล้วขยับทีละชั้น:
+//   หัว (พยัก/ยกแก้วจิบ/เคี้ยว/หายใจตอนงีบ) · กะพริบตา (แผ่นทาผิวทับลูกตา อยู่ในชั้นหัวจะได้ขยับตาม)
+//   มือพิมพ์สลับซ้ายขวา + ปุ่มใต้นิ้วสว่าง · กระดาษในมือไหวตอนหยิบแฟ้ม · เพื่อนร่วมงานขยับ · ใบไม้ไหว
+// ตำแหน่งชั้นอยู่ใน officeScenes.ts — สร้างจากสคริปต์ตัดชั้น เปลี่ยนภาพต้องตัดชั้นใหม่ทั้งหมด
 // ตัวละครเดินไปมาไม่ได้ (ภาพนิ่ง) — ที่ขยับได้คือส่วนที่ตัดไว้เท่านั้น
 // animation หยุดเองเมื่อผู้ใช้ตั้ง prefers-reduced-motion (ดู globals.css)
 
@@ -32,21 +26,15 @@ import Image from "next/image";
 import { useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import Icon, { type IconName } from "@/app/components/Icon";
 import type { AuditStep } from "@/lib/auto-audit/progress";
+import { SCENE_LAYERS, type Box, type SceneName } from "@/app/components/officeScenes";
 
-/** จุดสำคัญในภาพ (% ของกว้าง/สูง) */
+/** จุดที่ใช้ร่วมทุกฉาก (% ของกว้าง/สูง) — ทุกภาพจัดฉากเหมือนกัน */
 const SPOT = {
   /** กระจกหน้าต่างมุมซ้ายบน (clip-path) */
   window: "polygon(0% 0%, 12.6% 0%, 12.6% 30.5%, 0% 33.5%)",
-  face: { x: 47, y: 39 },
   bubble: { x: 59, y: 21 },
   cheer: { x: 37, y: 30 },
-  /** ปุ่มคีย์บอร์ดใต้ปลายนิ้ว */
-  keyboard: { x: 42.7, y: 65.4 },
   monitor: { x: 25, y: 52 },
-  /** กองเอกสารหน้าโต๊ะ — ป้ายคิว + ปลายทางของแฟ้มที่ลอยมา */
-  stack: { x: 47, y: 79 },
-  /** ชั้นแฟ้มด้านขวา — ต้นทางของแฟ้ม */
-  shelf: { x: 85, y: 56 },
 };
 
 // ── เวลาจริง (เวลาไทย) ───────────────────────────────────────────────────────
@@ -110,36 +98,6 @@ const STEP_BUBBLE: Record<AuditStep, { icon: IconName; label: string }> = {
 
 const at = (p: { x: number; y: number }): CSSProperties => ({ left: `${p.x}%`, top: `${p.y}%` });
 
-/** กล่องของแต่ละชั้น (% ของภาพ) + จุดหมุน ox/oy (% ของกล่องชั้นนั้น) */
-type Box = { left: number; top: number; width: number; height: number; ox?: number; oy?: number };
-
-/** ฉากทำงาน (public/scene/office.webp) — ท้าวคาง ตาดูจอ */
-const LAYER: Record<string, Box> = {
-  head: { left: 38.646, top: 20.938, width: 18.021, height: 39.219, ox: 13.2, oy: 94.8 },
-  coworker: { left: 85.625, top: 8.438, width: 8.854, height: 15.313, ox: 49.9, oy: 98 },
-  plantDesk: { left: 25.521, top: 69.375, width: 9.167, height: 11.25, ox: 49.7, oy: 95.1 },
-  plantRight: { left: 82.604, top: 29.531, width: 10.104, height: 10.938, ox: 49.7, oy: 105 },
-  plantTop: { left: 32.812, top: 4.062, width: 8.125, height: 8.594, ox: 49.7, oy: 93.6 },
-};
-const BLINK_L: Box = { left: 42.083, top: 38.594, width: 2.5, height: 3.438 };
-const BLINK_R: Box = { left: 45.833, top: 39.219, width: 2.708, height: 3.906 };
-
-/** ฉากจิบกาแฟ (public/scene/coffee.webp) — ตอนว่างงาน */
-const COFFEE: Record<string, Box> = {
-  sip: { left: 38.125, top: 20.312, width: 16.667, height: 30.156, ox: 25.2, oy: 97.2 },
-  coworker: { left: 86.042, top: 9.062, width: 8.542, height: 13.75, ox: 49.8, oy: 96.7 },
-  plantDesk: { left: 25.521, top: 68.438, width: 9.688, height: 11.562, ox: 49.7, oy: 100.7 },
-  plantRight: { left: 83.958, top: 30.781, width: 9.167, height: 9.688, ox: 50, oy: 110.7 },
-  plantTop: { left: 32.5, top: 4.375, width: 8.333, height: 8.906, ox: 49.8, oy: 91.2 },
-  plantMid: { left: 70.729, top: 24.375, width: 7.292, height: 9.844, ox: 50.5, oy: 97.6 },
-  plantMonitor: { left: 24.375, top: 35.312, width: 5.938, height: 7.5, ox: 50, oy: 104.7 },
-};
-const COFFEE_BLINK_L: Box = { left: 41.979, top: 36.094, width: 2.083, height: 3.594 };
-const COFFEE_BLINK_R: Box = { left: 46.25, top: 37.969, width: 2.396, height: 3.594 };
-const COFFEE_FACE = { x: 45, y: 38 };
-/** ขอบแก้วฝั่งซ้าย (ห่างหน้า) — ไอร้อนลอยจากตรงนี้แล้วเฉียงออกซ้าย ไม่บังตา */
-const COFFEE_STEAM = { x: 39.3, y: 43 };
-
 function inside(child: Box, parent: Box): Box {
   return {
     left: ((child.left - parent.left) / parent.width) * 100,
@@ -156,93 +114,143 @@ const boxStyle = (b: Box): CSSProperties => ({
   height: `${b.height}%`,
 });
 
+/** ภาพไม่ผ่าน /_next/image — ย่อไว้แล้ว และตัวย่อรูปดึงไฟล์โดยไม่มี cookie แล้วโดน proxy บล็อก */
+function Img({ src, className }: { src: string; className?: string }) {
+  return <Image src={src} alt="" fill unoptimized draggable={false} className={className} />;
+}
+
 /** ชั้นภาพหนึ่งชิ้น — กล่องนอกวางตำแหน่ง กล่องในขยับ (animation) รอบจุดหมุนของชั้น */
 function Layer({
-  src,
-  box,
+  scene,
+  name,
   className,
   style,
   children,
 }: {
-  src: string;
-  box: Box;
+  scene: SceneName;
+  name: string;
   className?: string;
   style?: CSSProperties;
   children?: ReactNode;
 }) {
+  const box = (SCENE_LAYERS[scene] as Record<string, Box>)[name];
+  if (!box) return null;
   return (
     <div className="absolute" style={boxStyle(box)}>
       <div
         className={`absolute inset-0 ${className ?? ""}`}
         style={{ transformOrigin: `${box.ox ?? 50}% ${box.oy ?? 50}%`, ...style }}
       >
-        <Image src={src} alt="" fill unoptimized draggable={false} />
+        <Img src={`/scene/${scene}-${name}.webp`} />
         {children}
       </div>
     </div>
   );
 }
 
-/** ภาพฉากเต็ม — ย่อไว้แล้ว (960×640) จึงไม่ผ่าน /_next/image (ตัวย่อรูปดึงไฟล์โดยไม่มี cookie แล้วโดน proxy บล็อก) */
-function Backdrop({ src }: { src: string }) {
-  return <Image src={src} alt="" fill unoptimized className="object-cover" draggable={false} />;
-}
-
-/** ตากะพริบ — แผ่นตาหลับวางในชั้นหัว จะได้โยกไปด้วยกัน */
-function Blink({ head, left, right, prefix }: { head: Box; left: Box; right: Box; prefix: string }) {
+/** ตากะพริบ — แผ่นตาหลับวางในชั้นหัว จะได้ขยับไปด้วยกัน */
+function Blink({ scene }: { scene: SceneName }) {
+  const L = SCENE_LAYERS[scene] as Record<string, Box>;
+  if (!L["blink-l"] || !L["blink-r"]) return null;
   return (
     <div className="absolute inset-0 scene-blink">
-      <div className="absolute" style={boxStyle(inside(left, head))}>
-        <Image src={`/scene/${prefix}blink-l.webp`} alt="" fill unoptimized draggable={false} />
-      </div>
-      <div className="absolute" style={boxStyle(inside(right, head))}>
-        <Image src={`/scene/${prefix}blink-r.webp`} alt="" fill unoptimized draggable={false} />
-      </div>
+      {(["l", "r"] as const).map((side) => (
+        <div key={side} className="absolute" style={boxStyle(inside(L[`blink-${side}`], L.head))}>
+          <Img src={`/scene/${scene}-blink-${side}.webp`} />
+        </div>
+      ))}
     </div>
   );
 }
 
-/** ฉากทำงาน: ท้าวคางดูจอ พยักแบบตั้งใจ กะพริบตา · เพื่อนร่วมงานขยับ · ใบไม้ไหว */
-function WorkScene() {
+/** แสงจอส่องหน้าตอนกลางคืน — กึ่งกลางระหว่างตาสองข้าง (ฉากงีบใช้กลางชั้นหัว) */
+function faceOf(scene: SceneName): { x: number; y: number } {
+  const L = SCENE_LAYERS[scene] as Record<string, Box>;
+  const l = L["blink-l"];
+  const r = L["blink-r"];
+  if (l && r) return { x: (l.left + r.left + r.width) / 2, y: (l.top + r.top + r.height) / 2 };
+  return { x: L.head.left + L.head.width / 2, y: L.head.top + L.head.height * 0.45 };
+}
+
+/** ท่าของหัวในแต่ละฉาก */
+const HEAD_MOTION: Record<SceneName, string> = {
+  type: "scene-focus",
+  review: "scene-focus",
+  fetch: "scene-focus",
+  coffee: "scene-sip",
+  snack: "scene-munch",
+  nap: "scene-breathe",
+};
+
+/** ฉากหนึ่งฉาก: ภาพเต็ม + ใบไม้ + เพื่อนร่วมงาน + หัว (กะพริบตา) + ของเฉพาะฉาก */
+function Scene({ scene }: { scene: SceneName }) {
   return (
     <>
-      <Backdrop src="/scene/office.webp" />
-      <Layer src="/scene/plant-top.webp" box={LAYER.plantTop} className="scene-leaf" style={{ animationDuration: "5.1s" }} />
-      <Layer src="/scene/plant-right.webp" box={LAYER.plantRight} className="scene-leaf" style={{ animationDuration: "4.3s", animationDelay: "-1.7s" }} />
-      <Layer src="/scene/plant-desk.webp" box={LAYER.plantDesk} className="scene-leaf" style={{ animationDuration: "3.7s", animationDelay: "-0.9s" }} />
-      <Layer src="/scene/layer-coworker.webp" box={LAYER.coworker} className="scene-nod" />
-      <Layer src="/scene/layer-head.webp" box={LAYER.head} className="scene-focus">
-        <Blink head={LAYER.head} left={BLINK_L} right={BLINK_R} prefix="" />
+      <Img src={`/scene/${scene}.webp`} className="object-cover" />
+      <Layer scene={scene} name="plant-top" className="scene-leaf" style={{ animationDuration: "5.1s" }} />
+      <Layer scene={scene} name="plant-right" className="scene-leaf" style={{ animationDuration: "4.3s", animationDelay: "-1.7s" }} />
+      <Layer scene={scene} name="plant-desk" className="scene-leaf" style={{ animationDuration: "3.7s", animationDelay: "-0.9s" }} />
+      <Layer scene={scene} name="coworker" className="scene-nod" />
+      <Layer scene={scene} name="head" className={HEAD_MOTION[scene]}>
+        <Blink scene={scene} />
       </Layer>
+
+      {scene === "type" ? (
+        <>
+          {/* มือพิมพ์สลับซ้ายขวา + ปุ่มใต้ปลายนิ้วสว่าง */}
+          <Layer scene={scene} name="hand-l" className="scene-type" />
+          <Layer scene={scene} name="hand-r" className="scene-type" style={{ animationDelay: "-1.3s" }} />
+          {[
+            { x: 35, y: 62, d: "0s" },
+            { x: 41.5, y: 67, d: "-0.7s" },
+            { x: 37, y: 63.2, d: "-1.5s" },
+          ].map((k, i) => (
+            <span
+              key={i}
+              className="absolute h-[0.8%] w-[0.9%] -translate-1/2 rounded-[1px] bg-[#aeb2cc] scene-key"
+              style={{ ...at(k), animationDelay: k.d }}
+            />
+          ))}
+        </>
+      ) : null}
+
+      {/* กระดาษในมือไหวตอนหยิบแฟ้ม */}
+      {scene === "fetch" ? <Layer scene={scene} name="paper" className="scene-paper" /> : null}
+
+      {/* วงคลิกที่เมาส์ระหว่างรอ AI ตรวจ */}
+      {scene === "review" ? (
+        <span className="absolute size-[3%] -translate-1/2 rounded-full border-2 border-white/90 scene-click" style={at({ x: 45.6, y: 70 })} />
+      ) : null}
+
+      {/* ไอร้อนจากแก้วกาแฟ — สามสายลอยเฉียงออกซ้าย ไม่บังตา */}
+      {scene === "coffee"
+        ? [0, 1, 2].map((i) => (
+            <span
+              key={i}
+              className="absolute h-[4%] w-[0.7%] rounded-full bg-white/60 blur-[1px] scene-steam"
+              style={{ ...at({ x: 39.3 - i * 0.9, y: 39 }), animationDelay: `${-i * 0.8}s` }}
+            />
+          ))
+        : null}
+
+      {/* zZ ลอยตอนงีบ */}
+      {scene === "nap"
+        ? ["z", "Z", "z"].map((z, i) => (
+            <span
+              key={i}
+              className="absolute font-bold text-[#2a2733] [text-shadow:1px_1px_0_#fff] scene-zz"
+              style={{ ...at({ x: 57 + i * 2, y: 26 - i * 3 }), fontSize: `${0.7 + i * 0.25}em`, animationDelay: `${i * 0.9}s` }}
+            >
+              {z}
+            </span>
+          ))
+        : null}
     </>
   );
 }
 
-/** ฉากจิบกาแฟ (ว่างงาน): ยกแก้วจิบเป็นจังหวะ ไอร้อนลอย กะพริบตา · เพื่อนร่วมงานพิมพ์ · ใบไม้ไหว */
-function CoffeeScene() {
-  return (
-    <>
-      <Backdrop src="/scene/coffee.webp" />
-      <Layer src="/scene/coffee-plant-top.webp" box={COFFEE.plantTop} className="scene-leaf" style={{ animationDuration: "5.1s" }} />
-      <Layer src="/scene/coffee-plant-mid.webp" box={COFFEE.plantMid} className="scene-leaf" style={{ animationDuration: "4.6s", animationDelay: "-2.2s" }} />
-      <Layer src="/scene/coffee-plant-right.webp" box={COFFEE.plantRight} className="scene-leaf" style={{ animationDuration: "4.3s", animationDelay: "-1.7s" }} />
-      <Layer src="/scene/coffee-plant-monitor.webp" box={COFFEE.plantMonitor} className="scene-leaf" style={{ animationDuration: "3.9s", animationDelay: "-0.4s" }} />
-      <Layer src="/scene/coffee-plant-desk.webp" box={COFFEE.plantDesk} className="scene-leaf" style={{ animationDuration: "3.7s", animationDelay: "-0.9s" }} />
-      <Layer src="/scene/coffee-coworker.webp" box={COFFEE.coworker} className="scene-nod" />
-      <Layer src="/scene/coffee-sip.webp" box={COFFEE.sip} className="scene-sip">
-        <Blink head={COFFEE.sip} left={COFFEE_BLINK_L} right={COFFEE_BLINK_R} prefix="coffee-" />
-      </Layer>
-      {/* ไอร้อนจากแก้ว — สามสายลอยขึ้นคนละจังหวะ */}
-      {[0, 1, 2].map((i) => (
-        <span
-          key={i}
-          className="absolute h-[4%] w-[0.7%] rounded-full bg-white/60 blur-[1px] scene-steam"
-          style={{ ...at({ x: COFFEE_STEAM.x - i * 0.9, y: COFFEE_STEAM.y - 4 }), animationDelay: `${-i * 0.8}s` }}
-        />
-      ))}
-    </>
-  );
-}
+/** ฉากพักวนกัน — แต่ละฉากโชว์ 20 วินาทีแล้วเฟดต่อ (เลื่อนจังหวะด้วย animation-delay ติดลบ) */
+const IDLE_SCENES: SceneName[] = ["coffee", "snack", "nap"];
 
 export default function OfficeScene({
   step = "lookup",
@@ -257,13 +265,13 @@ export default function OfficeScene({
   step?: AuditStep;
   /** เปลี่ยนค่าเมื่อตรวจเสร็จหนึ่งราย (เช่นจำนวนที่เสร็จ) → ✓ +1 */
   cheer?: number;
-  /** เคสที่กำลังทำ (เช่น VN) — เปลี่ยนเมื่อไรแฟ้มใหม่จะลอยมาวางบนโต๊ะ */
+  /** เคสที่กำลังทำ (เช่น VN) — เปลี่ยนเมื่อไรน้องจะเอื้อมหยิบแฟ้มเคสถัดไป */
   job?: string;
-  /** จำนวนเคสที่รอคิว — แสดงเป็นป้ายบนกองเอกสาร */
+  /** จำนวนเคสที่รอคิว — แสดงเป็นป้ายมุมซ้ายล่าง */
   pending?: number;
   /** บังคับชั่วโมง (0–24) แทนเวลาจริง — ไว้ทดสอบ */
   hour?: number;
-  /** ไม่มีงาน — ฟองความคิดเป็นแก้วกาแฟ ไม่มีป้ายคิว/แสงคีย์บอร์ด */
+  /** ไม่มีงาน — วนฉากพัก (จิบกาแฟ / กินขนม / งีบ) ไม่มีฟองความคิด/ป้ายคิว */
   idle?: boolean;
   /** ขนาดเล็ก (วิดเจ็ต) — ซ่อนป้ายข้อความในฟอง เหลือแต่ไอคอน */
   compact?: boolean;
@@ -272,22 +280,39 @@ export default function OfficeScene({
   const realHour = useBangkokHour();
   const part = dayPart(hour ?? realHour);
   const tint = TINT[part];
-  const bubble = idle ? { icon: "coffee" as IconName, label: "พักจิบกาแฟ" } : STEP_BUBBLE[step];
-  const face = idle ? COFFEE_FACE : SPOT.face;
+  const bubble = STEP_BUBBLE[step];
+  const workScene: SceneName = step === "review" ? "review" : "type";
+  // ฉากพักวนกันจึงใช้หน้าของฉากกาแฟเป็นตัวแทน
+  const face = faceOf(idle ? "coffee" : workScene);
 
   return (
     <div
       className={`relative aspect-[3/2] overflow-hidden select-none ${className}`}
       role="img"
-      aria-label={idle ? "น้องผู้ตรวจนั่งพักจิบกาแฟ" : `น้องผู้ตรวจกำลัง${bubble.label}`}
+      aria-label={idle ? "น้องผู้ตรวจนั่งพักอยู่" : `น้องผู้ตรวจกำลัง${bubble.label}`}
     >
-      {/* ── ฉากทำงาน / ฉากจิบกาแฟ — เฟดสลับตามสถานะ (ทั้งสองฉากอยู่ใต้ชั้นแสงตามเวลา) ── */}
-      <div className={`absolute inset-0 transition-opacity duration-700 ${idle ? "opacity-0" : "opacity-100"}`}>
-        <WorkScene />
-      </div>
-      <div className={`absolute inset-0 transition-opacity duration-700 ${idle ? "opacity-100" : "opacity-0"}`}>
-        <CoffeeScene />
-      </div>
+      {/* ── ฉากตามสถานะ (ทุกฉากอยู่ใต้ชั้นแสงตามเวลา) — โหลดเฉพาะฉากที่ใช้ ── */}
+      {idle ? (
+        IDLE_SCENES.map((sc, i) => (
+          <div
+            key={sc}
+            className="absolute inset-0 scene-idle-cycle"
+            style={{ animationDelay: `${i === 0 ? 0 : -(IDLE_SCENES.length - i) * 20}s` }}
+          >
+            <Scene scene={sc} />
+          </div>
+        ))
+      ) : (
+        <div key={`scene-${workScene}`} className="absolute inset-0 scene-enter">
+          <Scene scene={workScene} />
+        </div>
+      )}
+      {/* เริ่มเคสใหม่ → เอื้อมหยิบแฟ้มจากชั้น แล้วเฟดกลับไปฉากทำงาน */}
+      {!idle && job ? (
+        <div key={`fetch-${job}`} className="absolute inset-0 scene-fetch-once">
+          <Scene scene="fetch" />
+        </div>
+      ) : null}
 
       {/* ── ฟ้าในหน้าต่างตามเวลาจริง ── */}
       {tint.window ? (
@@ -339,68 +364,33 @@ export default function OfficeScene({
         />
       ) : null}
 
-      {/* ── ปุ่มคีย์บอร์ดใต้นิ้วสว่างเป็นช่วงๆ (กำลังกด) — ขนาด/สีเท่าปุ่มจริงในภาพ ── */}
-      {idle ? null : (
-        <>
-          {[
-            { x: SPOT.keyboard.x, y: SPOT.keyboard.y, d: "0s" },
-            { x: SPOT.keyboard.x + 1.1, y: SPOT.keyboard.y + 0.9, d: "-0.9s" },
-            { x: SPOT.keyboard.x - 1.1, y: SPOT.keyboard.y + 1, d: "-1.7s" },
-          ].map((k, i) => (
-            <span
-              key={i}
-              className="absolute h-[0.8%] w-[0.9%] -translate-1/2 rounded-[1px] bg-[#aeb2cc] scene-key"
-              style={{ ...at(k), animationDelay: k.d }}
-            />
-          ))}
-        </>
-      )}
-
-      {/* ── ป้ายจำนวนคิวบนกองเอกสาร ── */}
+      {/* ── ป้ายจำนวนคิว (มุมซ้ายล่าง) ── */}
       {!idle && pending > 0 ? (
         <span
-          className="absolute -translate-1/2 rounded-sm bg-[#2a2733] px-[1.2%] py-[0.3%] text-[10px] sm:text-xs leading-none font-bold text-white shadow ring-2 ring-white"
-          style={at({ x: SPOT.stack.x + 5, y: SPOT.stack.y - 6 })}
+          className="absolute bottom-[4%] left-[3%] rounded-sm bg-[#2a2733] px-1.5 py-0.5 text-[10px] leading-none font-bold text-white shadow ring-2 ring-white sm:text-xs"
           title={`รอคิวอีก ${pending} เคส`}
         >
           คิว {pending}
         </span>
       ) : null}
 
-      {/* ── แฟ้มลอยจากชั้นมาวางบนโต๊ะ (ทุกครั้งที่เริ่มเคสใหม่) ── */}
-      {!idle && job ? (
-        <span
-          key={job}
-          className="absolute h-[7%] w-[6%] -translate-1/2 scene-fly"
-          style={
-            {
-              "--from-x": `${SPOT.shelf.x}%`,
-              "--from-y": `${SPOT.shelf.y}%`,
-              "--to-x": `${SPOT.stack.x}%`,
-              "--to-y": `${SPOT.stack.y}%`,
-            } as CSSProperties
-          }
-        >
-          <span className="absolute inset-0 rounded-[2px] border-2 border-[#2a2733] bg-[#f3d38b]" />
-          <span className="absolute -top-[18%] left-0 h-[30%] w-[45%] rounded-t-[2px] border-2 border-b-0 border-[#2a2733] bg-[#f3d38b]" />
-        </span>
-      ) : null}
-
       {/* ── ฟองความคิดเหนือหัว ── */}
-      <div key={idle ? "idle" : step} className="absolute -translate-1/2 scene-pop" style={at(SPOT.bubble)}>
+      {idle ? null : (
+      <div key={`bubble-${step}`} className="absolute -translate-1/2 scene-pop" style={at(SPOT.bubble)}>
         <div className="scene-float flex items-center gap-1 rounded-lg border-2 border-[#2a2733] bg-white px-1.5 py-0.5 text-[#2a2733] shadow-[2px_2px_0_#2a2733]">
-          <Icon name={bubble.icon} size={compact ? 13 : 16} strokeWidth={2.4} className={idle ? "" : "text-brand-700"} />
+          <Icon name={bubble.icon} size={compact ? 13 : 16} strokeWidth={2.4} className="text-brand-700" />
           {compact ? null : <span className="text-xs font-semibold whitespace-nowrap">{bubble.label}</span>}
         </div>
         {/* หางฟองเป็นจุดเล็กสองจุดลงไปหาหัว */}
         <span className="absolute -bottom-2 left-[22%] size-1.5 border-2 border-[#2a2733] bg-white" />
         <span className="absolute -bottom-3.5 left-[12%] size-1 bg-[#2a2733]" />
       </div>
+      )}
 
       {/* ── ✓ +1 เมื่อตรวจเสร็จหนึ่งราย ── */}
       {cheer > 0 ? (
         <span
-          key={cheer}
+          key={`cheer-${cheer}`}
           className="absolute -translate-1/2 scene-cheer rounded-full bg-emerald-500 px-1.5 py-0.5 text-xs font-bold text-white shadow ring-2 ring-white"
           style={at(SPOT.cheer)}
         >

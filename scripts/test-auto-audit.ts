@@ -120,6 +120,12 @@ test("ระยะเวลาภาษาไทย", () => {
   assert.equal(formatDuration(12 * 60000), "12 นาที");
   assert.equal(formatDuration(121 * 60000), "2 ชม. 1 นาที");
   assert.equal(formatDuration(120 * 60000), "2 ชม.");
+  // ตั้งแต่ 1 วัน ไม่ใช่ "50616 ชม." แบบเดิม
+  assert.equal(formatDuration(24 * 60 * 60000), "1 วัน");
+  assert.equal(formatDuration((3 * 24 + 4) * 60 * 60000 + 17 * 60000), "3 วัน 4 ชม.");
+  const day = 24 * 60 * 60000;
+  assert.equal(formatDuration(283 * day), "9 เดือน 13 วัน");
+  assert.equal(formatDuration(2074 * day), "5 ปี 8 เดือน");
 });
 
 console.log("\n── ความคืบหน้าสดของรอบตรวจอัตโนมัติ ──");

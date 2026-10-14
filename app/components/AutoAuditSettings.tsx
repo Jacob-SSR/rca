@@ -13,6 +13,7 @@ import { DepartmentRules, type Rules, rulesSummary } from "@/app/components/Audi
 import { formatThaiDateShort } from "@/lib/form/thai-date";
 import Icon from "@/app/components/Icon";
 import AutoAuditLive from "@/app/components/AutoAuditLive";
+import { pctTone } from "@/app/components/ScoreBadge";
 import type { LiveProgress } from "@/lib/auto-audit/progress";
 import {
   ALL_VISITS,
@@ -667,9 +668,14 @@ export default function AutoAuditSettings() {
                 {data.runs.map((r) => {
                   const st = STATUS[r.status] ?? { label: r.status, cls: "" };
                   const isOpen = open === r.id;
+                  const expandable = (r.results?.length ?? 0) > 0 || !!r.error;
                   return (
                     <Fragment key={r.id}>
-                      <tr>
+                      {/* คลิกตรงไหนของแถวก็เปิด/ปิดรายละเอียด — ปุ่มท้ายแถวไว้สำหรับคีย์บอร์ด */}
+                      <tr
+                        className={expandable ? `cursor-pointer ${isOpen ? "bg-brand-50/60" : ""}` : ""}
+                        onClick={expandable ? () => setOpen(isOpen ? null : r.id) : undefined}
+                      >
                         <td className="tabular whitespace-nowrap">
                           {thaiDateTime(r.startedAt)}
                           <span className="block text-xs text-zinc-500">
@@ -715,14 +721,22 @@ export default function AutoAuditSettings() {
                           {r.avgPercent !== null ? `${Number(r.avgPercent).toFixed(1)}%` : "—"}
                         </td>
                         <td>
-                          {(r.results?.length ?? 0) > 0 || r.error ? (
+                          {expandable ? (
                             <button
                               type="button"
-                              className="btn btn-sm"
+                              className="btn btn-sm whitespace-nowrap"
                               aria-expanded={isOpen}
-                              onClick={() => setOpen(isOpen ? null : r.id)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setOpen(isOpen ? null : r.id);
+                              }}
                             >
-                              {isOpen ? "ซ่อน" : "รายละเอียด"}
+                              {isOpen ? "ซ่อน" : `ดูเคส${r.results?.length ? ` (${r.results.length})` : ""}`}
+                              <Icon
+                                name="chevronRight"
+                                size={16}
+                                className={`transition-transform duration-200 ${isOpen ? "-rotate-90" : "rotate-90"}`}
+                              />
                             </button>
                           ) : null}
                         </td>
@@ -735,17 +749,26 @@ export default function AutoAuditSettings() {
                                 {r.error}
                               </p>
                             ) : null}
-                            <ul className="space-y-1 text-sm">
+                            {/* แต่ละรายกดได้ทั้งแถว → หน้าเคส */}
+                            <ul className="divide-y divide-zinc-100 overflow-hidden rounded-xl bg-white text-sm ring-1 ring-zinc-200">
                               {(r.results ?? []).map((it) => (
-                                <li key={it.vn} className="flex flex-wrap gap-x-3">
-                                  <span className="tabular text-zinc-500">VN {it.vn}</span>
-                                  {it.caseId ? (
-                                    <Link href={`/cases/${it.caseId}`} className="link">
-                                      ดูเคส
-                                      {typeof it.percentage === "number" ? ` · ${it.percentage.toFixed(1)}%` : ""}
+                                <li key={it.vn}>
+                                  {it.caseId && !it.error ? (
+                                    <Link href={`/cases/${it.caseId}`} className="row-link py-2.5 sm:px-4">
+                                      <Icon name="check" size={15} strokeWidth={2.6} className="text-emerald-600" />
+                                      <span className="tabular min-w-0 flex-1 text-zinc-700">VN {it.vn}</span>
+                                      {typeof it.percentage === "number" ? (
+                                        <span className={`badge tabular ${pctTone(it.percentage)}`}>{it.percentage.toFixed(1)}%</span>
+                                      ) : null}
+                                      <span className="hidden text-brand-700 sm:inline">ดูเคส</span>
+                                      <Icon name="chevronRight" size={18} className="row-link-chevron" />
                                     </Link>
                                   ) : (
-                                    <span className="text-red-700">{it.error}</span>
+                                    <div className="flex items-center gap-4 px-5 py-2.5 sm:px-4">
+                                      <Icon name="x" size={15} strokeWidth={2.6} className="text-red-600" />
+                                      <span className="tabular shrink-0 text-zinc-700">VN {it.vn}</span>
+                                      <span className="min-w-0 text-red-700">{it.error ?? "ตรวจไม่สำเร็จ"}</span>
+                                    </div>
                                   )}
                                 </li>
                               ))}

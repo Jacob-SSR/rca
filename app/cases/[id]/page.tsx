@@ -41,6 +41,7 @@ export default async function CasePage({ params }: PageProps<"/cases/[id]">) {
 
   const session = await getSession();
   const mine = canModify(session, c);
+  const latest = c.reviews.find((r) => r.status === "COMPLETED") ?? null;
 
   return (
     <div className="space-y-6">
@@ -83,6 +84,36 @@ export default async function CasePage({ params }: PageProps<"/cases/[id]">) {
         )}
       </PageHeader>
 
+      {/* ── ทางลัด: ผลตรวจล่าสุด — สิ่งที่คนเปิดเคสส่วนใหญ่อยากดู ─────────────── */}
+      {latest ? (
+        <Link
+          href={`/reviews/${latest.id}`}
+          className="card card-hover animate-rise group flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:p-6"
+        >
+          <span className="flex min-w-0 flex-1 items-center gap-4">
+            <span className="icon-orb icon-orb-lg shrink-0 transition-transform duration-500 group-hover:-rotate-6 group-hover:scale-110">
+              <Icon name="target" size={26} />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-sm text-zinc-500">ผลตรวจล่าสุด · {thaiDate(latest.createdAt)}</span>
+              <span className="block font-semibold break-all sm:truncate sm:text-lg">{latest.document.fileName}</span>
+            </span>
+          </span>
+          <span className="flex items-center justify-between gap-4 sm:justify-end">
+            <ScoreBadge
+              size="lg"
+              total={latest.totalScore}
+              max={latest.maxScore}
+              percentage={latest.percentage?.toString() ?? null}
+            />
+            <span className="btn btn-primary">
+              ดูผลตรวจ
+              <Icon name="chevronRight" size={18} className="transition-transform group-hover:translate-x-1" />
+            </span>
+          </span>
+        </Link>
+      ) : null}
+
       {/* ── ฟอร์มในเคสนี้ ──────────────────────────────────────────────────── */}
       <section className="card animate-rise overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 px-5 py-4 sm:px-6">
@@ -101,18 +132,22 @@ export default async function CasePage({ params }: PageProps<"/cases/[id]">) {
         ) : (
           <ul className="divide-y divide-zinc-100">
             {c.forms.map((f) => (
-              <li key={f.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 transition-colors hover:bg-brand-50/30 sm:px-6">
-                <div className="min-w-0">
-                  <Link href={`/forms/${f.id}`} className="link font-medium">
-                    {f.chiefComplaint?.trim() || "(ยังไม่ได้กรอกอาการสำคัญ)"}
-                  </Link>
-                  <div className="tabular mt-0.5 text-sm text-zinc-500">
-                    {f.serviceDate ?? "ไม่ระบุวันที่"}
-                    {f.serviceTime ? ` ${f.serviceTime} น.` : ""} · แก้ล่าสุด{" "}
-                    {thaiDate(f.updatedAt)}
-                  </div>
-                </div>
-                {f.source === "hosxp" ? <span className="badge">จาก HOSxP</span> : null}
+              <li key={f.id}>
+                <Link href={`/forms/${f.id}`} className="row-link" aria-label="เปิดฟอร์ม">
+                  <span className="icon-orb hidden shrink-0 sm:grid"><Icon name="fileText" size={18} /></span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block font-medium text-zinc-900">
+                      {f.chiefComplaint?.trim() || <span className="text-zinc-400">(ยังไม่ได้กรอกอาการสำคัญ)</span>}
+                    </span>
+                    <span className="tabular mt-0.5 block text-sm text-zinc-500">
+                      มารับบริการ {f.serviceDate ?? "ไม่ระบุวันที่"}
+                      {f.serviceTime ? ` ${f.serviceTime} น.` : ""} · แก้ล่าสุด {thaiDate(f.updatedAt)}
+                    </span>
+                  </span>
+                  {f.source === "hosxp" ? <span className="badge hidden shrink-0 sm:inline-flex">จาก HOSxP</span> : null}
+                  <span className="hidden shrink-0 text-sm font-medium text-brand-700 md:inline">เปิดฟอร์ม</span>
+                  <Icon name="chevronRight" size={22} className="row-link-chevron" />
+                </Link>
               </li>
             ))}
           </ul>
@@ -123,59 +158,45 @@ export default async function CasePage({ params }: PageProps<"/cases/[id]">) {
       <section className="card animate-rise overflow-hidden [animation-delay:0.1s]">
         <h2 className="card-title">
           <span className="icon-orb"><Icon name="target" /></span>
-          ผลการตรวจ
+          ผลการตรวจทั้งหมด
+          {c.reviews.length > 0 ? <span className="badge tabular">{c.reviews.length} ครั้ง</span> : null}
         </h2>
 
         {c.reviews.length === 0 ? (
           <p className="px-6 py-8 text-zinc-500">ยังไม่มีผลการตรวจ</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>เอกสาร</th>
-                  <th>วันที่ตรวจ</th>
-                  <th>ที่มา</th>
-                  <th>คะแนน</th>
-                </tr>
-              </thead>
-              <tbody>
-                {c.reviews.map((r) => (
-                  <tr key={r.id}>
-                    <td>
-                      <Link href={`/reviews/${r.id}`} className="link font-medium">
-                        {r.document.fileName}
-                      </Link>
-                      <div className="text-sm text-zinc-500">ฉบับที่ {r.document.version}</div>
-                    </td>
-                    <td className="tabular whitespace-nowrap text-zinc-600">
-                      {thaiDate(r.createdAt)}
-                    </td>
-                    <td>
-                      <span className="badge">
-                        <Icon name={r.sourceType === "form" ? "fileText" : "upload"} size={14} />
+          <ul className="divide-y divide-zinc-100">
+            {c.reviews.map((r) => (
+              <li key={r.id}>
+                <Link href={`/reviews/${r.id}`} className="row-link" aria-label={`ดูผลตรวจ ${r.document.fileName}`}>
+                  <span className="icon-orb hidden shrink-0 sm:grid">
+                    <Icon name={r.sourceType === "form" ? "fileText" : "upload"} size={18} />
+                  </span>
+                  {/* จอเล็ก: คะแนนลงไปอยู่ใต้ชื่อไฟล์ ไม่บีบชื่อไฟล์จนอ่านไม่ออก */}
+                  <span className="flex min-w-0 flex-1 flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-4">
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-medium break-all text-zinc-900 sm:truncate">{r.document.fileName}</span>
+                      <span className="tabular mt-0.5 block text-sm text-zinc-500">
+                        ตรวจเมื่อ {thaiDate(r.createdAt)} · ฉบับที่ {r.document.version} ·{" "}
                         {r.sourceType === "form" ? "จากฟอร์ม" : "อัปโหลด"}
                       </span>
-                    </td>
-                    <td>
+                    </span>
+                    <span className="shrink-0">
                       {r.status === "COMPLETED" ? (
-                        <ScoreBadge
-                          total={r.totalScore}
-                          max={r.maxScore}
-                          percentage={r.percentage?.toString() ?? null}
-                        />
+                        <ScoreBadge total={r.totalScore} max={r.maxScore} percentage={r.percentage?.toString() ?? null} />
                       ) : (
                         <span className="badge bg-warn-50 text-warn-600">
                           <Icon name="clock" size={14} />
                           {r.status}
                         </span>
                       )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    </span>
+                  </span>
+                  <Icon name="chevronRight" size={22} className="row-link-chevron" />
+                </Link>
+              </li>
+            ))}
+          </ul>
         )}
       </section>
 

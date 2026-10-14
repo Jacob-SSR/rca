@@ -393,6 +393,23 @@ body {
     @apply px-5 py-3.5;
   }
 
+  /* ── แถวที่กดได้ทั้งแถว — ชี้/แตะตรงไหนของแถวก็ไปหน้านั้น มีลูกศรบอกว่ากดได้ ── */
+  .row-link {
+    @apply flex items-center gap-4 px-5 py-4 transition-colors duration-150 sm:px-6
+           hover:bg-brand-50/60 active:bg-brand-100/60
+           focus-visible:bg-brand-50 focus-visible:outline-none focus-visible:ring-2
+           focus-visible:ring-inset focus-visible:ring-brand-500;
+  }
+
+  .row-link-chevron {
+    @apply shrink-0 text-zinc-300 transition-transform duration-200;
+  }
+
+  .row-link:hover .row-link-chevron,
+  .row-link:focus-visible .row-link-chevron {
+    @apply translate-x-1 text-brand-600;
+  }
+
   /* ── ป้ายกำกับ ── */
   .badge {
     @apply inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2.5 py-0.5 text-sm

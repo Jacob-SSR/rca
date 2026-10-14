@@ -8,6 +8,7 @@ import { validateRecordForm } from "@/lib/form/validate";
 import { blankFormValues } from "@/lib/form/schema";
 import { mergeDiagText, normalizeVisitDate } from "@/lib/hosxp/visit";
 import { formatDuration } from "@/app/components/TimelineChart";
+import { liveProgress, trackRun } from "@/lib/auto-audit/progress";
 
 let passed = 0;
 let failed = 0;
@@ -119,6 +120,41 @@ test("ระยะเวลาภาษาไทย", () => {
   assert.equal(formatDuration(12 * 60000), "12 นาที");
   assert.equal(formatDuration(121 * 60000), "2 ชม. 1 นาที");
   assert.equal(formatDuration(120 * 60000), "2 ชม.");
+});
+
+console.log("\n── ความคืบหน้าสดของรอบตรวจอัตโนมัติ ──");
+
+test("จดขั้นตอน/คิว/ผลตามลำดับที่ runner ทำจริง แล้วล้างทิ้งเมื่อจบรอบ", () => {
+  const t = trackRun("run-test");
+  assert.equal(liveProgress("run-test")?.phase, "fetching");
+
+  const visits = ["1", "2", "3"].map((vn) => ({ vn, department: "อายุรกรรม", time: "09:00" }));
+  t.plan(visits);
+  assert.equal(liveProgress("run-test")?.total, 3);
+  assert.deepEqual(liveProgress("run-test")?.queue.map((q) => q.vn), ["1", "2", "3"]);
+
+  t.start(visits[0], "lookup");
+  t.step("review");
+  let p = liveProgress("run-test");
+  assert.equal(p?.current?.vn, "1");
+  assert.equal(p?.current?.step, "review");
+  assert.deepEqual(p?.queue.map((q) => q.vn), ["2", "3"]);
+
+  t.finish({ ...visits[0], caseId: "c1", percentage: 88 });
+  t.start(visits[1], "lookup");
+  t.finish({ ...visits[1], error: "ไม่มีข้อมูลใน HOSxP ให้ตรวจ" });
+  p = liveProgress("run-test");
+  assert.equal(p?.done, 2);
+  assert.equal(p?.failed, 1);
+  assert.equal(p?.current, null);
+  assert.deepEqual(p?.recent.map((r) => r.vn), ["2", "1"]); // ใหม่สุดก่อน
+
+  t.end();
+  assert.equal(liveProgress("run-test"), null);
+  // จบแล้วเรียกซ้ำต้องไม่พัง และไม่สร้างข้อมูลค้างกลับมา
+  t.finish({ ...visits[2] });
+  t.step("form");
+  assert.equal(liveProgress("run-test"), null);
 });
 
 console.log(`\n${failed === 0 ? "✅" : "❌"} ผ่าน ${passed} / ${passed + failed} เทสต์\n`);

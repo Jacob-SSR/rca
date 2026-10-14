@@ -18,6 +18,7 @@ import { reviewExistingDocument } from "@/lib/review/pipeline";
 import { AIQuotaError, assertAiAvailable } from "@/lib/ai";
 import { opdDepartmentLabel } from "@/lib/departments";
 import { currentQuotaBlock, quotaMessage } from "@/lib/ai/quota";
+import { type AuditStep, type LiveVisit, trackRun } from "@/lib/auto-audit/progress";
 import {
   DEFAULT_SETTINGS,
   autoRunKey,
@@ -136,19 +137,24 @@ async function auditVisit(
   v: { vn: string; hn: string; department?: string; depcode?: string; reuseFormId?: string },
   targetDate: string,
   owner: { username: string; name: string },
+  /** บอกว่ากำลังทำขั้นไหน — ใช้วาดความคืบหน้าสดในหน้าตั้งค่า */
+  onStep: (step: AuditStep) => void = () => {},
 ): Promise<RunResultItem> {
   const depcode = v.depcode || undefined;
   try {
     if (v.reuseFormId) {
+      onStep("document");
       const form = await prisma.recordForm.findUniqueOrThrow({
         where: { id: v.reuseFormId },
         select: { id: true, caseId: true },
       });
       const doc = await generateDocumentFromForm(form.id);
+      onStep("review");
       const review = await reviewExistingDocument(doc.documentId);
       return { vn: v.vn, depcode, caseId: form.caseId, percentage: review.percentage };
     }
 
+    onStep("lookup");
     const looked = await lookupVisit({ hn: v.hn, vn: v.vn });
     if (!looked.available) return { vn: v.vn, depcode, error: looked.reason };
 
@@ -156,6 +162,7 @@ async function auditVisit(
     if (!parsed.success) return { vn: v.vn, depcode, error: "ข้อมูลจาก HOSxP ไม่ผ่านการตรวจรูปแบบ" };
     if (isFormEmpty(parsed.data)) return { vn: v.vn, depcode, error: "ไม่มีข้อมูลใน HOSxP ให้ตรวจ" };
 
+    onStep("form");
     const created = await prisma.case.create({
       data: {
         caseNumber: await caseNumberFor(parsed.data.hn ?? v.hn, parsed.data.serviceDate ?? targetDate),
@@ -184,7 +191,9 @@ async function auditVisit(
       },
     });
 
+    onStep("document");
     const doc = await generateDocumentFromForm(form.id);
+    onStep("review");
     const review = await reviewExistingDocument(doc.documentId);
     return { vn: v.vn, depcode, caseId: created.id, percentage: review.percentage };
   } catch (e) {
@@ -257,6 +266,7 @@ export async function runAutoAudit(opts: {
     filters,
   });
 
+  const tracker = trackRun(run.id);
   const results: RunResultItem[] = [];
   let found = 0;
   let skipped = 0;
@@ -274,6 +284,7 @@ export async function runAutoAudit(opts: {
     // แผนกที่เซ็ต ICD-10 ไว้ → ตรวจเฉพาะ visit ของแผนกนั้นที่มีรหัสนั้น (ไม่มี/ไม่ได้ลงรหัส = ข้าม)
     // อ่านรหัสไม่ได้ให้ล้มทั้งรอบ — ถ้าปล่อยไปจะกลายเป็นตรวจทุกโรค ใช้ AI เกินที่ตั้งใจ
     const icdOf = needsIcd(filters.rules) ? await opdIcdByDate(targetDate) : null;
+    tracker.phase("planning");
     const visits = dayVisits.filter(
       (v) =>
         v.hn &&
@@ -306,21 +317,35 @@ export async function runAutoAudit(opts: {
     );
     skipped = plan.skipped;
 
+    const liveOf = (v: (typeof plan.todo)[number]): LiveVisit => ({
+      vn: v.vn,
+      department: opdDepartmentLabel(v.depcode) || v.department || null,
+      time: v.time || null,
+    });
+
     // โควตา AI หมดอยู่ → ยังไม่เริ่ม หยุดรอไว้ก่อน แล้วตรวจต่อหลังรีเซ็ต
     const blockedAtStart = currentQuotaBlock();
     if (blockedAtStart) throw new QuotaPausedError(`รอโควตา AI: ${quotaMessage(blockedAtStart)}`);
     assertAiAvailable();
 
+    tracker.plan(plan.todo.map(liveOf));
     for (const v of plan.todo) {
-      results.push(await auditVisit(v, targetDate, owner));
+      const lv = liveOf(v);
+      tracker.start(lv, v.reuseFormId ? "document" : "lookup");
+      const result = await auditVisit(v, targetDate, owner, tracker.step);
+      results.push(result);
+      tracker.finish({ ...lv, caseId: result.caseId, percentage: result.percentage, error: result.error });
 
       // โควตาหมดกลางรอบ → หยุดเลย visit ที่เหลือจะโดน 429 ทุกตัวอยู่ดี
       // visit ที่ค้างอยู่ (รวมตัวที่เพิ่งโดน 429) จะถูกตรวจต่อในรอบ resume
       const blocked = currentQuotaBlock();
       if (blocked) throw new QuotaPausedError(`หยุดรอโควตา AI — ${quotaMessage(blocked)} แล้วจะตรวจต่อเอง`);
 
-      // อัปเดตความคืบหน้าระหว่างทาง — หน้าตั้งค่าจะเห็นตัวเลขขยับ
-      await prisma.autoAuditRun.update({ where: { id: run.id }, data: tally() });
+      // อัปเดตความคืบหน้าระหว่างทาง — หน้าตั้งค่าจะเห็นตัวเลขขยับ และเปิดดูเคสที่เสร็จแล้วได้เลย
+      await prisma.autoAuditRun.update({
+        where: { id: run.id },
+        data: { ...tally(), results: results as unknown as Prisma.InputJsonValue },
+      });
     }
 
     const scores = results
@@ -344,7 +369,7 @@ export async function runAutoAudit(opts: {
     else console.error("auto-audit: รอบนี้ล้มเหลว:", e);
 
     const scores = results.map((r) => r.percentage).filter((p): p is number => typeof p === "number");
-    return prisma.autoAuditRun.update({
+    return await prisma.autoAuditRun.update({
       where: { id: run.id },
       data: {
         status: paused ? "PAUSED" : "FAILED",
@@ -355,6 +380,8 @@ export async function runAutoAudit(opts: {
         finishedAt: new Date(),
       },
     });
+  } finally {
+    tracker.end();
   }
 }
 

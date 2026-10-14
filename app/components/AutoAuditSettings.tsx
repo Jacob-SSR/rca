@@ -2,7 +2,7 @@
 
 // หน้าตั้งค่าตรวจอัตโนมัติด้วย AI — เปิด/ปิด, เวลา, วันในสัปดาห์, วันเป้าหมาย, จำนวนต่อรอบ
 // + เซ็ตแยกรายแผนก (จำนวนต่อรอบ + ICD-10 ที่ให้ตรวจ)
-// + ปุ่มรันเดี๋ยวนี้ (เลือกวันที่ได้) + ประวัติรอบที่ผ่านมา
+// + ปุ่มรันเดี๋ยวนี้ (เลือกวันที่ได้) + ความคืบหน้าสดของรอบที่กำลังรัน + ประวัติรอบที่ผ่านมา
 
 import Link from "next/link";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
@@ -12,6 +12,8 @@ import { Switch } from "@/app/components/AutoAuditPanel";
 import { DepartmentRules, type Rules, rulesSummary } from "@/app/components/AuditTargetInputs";
 import { formatThaiDateShort } from "@/lib/form/thai-date";
 import Icon from "@/app/components/Icon";
+import AutoAuditLive from "@/app/components/AutoAuditLive";
+import type { LiveProgress } from "@/lib/auto-audit/progress";
 import {
   ALL_VISITS,
   MAX_VISITS_CAP,
@@ -64,7 +66,7 @@ type Data = {
   settings: Settings & { updatedBy: string | null; updatedAt: string | null };
   nextRun: string | null;
   hosxpEnabled: boolean;
-  running: { id: string; targetDate: string } | null;
+  running: { id: string; targetDate: string; live: LiveProgress | null } | null;
   runs: Run[];
 };
 
@@ -99,6 +101,11 @@ const TRIGGER: Record<string, string> = { auto: "ตามเวลา", manual:
 function invalidIcdMessage(departments: string[], invalid: Record<string, string[]>): string | null {
   const bad = departments.flatMap((d) => invalid[d] ?? []);
   return bad.length > 0 ? `รหัส ICD-10 ไม่ถูกต้อง: ${bad.join(", ")}` : null;
+}
+
+/** เป้าของรอบที่บันทึกไว้แล้ว — null = ทุกราย */
+function runTargetOf(r: Run): number | null {
+  return runTarget({ departments: r.filters?.departments ?? [], quotas: quotasOf(r.filters?.rules ?? {}) }, r.visitLimit);
 }
 
 /** เป้าของรอบ เช่น "ตรวจทุกราย" / "เป้า 25 ราย" */
@@ -166,11 +173,11 @@ export default function AutoAuditSettings() {
     })();
   }, [load]);
 
-  // มีรอบกำลังรัน → ดึงความคืบหน้าทุก 5 วินาที
+  // มีรอบกำลังรัน → ดึงความคืบหน้าทุก 2 วินาที (animation ขยับตามขั้นที่ทำจริง)
   const running = !!data?.running;
   useEffect(() => {
     if (!running) return;
-    const t = setInterval(() => void load(false), 5000);
+    const t = setInterval(() => void load(false), 2000);
     return () => clearInterval(t);
   }, [running, load]);
 
@@ -617,6 +624,23 @@ export default function AutoAuditSettings() {
 
       </fieldset>
 
+      {/* ── ความคืบหน้าสดของรอบที่กำลังรัน ─────────────────────────────────── */}
+      {data.running
+        ? (() => {
+            const row = data.runs.find((r) => r.id === data.running?.id);
+            return (
+              <AutoAuditLive
+                key={data.running.id}
+                targetDate={data.running.targetDate}
+                live={data.running.live}
+                reviewed={row?.reviewed ?? 0}
+                failed={row?.failed ?? 0}
+                target={row ? runTargetOf(row) : null}
+              />
+            );
+          })()
+        : null}
+
       {/* ── ประวัติ ────────────────────────────────────────────────────────── */}
       <section className="card animate-rise overflow-hidden">
         <h2 className="card-title">
@@ -668,16 +692,19 @@ export default function AutoAuditSettings() {
                           </span>
                         </td>
                         <td>
-                          <span className={`badge ${st.cls}`}>{st.label}</span>
+                          <span className={`badge ${st.cls}`}>
+                            {r.status === "RUNNING" ? (
+                              <span className="size-2 rounded-full bg-brand-500 animate-pulse-ring" />
+                            ) : null}
+                            {st.label}
+                          </span>
+                          {r.status === "RUNNING" ? <RunProgress run={r} live={data.running?.id === r.id ? data.running.live : null} /> : null}
                         </td>
                         <td className="tabular text-right">
                           {r.reviewed}
                           <span className="block text-xs text-zinc-500">
                             {(() => {
-                              const t = runTarget(
-                                { departments: r.filters?.departments ?? [], quotas: quotasOf(r.filters?.rules ?? {}) },
-                                r.visitLimit,
-                              );
+                              const t = runTargetOf(r);
                               return t === null ? "ทุกราย · " : `เป้า ${t} · `;
                             })()}
                             จาก {r.found} ราย{r.skipped ? ` · ข้าม ${r.skipped}` : ""}
@@ -783,5 +810,32 @@ export default function AutoAuditSettings() {
         ) : null}
       </Modal>
     </div>
+  );
+}
+
+/** แถบความคืบหน้าเล็กในแถวประวัติของรอบที่กำลังรัน */
+function RunProgress({ run, live }: { run: Run; live: LiveProgress | null }) {
+  const done = live ? live.done : run.reviewed + run.failed;
+  const total = live?.phase === "auditing" ? live.total : runTargetOf(run);
+  return (
+    <span className="mt-1.5 block w-28">
+      <span className="relative block h-1.5 overflow-hidden rounded-full bg-zinc-100">
+        {total ? (
+          <span
+            className="block h-full rounded-full bg-gradient-to-r from-brand-500 to-cyan-glow transition-[width] duration-700"
+            style={{ width: `${Math.max(4, Math.min(100, (done / total) * 100))}%` }}
+          />
+        ) : (
+          <span
+            className="absolute top-0 h-full rounded-full bg-gradient-to-r from-brand-500 to-cyan-glow"
+            style={{ animation: "indeterminate 1.6s ease-in-out infinite" }}
+          />
+        )}
+      </span>
+      <span className="tabular mt-0.5 block text-xs text-zinc-500">
+        {total ? `${done} / ${total}` : `${done} ราย`}
+        {live?.current ? ` · VN ${live.current.vn}` : ""}
+      </span>
+    </span>
   );
 }

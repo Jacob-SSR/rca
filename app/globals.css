@@ -209,6 +209,13 @@ body {
   45%, 100% { transform: scaleX(1); }
 }
 
+/* จุดข้อมูลวิ่งตามเส้นไปหาขั้นที่กำลังทำ (ความคืบหน้าตรวจอัตโนมัติ) */
+@keyframes flow-dot {
+  0% { left: 0%; opacity: 0; }
+  15%, 85% { opacity: 1; }
+  100% { left: 100%; opacity: 0; }
+}
+
 /* วงแหวนคะแนน — เริ่มจากว่างแล้ววาดจนถึงค่าจริง */
 @keyframes ring-draw {
   from { stroke-dashoffset: var(--ring-c); }

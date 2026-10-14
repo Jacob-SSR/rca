@@ -10,7 +10,7 @@
 import Link from "next/link";
 import { Fragment, useEffect, useState } from "react";
 import Icon, { type IconName } from "@/app/components/Icon";
-import AuditMascot from "@/app/components/AuditMascot";
+import OfficeScene from "@/app/components/OfficeScene";
 import ShinyText from "@/app/components/reactbits/ShinyText";
 import { pctTone } from "@/app/components/ScoreBadge";
 import { formatThaiDateShort } from "@/lib/form/thai-date";
@@ -132,7 +132,7 @@ export default function AutoAuditLive({
 
         {preparing ? (
           <div className="flex flex-col items-center gap-2">
-            <AuditMascot step="lookup" className="w-[232px] max-w-full overflow-hidden rounded-2xl ring-1 ring-brand-100" />
+            <OfficeScene step="lookup" className="w-80 max-w-full rounded-2xl ring-1 ring-brand-100" />
             <p className="text-center text-zinc-600">{PHASE_TEXT[live.phase]}</p>
           </div>
         ) : null}
@@ -178,13 +178,13 @@ export default function AutoAuditLive({
             key={current.vn}
             className="flex animate-rise flex-col items-center gap-4 rounded-2xl bg-gradient-to-r from-brand-50 to-white p-4 ring-1 ring-brand-100 sm:flex-row"
           >
-            {/* น้องผู้ตรวจทำท่าตามขั้นที่ทำอยู่ — กระโดดดีใจทุกครั้งที่ตรวจเสร็จหนึ่งราย */}
-            <AuditMascot
+            {/* ฉากออฟฟิศ — ฟองความคิดบอกขั้นที่ทำอยู่ · ✓ +1 ทุกครั้งที่ตรวจเสร็จหนึ่งราย */}
+            <OfficeScene
               step={current.step}
               cheer={done}
               job={current.vn}
               pending={live ? Math.max(0, live.total - live.done - 1) : 0}
-              className="w-full max-w-[348px] shrink-0 overflow-hidden rounded-2xl ring-1 ring-brand-100 sm:w-[232px]"
+              className="w-full max-w-md shrink-0 rounded-2xl ring-1 ring-brand-100 sm:w-80"
             />
             <div className="w-full min-w-0 flex-1">
               <p className="text-sm text-zinc-500">

@@ -1,8 +1,8 @@
 "use client";
 
-// วิดเจ็ตมุมขวาล่างทุกหน้า — ห้องทำงานพิกเซลของน้องผู้ตรวจ บอกว่าตอนนี้มีรอบตรวจอัตโนมัติทำงานอยู่ไหม
-//   มีรอบกำลังรัน → น้องเดินหยิบแฟ้มมาทำ ทำท่าตามขั้นจริง + ตัวนับ/แถบคืบหน้า
-//   ไม่มี          → น้องนั่งชิวจิบกาแฟ
+// วิดเจ็ตมุมขวาล่างทุกหน้า — ฉากออฟฟิศพิกเซลของน้องผู้ตรวจ บอกว่าตอนนี้มีรอบตรวจอัตโนมัติทำงานอยู่ไหม
+//   มีรอบกำลังรัน → ฟองความคิดบอกขั้นที่ทำ แฟ้มลอยมาทุกเคสใหม่ + ตัวนับ/แถบคืบหน้า
+//   ไม่มี          → ฟองความคิดเป็นแก้วกาแฟ (พักอยู่)
 // กดแล้วไปหน้าตรวจอัตโนมัติ · ย่อเหลือปุ่มกลมได้ (จำไว้ในเครื่องนี้)
 // ไม่แสดงในหน้าตรวจอัตโนมัติเอง เพราะหน้านั้นมีการ์ดความคืบหน้าตัวใหญ่อยู่แล้ว
 //
@@ -11,7 +11,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import AuditMascot from "@/app/components/AuditMascot";
+import OfficeScene from "@/app/components/OfficeScene";
 import Icon from "@/app/components/Icon";
 import type { LiveProgress } from "@/lib/auto-audit/progress";
 
@@ -100,17 +100,18 @@ export default function AutoAuditWidget() {
 
   return (
     <aside
-      className="fixed right-3 bottom-3 z-30 w-[174px] animate-rise overflow-hidden rounded-2xl bg-white shadow-xl ring-1 ring-brand-200 sm:w-[232px]"
+      className="fixed right-3 bottom-3 z-30 w-[204px] animate-rise overflow-hidden rounded-2xl bg-white shadow-xl ring-1 ring-brand-200 sm:w-[288px]"
       aria-label="สถานะตรวจอัตโนมัติ"
     >
       <Link href="/settings/auto-audit" className="block transition hover:brightness-105" title="ไปหน้าตรวจอัตโนมัติ">
-        <AuditMascot
+        <OfficeScene
           idle={!run}
           step={live?.current?.step ?? "lookup"}
           job={live?.current?.vn}
           pending={pending}
           cheer={done}
-          className="block w-full"
+          compact
+          className="w-full"
         />
         <div className="px-3 py-2">
           {run ? (

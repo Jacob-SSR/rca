@@ -410,6 +410,7 @@ test("ร้อยละ 5 ปัดขึ้น ไม่ต่ำกว่า 
   assert.equal(guidelineSampleSize(801), 41); // 40.05 → 41
   assert.equal(guidelineSampleSize(1200), 60);
   assert.equal(guidelineSampleSize(25), 25); // มีไม่ถึง 40 → ทุกคน
+  assert.equal(guidelineSampleSize(20), 20);
   assert.equal(guidelineSampleSize(0), 0);
 });
 

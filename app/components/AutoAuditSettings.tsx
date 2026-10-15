@@ -563,7 +563,7 @@ export default function AutoAuditSettings() {
                   onChange={() => patch({ maxVisits: GUIDELINE_VISITS })}
                 />
                 ตามแนวทาง: สุ่ม {GUIDELINE.percent}% ของผู้ป่วยที่มารับบริการ ไม่ต่ำกว่า {GUIDELINE.min} ราย
-                <span className="text-sm text-zinc-500">(แนะนำ)</span>
+                <span className="text-sm text-zinc-500">(แนะนำ · มีไม่ถึง {GUIDELINE.min} ราย ตรวจเท่าที่มี)</span>
               </label>
               <label className="flex items-center gap-2.5 text-base">
                 <input

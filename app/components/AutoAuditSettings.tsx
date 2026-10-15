@@ -31,12 +31,13 @@ import {
   runTarget,
   settingsSchema,
   visitLimitOf,
+  type StratumRow,
   type VisitLimit,
   type AutoAuditSettings as Settings,
   type TargetDay,
 } from "@/lib/auto-audit/schedule";
 
-type RunItem = { vn: string; caseId?: string; percentage?: number | null; error?: string };
+type RunItem = { vn: string; stratum?: string; caseId?: string; percentage?: number | null; error?: string };
 
 type Run = {
   id: string;
@@ -49,6 +50,7 @@ type Run = {
   failed: number;
   avgPercent: string | null;
   results: RunItem[] | null;
+  strata: StratumRow[] | null;
   error: string | null;
   visitLimit: number | null;
   resumedFrom: string | null;
@@ -700,7 +702,7 @@ export default function AutoAuditSettings() {
                 {data.runs.map((r) => {
                   const st = STATUS[r.status] ?? { label: r.status, cls: "" };
                   const isOpen = open === r.id;
-                  const expandable = (r.results?.length ?? 0) > 0 || !!r.error;
+                  const expandable = (r.results?.length ?? 0) > 0 || !!r.error || (r.strata?.length ?? 0) > 0;
                   return (
                     <Fragment key={r.id}>
                       {/* คลิกตรงไหนของแถวก็เปิด/ปิดรายละเอียด — ปุ่มท้ายแถวไว้สำหรับคีย์บอร์ด */}
@@ -781,6 +783,7 @@ export default function AutoAuditSettings() {
                                 {r.error}
                               </p>
                             ) : null}
+                            {r.strata?.length ? <StrataTable rows={r.strata} results={r.results ?? []} /> : null}
                             {/* แต่ละรายกดได้ทั้งแถว → หน้าเคส */}
                             <ul className="divide-y divide-zinc-100 overflow-hidden rounded-xl bg-white text-sm ring-1 ring-zinc-200">
                               {(r.results ?? []).map((it) => (
@@ -869,6 +872,53 @@ export default function AutoAuditSettings() {
 }
 
 /** แถบความคืบหน้าเล็กในแถวประวัติของรอบที่กำลังรัน */
+/** สรุปการสุ่มแบบแบ่งชั้นของรอบ: ต่อรหัสโรคหลัก เป้าตามสัดส่วน / มีจริง / สุ่มได้ / ตรวจสำเร็จ */
+function StrataTable({ rows, results }: { rows: StratumRow[]; results: RunItem[] }) {
+  const reviewed = (key: string) => results.filter((it) => it.stratum === key && it.caseId && !it.error).length;
+  const sum = (f: (r: StratumRow) => number) => rows.reduce((a, r) => a + f(r), 0);
+  const totalReviewed = rows.reduce((a, r) => a + reviewed(r.key), 0);
+  return (
+    <div className="mb-3 overflow-x-auto rounded-xl bg-white ring-1 ring-zinc-200">
+      <p className="px-4 pt-3 text-sm font-medium text-zinc-700">
+        Stratified Random Sampling ตามรหัสโรคหลัก
+        <span className="font-normal text-zinc-500"> · รหัสไหนมีไม่พอ ส่วนที่ขาดเกลี่ยไปรหัสอื่น</span>
+      </p>
+      <table className="table text-sm">
+        <thead>
+          <tr>
+            <th>รหัส</th>
+            <th className="text-right">สัดส่วน</th>
+            <th className="text-right">เป้า</th>
+            <th className="text-right">มีจริง</th>
+            <th className="text-right">สุ่มได้</th>
+            <th className="text-right">ตรวจสำเร็จ</th>
+          </tr>
+        </thead>
+        <tbody className="tabular">
+          {rows.map((r) => (
+            <tr key={r.key} className={r.available === 0 && r.picked === 0 ? "text-zinc-400" : ""}>
+              <td>{r.label}</td>
+              <td className="text-right">{r.percent}%</td>
+              <td className="text-right">{r.target.toFixed(1)}</td>
+              <td className="text-right">{r.available}</td>
+              <td className={`text-right ${r.picked < Math.floor(r.target) ? "text-warn-600" : ""}`}>{r.picked}</td>
+              <td className="text-right">{reviewed(r.key)}</td>
+            </tr>
+          ))}
+          <tr className="font-medium">
+            <td>รวม</td>
+            <td className="text-right">100%</td>
+            <td className="text-right">{sum((r) => r.picked)}</td>
+            <td className="text-right">{sum((r) => r.available)}</td>
+            <td className="text-right">{sum((r) => r.picked)}</td>
+            <td className="text-right">{totalReviewed}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function RunProgress({ run, live }: { run: Run; live: LiveProgress | null }) {
   const done = live ? live.done : run.reviewed + run.failed;
   const total = live?.phase === "auditing" ? live.total : runTargetOf(run);

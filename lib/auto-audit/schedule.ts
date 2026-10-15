@@ -424,6 +424,31 @@ export function stratifiedSample<T>(
   return ICD_STRATA.flatMap((s) => sample(groups[s.key], counts[s.key], rand));
 }
 
+/** หนึ่งแถวของสรุปการสุ่มแบบแบ่งชั้น — เก็บไว้ที่รอบ (AutoAuditRun.strata) แสดงในประวัติ */
+export type StratumRow = {
+  key: StratumKey;
+  label: string;
+  percent: number;
+  /** เป้าตามสัดส่วน = จำนวนที่สุ่มทั้งรอบ × ร้อยละ (ทศนิยม 1 ตำแหน่ง) */
+  target: number;
+  /** ผู้ป่วยที่มีให้สุ่มในรหัสนี้ */
+  available: number;
+  /** สุ่มได้จริง — ชั้นที่มีไม่พอ ส่วนที่ขาดไปอยู่ชั้นอื่น */
+  picked: number;
+};
+
+export function strataSummary<T>(pool: T[], picked: T[], stratum: (item: T) => StratumKey): StratumRow[] {
+  const count = (items: T[], k: StratumKey) => items.filter((x) => stratum(x) === k).length;
+  return ICD_STRATA.map((s) => ({
+    key: s.key,
+    label: s.label,
+    percent: s.percent,
+    target: Math.round(picked.length * s.percent) / 100,
+    available: count(pool, s.key),
+    picked: count(picked, s.key),
+  }));
+}
+
 /** ฟอร์มที่มีอยู่แล้วของ visit หนึ่ง — ใช้ตัดสินว่าต้องตรวจ visit นั้นอีกไหม */
 export type ExistingForm = {
   id: string;
@@ -466,7 +491,7 @@ export function planVisits<V extends { vn: string; hn?: string; depcode?: string
     stratum?: (v: V) => StratumKey;
   } = {},
   rand: () => number = Math.random,
-): { todo: Array<V & { reuseFormId?: string }>; skipped: number } {
+): { todo: Array<V & { reuseFormId?: string }>; skipped: number; candidates: V[] } {
   const byVn = new Map<string, ExistingForm[]>();
   for (const f of forms) {
     if (!f.hosxpVisitRef) continue;
@@ -504,5 +529,5 @@ export function planVisits<V extends { vn: string; hn?: string; depcode?: string
     ),
     ...(limit === null ? shared : pick(shared, limit)),
   ];
-  return { todo, skipped: visits.length - candidates.length };
+  return { todo, skipped: visits.length - candidates.length, candidates };
 }

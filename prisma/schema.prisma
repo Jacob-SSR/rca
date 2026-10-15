@@ -70,7 +70,7 @@ model Case {
 
   /// ใครเป็นคนสร้างเคสนี้ — username จากตาราง users ของ ppc-hos-10667
   /// ใช้ตัดสินสิทธิ์แก้/ลบ: เจ้าของเท่านั้น (หรือคนที่มีสิทธิ์ manage)
-  createdBy String? @db.VarChar(100)
+  createdBy     String? @db.VarChar(100)
   /// ชื่อที่แสดง — เก็บซ้ำไว้เพื่อไม่ต้อง join ข้ามเซิร์ฟเวอร์ทุกครั้งที่แสดงรายการ
   createdByName String? @db.VarChar(200)
 
@@ -364,15 +364,18 @@ model AutoAuditRun {
   /// คะแนนเฉลี่ย (%) ของรอบนี้ — null ถ้ายังไม่มีเคสที่ตรวจสำเร็จ
   avgPercent Decimal? @db.Decimal(5, 2)
 
-  /// เคสที่สร้างในรอบนี้ [{ caseId, vn, percentage, error }]
+  /// เคสที่สร้างในรอบนี้ [{ caseId, vn, depcode, stratum, percentage, error }]
   results Json?
+  /// สรุปการสุ่มแบบแบ่งชั้นตามรหัสโรคหลัก
+  ///   [{ key, label, percent, target: เป้าตามสัดส่วน, available: มีจริง, picked: สุ่มได้ }]
+  strata  Json?
   error   String? @db.Text
 
-  startedBy  String?   @db.VarChar(100)
+  startedBy     String?   @db.VarChar(100)
   /// ชื่อที่แสดงของคนกดรัน — ใช้เป็น "ผู้สร้าง" ของเคสที่รอบนี้สร้าง
-  startedByName String? @db.VarChar(200)
-  startedAt  DateTime  @default(now())
-  finishedAt DateTime?
+  startedByName String?   @db.VarChar(200)
+  startedAt     DateTime  @default(now())
+  finishedAt    DateTime?
 
   @@index([startedAt])
   @@index([targetDate])

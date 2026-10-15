@@ -34,6 +34,8 @@ import {
   savedRulesSchema,
   guidelineSampleSize,
   stratumOf,
+  strataSummary,
+  type StratumKey,
   type RunFilters,
   runFiltersSchema,
   runTarget,
@@ -50,6 +52,8 @@ export type RunResultItem = {
   vn: string;
   /** แผนกของ visit — รอบ resume ใช้นับว่าแต่ละแผนกตรวจครบจำนวนหรือยัง */
   depcode?: string;
+  /** ชั้นของการสุ่ม (กลุ่มรหัสโรคหลัก) — ไว้นับว่าแต่ละรหัสตรวจไปกี่ราย */
+  stratum?: StratumKey;
   caseId?: string;
   percentage?: number | null;
   error?: string;
@@ -293,6 +297,7 @@ export async function runAutoAudit(opts: {
     const quotas = quotasOf(filters.rules);
     const sampling = limitSetting !== null || Object.keys(quotas).length > 0;
     const diagOf = needsIcd(filters.rules) || sampling ? await opdDiagByDate(targetDate) : null;
+    const stratumOfVisit = (v: { vn: string }) => stratumOf(diagOf?.get(v.vn)?.principal);
     tracker.phase("planning");
     const visits = dayVisits.filter(
       (v) =>
@@ -329,9 +334,18 @@ export async function runAutoAudit(opts: {
         completed: f.documents.some((d) => d.reviews.length > 0),
       })),
       visitLimit,
-      { quotas, sameDay: dayVisits, stratum: (v) => stratumOf(diagOf?.get(v.vn)?.principal) },
+      { quotas, sameDay: dayVisits, stratum: stratumOfVisit },
     );
     skipped = plan.skipped;
+    // สรุปการแบ่งชั้นไว้แสดงในประวัติ — ไม่ได้อ่านรหัสวินิจฉัย (ตรวจทุกราย) ก็ไม่มีอะไรให้สรุป
+    if (diagOf) {
+      await prisma.autoAuditRun.update({
+        where: { id: run.id },
+        data: {
+          strata: strataSummary(plan.candidates, plan.todo, stratumOfVisit) as unknown as Prisma.InputJsonValue,
+        },
+      });
+    }
 
     const liveOf = (v: (typeof plan.todo)[number]): LiveVisit => ({
       vn: v.vn,
@@ -349,7 +363,7 @@ export async function runAutoAudit(opts: {
       const lv = liveOf(v);
       tracker.start(lv, v.reuseFormId ? "document" : "lookup");
       const result = await auditVisit(v, targetDate, owner, tracker.step);
-      results.push(result);
+      results.push(diagOf ? { ...result, stratum: stratumOfVisit(v) } : result);
       tracker.finish({ ...lv, caseId: result.caseId, percentage: result.percentage, error: result.error });
 
       // โควตาหมดกลางรอบ → หยุดเลย visit ที่เหลือจะโดน 429 ทุกตัวอยู่ดี

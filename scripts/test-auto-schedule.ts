@@ -18,6 +18,7 @@ import {
   allocateStrata,
   stratifiedSample,
   stratumOf,
+  strataSummary,
   pruneRules,
   quotasOf,
   runFiltersSchema,
@@ -394,6 +395,18 @@ test("stratifiedSample ไม่สุ่มซ้ำ และสุ่มจ�
   // มีแค่ Z (20) กับ J (4) → Z 8.33 · J 1.67 → ปัดเศษได้ Z 8 · J 2
   assert.equal(got.filter((x) => x.icd === "Z00").length, 8);
   assert.equal(got.filter((x) => x.icd === "J06").length, 2);
+});
+
+test("สรุปการแบ่งชั้น: เป้าตามสัดส่วนของจำนวนที่สุ่ม · มีจริง · สุ่มได้", () => {
+  const pool = [...Array(10)].map((_, i) => ({ icd: i < 1 ? "A09" : i < 4 ? "J06" : "Z00" }));
+  const picked = pool.slice(0, 5); // A 1 · J 3 · Z 1
+  const rows = strataSummary(pool, picked, (x) => stratumOf(x.icd));
+  const row = (k: string) => rows.find((r) => r.key === k)!;
+  assert.equal(rows.length, 12);
+  assert.deepEqual(row("AB"), { key: "AB", label: "A,B", percent: 8, target: 0.4, available: 1, picked: 1 });
+  assert.equal(row("J").picked, 3);
+  assert.equal(row("Z").available, 6);
+  assert.equal(row("Z").target, 1);
 });
 
 console.log("\n── จำนวนตัวอย่างตามแนวทาง (5% ไม่ต่ำกว่า 40) ──");

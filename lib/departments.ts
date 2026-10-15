@@ -105,3 +105,13 @@ export function opdDepartmentLabel(code: string | null | undefined): string | nu
   const c = (code ?? "").trim();
   return OPD_DEPARTMENTS.find((d) => d.code === c)?.label ?? null;
 }
+
+/**
+ * ห้องทันตกรรม — ช่องคำวินิจฉัยใช้รายการทันตกรรม (dt_list) แทน ovst_doctor_diag
+ * ดูทั้งรหัสและชื่อ เผื่อ HOSxP เพิ่มห้องฟันรหัสใหม่ (ชื่อยังมีคำว่า "ทันต")
+ */
+export const DENTAL_DEPCODES: readonly string[] = ["019"];
+
+export function isDentalDepartment(code: string | null | undefined, name?: string | null): boolean {
+  return DENTAL_DEPCODES.includes((code ?? "").trim()) || /ทันต/.test(name ?? "");
+}

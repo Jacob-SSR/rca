@@ -224,6 +224,50 @@ export async function columnsOf(table: string): Promise<Set<string>> {
   return cols;
 }
 
+const byColumnCache = new Map<string, string>();
+
+/**
+ * หาตารางจากชื่อคอลัมน์ — สำหรับตารางที่ชื่อต่างกันไปตามเวอร์ชัน HOSxP
+ * แต่คอลัมน์ที่ต้องใช้ชื่อคงที่ (เช่น รายการทันตกรรม `dt_list` ที่ผูกกับ `vn`)
+ * คืนชื่อเต็ม `db`.`table` เลือกฐานตาม HOSXP_DB_NAME ก่อน แล้วตามจำนวนแถว (เหมือน qualify)
+ */
+export async function qualifyByColumns(columns: string[]): Promise<string> {
+  const cols = [...new Set(columns.map((c) => c.toLowerCase()))];
+  if (cols.length === 0 || !cols.every((c) => SAFE_IDENT.test(c))) {
+    throw new Error(`ชื่อคอลัมน์ไม่ถูกต้อง: ${columns.join(", ")}`);
+  }
+  const key = cols.join(",");
+  const hit = byColumnCache.get(key);
+  if (hit) return hit;
+
+  const preferred = hosxpConfig().database ?? "";
+  const rows = await hosxpSelect<RowDataPacket & { db: unknown; t: unknown }>(
+    `SELECT c.table_schema AS db, c.table_name AS t
+       FROM information_schema.columns c
+       JOIN information_schema.tables tb
+         ON tb.table_schema = c.table_schema AND tb.table_name = c.table_name
+      WHERE LOWER(c.column_name) IN (${cols.map(() => "?").join(", ")})
+      GROUP BY c.table_schema, c.table_name, tb.table_rows
+     HAVING COUNT(DISTINCT LOWER(c.column_name)) = ?
+      ORDER BY (c.table_schema = ?) DESC, COALESCE(tb.table_rows, 0) DESC, c.table_name
+      LIMIT 1`,
+    [...cols, cols.length, preferred],
+  );
+
+  const db = String(rows[0]?.db ?? "");
+  const table = String(rows[0]?.t ?? "");
+  if (!db || !table) {
+    throw new Error(`ไม่พบตารางที่มีคอลัมน์ ${cols.join(", ")} บนเครื่อง HOSxP (ตรวจสิทธิ์ด้วย npm run check:conn)`);
+  }
+  if (!SAFE_IDENT.test(db) || !SAFE_IDENT.test(table)) {
+    throw new Error(`ชื่อตารางไม่ถูกต้อง: ${db}.${table}`);
+  }
+
+  const full = `\`${db}\`.\`${table}\``;
+  byColumnCache.set(key, full);
+  return full;
+}
+
 /** เลือกคอลัมน์แรกที่มีอยู่จริงจากรายชื่อที่เป็นไปได้ — ไม่มีสักตัวคืน null */
 export function pickColumn(cols: Set<string>, candidates: string[]): string | null {
   for (const c of candidates) if (cols.has(c.toLowerCase())) return c;

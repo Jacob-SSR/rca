@@ -261,7 +261,7 @@ cast ทุกค่าที่ออกจาก DB
 |---|---|
 | `serviceDate` / `serviceTime` | `ovst.vstdate`, `ovst.vsttime` |
 | `chiefComplaint` | `opdscreen.cc` |
-| `diagnosis` | `ovst_doctor_diag.diag_text` (ข้อความ) — `ovstdiag.icd10` ใช้แค่แสดงประกอบ |
+| `diagnosis` | `ovst_doctor_diag.diag_text` (ข้อความ) — ห้องทันตกรรมใช้ `dt_list` แทน · `ovstdiag.icd10` ใช้แค่แสดงประกอบ |
 | `treatment` | `opitemrece` + `drugitems` / `nondrugitems` |
 | `labResult` | `lab_head` → `lab_order` → `lab_items` |
 | `department` | `kskdepartment.department` ผ่าน `ovst.main_dep` |

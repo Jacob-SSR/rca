@@ -6,7 +6,8 @@ import assert from "node:assert/strict";
 import { autoAuditOpd, countExamSystems, diagnosisFacts } from "@/lib/review/auto-audit";
 import { validateRecordForm } from "@/lib/form/validate";
 import { blankFormValues } from "@/lib/form/schema";
-import { mergeDiagText, normalizeVisitDate } from "@/lib/hosxp/visit";
+import { formatDentalList, mergeDiagText, normalizeVisitDate } from "@/lib/hosxp/visit";
+import { isDentalDepartment } from "@/lib/departments";
 import { formatDuration } from "@/app/components/TimelineChart";
 import { liveProgress, trackRun } from "@/lib/auto-audit/progress";
 
@@ -114,6 +115,21 @@ test("ปี พ.ศ. แปลงเป็น ค.ศ., วันที่ไ�
 
 test("รวม diag_text สองที่ ตัดบรรทัดซ้ำ/ค่าว่าง", () => {
   assert.equal(mergeDiagText("Acute pharyngitis", "acute  pharyngitis\nFever", null, "NULL"), "Acute pharyngitis\nFever");
+});
+
+test("ห้องทันตกรรม: รายการ dt_list บรรทัดละรายการ", () => {
+  assert.equal(
+    formatDentalList("ถ่ายภาพรังสีภายในช่องปาก(Pa),รักษาคลองรากฟัน-ฟันหน้า", "ถอนฟันแท้", null),
+    "ถ่ายภาพรังสีภายในช่องปาก(Pa)\nรักษาคลองรากฟัน-ฟันหน้า\nถอนฟันแท้",
+  );
+  assert.equal(formatDentalList("", "NULL", null), "");
+  assert.equal(formatDentalList("ถอนฟันแท้,ถอนฟันแท้"), "ถอนฟันแท้");
+});
+
+test("รู้ว่าเป็นห้องทันตกรรมจากรหัส/ชื่อแผนก", () => {
+  assert.equal(isDentalDepartment("019", ""), true);
+  assert.equal(isDentalDepartment("", "ห้องทันตกรรม 2"), true);
+  assert.equal(isDentalDepartment("001", "คลินิกตรวจโรคทั่วไป"), false);
 });
 
 test("ระยะเวลาภาษาไทย", () => {

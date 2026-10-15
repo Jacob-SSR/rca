@@ -18,6 +18,8 @@
 //             ⚠️ ไม่มี age_y/age_m — ต้องคิดอายุจาก patient.birthday
 // ovst_doctor_diag  vn diag_text  ← คำวินิจฉัยที่หมอพิมพ์เองในหน้าจอแพทย์
 //             (ใช้ตารางเดียวกับรายงาน incomplete-visit ของ ppc-hos-10667)
+// (ตารางทันตกรรม)  vn dt_list dental_note …  ← ห้องทันตกรรมใช้ dt_list เป็นคำวินิจฉัย
+//             หาตารางจากคอลัมน์ vn + dt_list (คั่นรายการด้วยจุลภาค)
 // opdscreen   cc cc_duration hpi pmh fh sh ros found_allergy pe pe_*_text
 //             bps bpd pulse rr temperature bw height
 // opitemrece  vn icode qty drugusage sp_use
@@ -30,7 +32,8 @@
 import type { RowDataPacket } from "mysql2";
 import { hosxpSelect } from "@/lib/hosxp/client";
 import { isHosxpEnabled } from "@/lib/hosxp/env";
-import { columnsOf, pickColumn, qualify } from "@/lib/hosxp/queries";
+import { columnsOf, pickColumn, qualify, qualifyByColumns } from "@/lib/hosxp/queries";
+import { isDentalDepartment } from "@/lib/departments";
 
 type Row = RowDataPacket & Record<string, unknown>;
 
@@ -425,6 +428,26 @@ async function findDoctorDiagText(vns: string[]): Promise<Map<string, string>> {
     out.set(vn, mergeDiagText(out.get(vn), r.diag_text));
   }
   return out;
+}
+
+/**
+ * รายการทันตกรรม (dt_list) เป็นบรรทัดละรายการ
+ * HOSxP เก็บคั่นด้วยจุลภาค เช่น "ถอนฟันแท้,เวชศาสตร์ช่องปาก"
+ * (ชื่อรายการในไฟล์จริงไม่มีจุลภาคในตัว — แยกได้ปลอดภัย)
+ */
+export function formatDentalList(...lists: unknown[]): string {
+  return mergeDiagText(...lists.map((l) => clean(l).split(",").join("\n")));
+}
+
+/**
+ * คำวินิจฉัยของห้องทันตกรรม = รายการทันตกรรมใน dt_list ของ VN นี้
+ * หาตารางจากคอลัมน์ vn + dt_list (ชื่อตารางไม่ได้ยืนยันจากไฟล์จริง) — ผู้เรียกห่อด้วย soft()
+ */
+async function findDentalList(vn: string): Promise<string> {
+  if (vn === "") return "";
+  const table = await qualifyByColumns(["vn", "dt_list"]);
+  const rows = await hosxpSelect<Row>(`SELECT dt_list FROM ${table} WHERE vn = ? LIMIT 20`, [vn]);
+  return formatDentalList(...rows.map((r) => r.dt_list));
 }
 
 /**
@@ -826,7 +849,9 @@ export async function lookupVisit(opts: {
   // HN ของ visit ที่อ่านได้จริงมาก่อน — กันกรณีเลือก VN แล้ว HN ในช่องเป็นของคนอื่น
   const patientHn = found.hn !== "" ? found.hn : id;
 
-  const [patient, screen, drugs, lab, xray, procedures, doctorDiag] = await Promise.all([
+  const dental = isDentalDepartment(found.depcode, found.department);
+
+  const [patient, screen, drugs, lab, xray, procedures, diagnosisText] = await Promise.all([
     soft(
       "ข้อมูลผู้ป่วย (patient)",
       () => findPatient(patientHn, found.date),
@@ -839,13 +864,17 @@ export async function lookupVisit(opts: {
     soft("ผลเอกซเรย์ (xray_head)", () => findXray(found.vn), "", issues),
     // หัตถการไม่ใช่ทุกโรงพยาบาลที่บันทึก ไม่พบก็ไม่ต้องรายงานว่าพัง
     soft("หัตถการ (doctor_operation)", () => findProcedures(found.vn), ""),
-    // คำวินิจฉัยตัวจริง — ตารางเดียวกับที่หน้า EMR ของ HOSxP อ่าน
-    soft(
-      "คำวินิจฉัยของแพทย์ (ovst_doctor_diag)",
-      () => findDoctorDiagText([found.vn]).then((m) => m.get(found.vn) ?? ""),
-      "",
-      issues,
-    ),
+    // คำวินิจฉัย — ใช้แหล่งเดียว ไม่ถอยไปแหล่งอื่น ช่องว่างจึงแปลว่าไม่ได้คีย์จริง
+    //   ห้องทันตกรรม → รายการทันตกรรม (dt_list)
+    //   ห้องอื่น     → diag_text ที่หมอพิมพ์เอง (ovst_doctor_diag) ตารางเดียวกับหน้า EMR ของ HOSxP
+    dental
+      ? soft("รายการทันตกรรม (dt_list)", () => findDentalList(found.vn), "", issues)
+      : soft(
+          "คำวินิจฉัยของแพทย์ (ovst_doctor_diag)",
+          () => findDoctorDiagText([found.vn]).then((m) => m.get(found.vn) ?? ""),
+          "",
+          issues,
+        ),
   ]);
 
   // ผลชันสูตรรวมแล็บกับเอกซเรย์ไว้ช่องเดียว ตามที่เกณฑ์ สนย. นับรวมกัน
@@ -854,10 +883,8 @@ export async function lookupVisit(opts: {
   // การรักษา = ยา + หัตถการ ตามที่เกณฑ์ TREATMENT ระบุไว้
   const treatment = [drugs, procedures].filter((s) => s !== "").join("\n");
 
-  // ช่องคำวินิจฉัยใช้ diag_text ที่หมอพิมพ์เองจาก ovst_doctor_diag อย่างเดียว
   // ไม่ถอยไปใช้ ovst.diag_text หรือชื่อโรค/รหัสจาก ovstdiag+icd101 — ช่องว่าง
-  // จึงแปลว่าหมอไม่ได้คีย์คำวินิจฉัยจริง และจะขึ้นในรายการ "ยังไม่มีข้อมูล"
-  const diagnosisText = doctorDiag;
+  // จึงแปลว่าไม่ได้คีย์คำวินิจฉัยจริง และจะขึ้นในรายการ "ยังไม่มีข้อมูล"
 
   const values: Record<string, string> = {
     hn: patientHn,

@@ -18,8 +18,8 @@
 //             ⚠️ ไม่มี age_y/age_m — ต้องคิดอายุจาก patient.birthday
 // ovst_doctor_diag  vn diag_text  ← คำวินิจฉัยที่หมอพิมพ์เองในหน้าจอแพทย์
 //             (ใช้ตารางเดียวกับรายงาน incomplete-visit ของ ppc-hos-10667)
-// (ตารางทันตกรรม)  vn dt_list dental_note …  ← ห้องทันตกรรมใช้ dt_list เป็นคำวินิจฉัย
-//             หาตารางจากคอลัมน์ vn + dt_list (คั่นรายการด้วยจุลภาค)
+// dt_list     vn dt_list dental_note …  ← ห้องทันตกรรมใช้ dt_list.dt_list เป็นคำวินิจฉัย
+//             (ชื่อตารางกับคอลัมน์ซ้ำกัน · คั่นรายการด้วยจุลภาค)
 // opdscreen   cc cc_duration hpi pmh fh sh ros found_allergy pe pe_*_text
 //             bps bpd pulse rr temperature bw height
 // opitemrece  vn icode qty drugusage sp_use
@@ -32,7 +32,7 @@
 import type { RowDataPacket } from "mysql2";
 import { hosxpSelect } from "@/lib/hosxp/client";
 import { isHosxpEnabled } from "@/lib/hosxp/env";
-import { columnsOf, pickColumn, qualify, qualifyByColumns } from "@/lib/hosxp/queries";
+import { columnsOf, pickColumn, qualify } from "@/lib/hosxp/queries";
 import { isDentalDepartment } from "@/lib/departments";
 
 type Row = RowDataPacket & Record<string, unknown>;
@@ -441,11 +441,11 @@ export function formatDentalList(...lists: unknown[]): string {
 
 /**
  * คำวินิจฉัยของห้องทันตกรรม = รายการทันตกรรมใน dt_list ของ VN นี้
- * หาตารางจากคอลัมน์ vn + dt_list (ชื่อตารางไม่ได้ยืนยันจากไฟล์จริง) — ผู้เรียกห่อด้วย soft()
+ * ตาราง dt_list คอลัมน์ dt_list (ชื่อซ้ำกัน) — ผู้เรียกห่อด้วย soft()
  */
 async function findDentalList(vn: string): Promise<string> {
   if (vn === "") return "";
-  const table = await qualifyByColumns(["vn", "dt_list"]);
+  const table = await qualify("dt_list");
   const rows = await hosxpSelect<Row>(`SELECT dt_list FROM ${table} WHERE vn = ? LIMIT 20`, [vn]);
   return formatDentalList(...rows.map((r) => r.dt_list));
 }

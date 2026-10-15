@@ -14,6 +14,10 @@ import {
   parseIcdList,
   passesDepartmentIcd,
   planVisits,
+  ICD_STRATA,
+  allocateStrata,
+  stratifiedSample,
+  stratumOf,
   pruneRules,
   quotasOf,
   runFiltersSchema,
@@ -312,6 +316,82 @@ test("เลขที่เคส = HN-วันที่มา (พ.ศ.) · �
   assert.equal(caseNumberBase(" 690000258 ", null, new Date("2026-10-07T03:00:00Z")), "690000258-25691007");
   assert.equal(caseNumberBase("", "2026-05-06"), null);
   assert.equal(caseNumberBase("69/123", "2026-05-06"), null);
+});
+
+console.log("\n── Stratified Random Sampling ตามรหัสโรคหลัก ──");
+
+const plenty = Object.fromEntries(ICD_STRATA.map((s) => [s.key, 1000])) as Parameters<typeof allocateStrata>[0];
+const sum = (r: Record<string, number>) => Object.values(r).reduce((a, b) => a + b, 0);
+
+test("สัดส่วนรวมเป็นร้อยละ 100", () => {
+  assert.equal(ICD_STRATA.reduce((a, s) => a + s.percent, 0), 100);
+});
+
+test("จัดชั้นด้วยรหัสโรคหลัก — A,B / D50-D89 / ตัวอักษร / อื่นๆ", () => {
+  assert.equal(stratumOf("A09"), "AB");
+  assert.equal(stratumOf("B35.4"), "AB");
+  assert.equal(stratumOf("D509"), "D50-D89");
+  assert.equal(stratumOf("D899"), "D50-D89");
+  assert.equal(stratumOf("D48"), "OTHER"); // D ที่ไม่อยู่ในช่วง
+  assert.equal(stratumOf("D90"), "OTHER");
+  assert.equal(stratumOf("e119"), "E");
+  assert.equal(stratumOf("J029"), "J");
+  assert.equal(stratumOf("Z000"), "Z");
+  assert.equal(stratumOf("H10"), "OTHER");
+  assert.equal(stratumOf(null), "OTHER");
+  assert.equal(stratumOf(""), "OTHER");
+});
+
+test("100 ราย มีครบทุกชั้น → ได้ตามสัดส่วนพอดี", () => {
+  const r = allocateStrata(plenty, 100);
+  assert.deepEqual(
+    r,
+    Object.fromEntries(ICD_STRATA.map((s) => [s.key, s.percent])),
+  );
+});
+
+test("จำนวนที่ไม่ลงตัว → ปัดเศษแล้วรวมได้เท่าที่ขอพอดี", () => {
+  for (const n of [1, 7, 20, 40, 63]) assert.equal(sum(allocateStrata(plenty, n)), n);
+  const r = allocateStrata(plenty, 40);
+  assert.equal(r.Z, 8);
+  assert.equal(r.OTHER, 8);
+  assert.equal(r.AB, 3); // 3.2
+  assert.equal(r.E, 2); // 1.6
+});
+
+test("ชั้นที่มีไม่พอ → เกลี่ยส่วนที่ขาดไปชั้นอื่น ไม่เกินที่มี", () => {
+  const avail = { ...plenty, Z: 2, O: 0 };
+  const r = allocateStrata(avail, 50);
+  assert.equal(sum(r), 50);
+  assert.equal(r.Z, 2);
+  assert.equal(r.O, 0);
+  for (const s of ICD_STRATA) assert.ok(r[s.key] <= avail[s.key]);
+});
+
+test("ขอมากกว่าที่มีทั้งหมด → ได้ทุกราย", () => {
+  const avail = Object.fromEntries(ICD_STRATA.map((s) => [s.key, 1])) as typeof plenty;
+  assert.equal(sum(allocateStrata(avail, 50)), ICD_STRATA.length);
+  assert.equal(sum(allocateStrata(avail, 0)), 0);
+});
+
+test("planVisits โหมดสุ่ม ใช้ stratum → แต่ละชั้นได้ตามสัดส่วน", () => {
+  const codes = ["A09", "J029", "Z000", "H10", "E119"];
+  const vs = Array.from({ length: 500 }, (_, i) => ({ vn: `s${i}`, hn: `h${i}`, icd: codes[i % codes.length] }));
+  const p = planVisits(vs, [], 20, { stratum: (v) => stratumOf(v.icd) });
+  assert.equal(p.todo.length, 20);
+  const n = (k: string) => p.todo.filter((v) => stratumOf(v.icd) === k).length;
+  // มีแค่ 5 ชั้น: AB 8 · E 4 · J 4 · Z 20 · OTHER 20 (รวม 56) → 20 ราย = 2.86/1.43/1.43/7.14/7.14
+  // เศษ 2 รายให้ AB (.86) แล้ว E (.43 เท่ากับ J แต่อยู่ก่อนในตาราง)
+  assert.deepEqual([n("AB"), n("E"), n("J"), n("Z"), n("OTHER")], [3, 2, 1, 7, 7]);
+});
+
+test("stratifiedSample ไม่สุ่มซ้ำ และสุ่มจากชั้นของตัวเอง", () => {
+  const items = Array.from({ length: 30 }, (_, i) => ({ id: i, icd: i < 10 ? "Z00" : "J06" }));
+  const got = stratifiedSample(items, 10, (x) => stratumOf(x.icd));
+  assert.equal(new Set(got.map((x) => x.id)).size, 10);
+  // มีแค่ Z (20) กับ J (4) → Z 8.33 · J 1.67 → ปัดเศษได้ Z 8 · J 2
+  assert.equal(got.filter((x) => x.icd === "Z00").length, 8);
+  assert.equal(got.filter((x) => x.icd === "J06").length, 2);
 });
 
 console.log(`\n${failed === 0 ? "✅" : "❌"} ผ่าน ${passed} / ${passed + failed} เทสต์\n`);

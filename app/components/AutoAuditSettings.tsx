@@ -17,6 +17,7 @@ import { pctTone } from "@/app/components/ScoreBadge";
 import type { LiveProgress } from "@/lib/auto-audit/progress";
 import {
   ALL_VISITS,
+  ICD_STRATA,
   MAX_VISITS_CAP,
   SHIFTS,
   type ShiftKey,
@@ -576,6 +577,8 @@ export default function AutoAuditSettings() {
               ) : Object.keys(quotasOf(form.departmentRules)).length > 0 ? (
                 "ใช้กับแผนกที่ไม่ได้เซ็ตจำนวนแยก · "
               ) : null}
+              สุ่มแบบ <strong>Stratified Random Sampling</strong> ตามรหัสโรคหลัก (
+              {ICD_STRATA.map((s) => `${s.label} ${s.percent}%`).join(" · ")}) — ชั้นไหนมีไม่พอ เกลี่ยไปชั้นอื่น ·{" "}
               1 รายใช้ AI 1 ครั้ง · ข้ามรายที่ตรวจเสร็จแล้ว · ไม่ตรวจคนเดิมซ้ำในวันเดียวกัน · ถ้าโควตา AI หมดกลางทาง
               ระบบหยุดรอแล้ว<strong>ตรวจต่อเองหลังโควตารีเซ็ต</strong>จนครบ
             </span>

@@ -329,6 +329,85 @@ export function sample<T>(items: T[], n: number, rand: () => number = Math.rando
   return a.slice(0, Math.max(0, n));
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Stratified Random Sampling — แบ่งชั้นตามรหัสโรคหลัก (diagtype 1) แล้วสุ่มแต่ละชั้นตามสัดส่วน
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * ชั้นของการสุ่มและสัดส่วน (ร้อยละ รวม 100) ตามแนวทางการตรวจสอบเวชระเบียนผู้ป่วยนอก
+ * จัดชั้นด้วยรหัสโรคหลักของ visit · ไม่เข้าชั้นไหน (หรือยังไม่ลงรหัสโรคหลัก) = "อื่นๆ"
+ */
+export const ICD_STRATA = [
+  { key: "AB", label: "A,B", patterns: ["A", "B"], percent: 8 },
+  { key: "D50-D89", label: "D50-D89", patterns: ["D50-D89"], percent: 4 },
+  { key: "E", label: "E", patterns: ["E"], percent: 4 },
+  { key: "I", label: "I", patterns: ["I"], percent: 4 },
+  { key: "J", label: "J", patterns: ["J"], percent: 4 },
+  { key: "K", label: "K", patterns: ["K"], percent: 4 },
+  { key: "M", label: "M", patterns: ["M"], percent: 8 },
+  { key: "O", label: "O", patterns: ["O"], percent: 8 },
+  { key: "R", label: "R", patterns: ["R"], percent: 8 },
+  { key: "S", label: "S", patterns: ["S"], percent: 8 },
+  { key: "Z", label: "Z", patterns: ["Z"], percent: 20 },
+  { key: "OTHER", label: "อื่นๆ", patterns: [], percent: 20 },
+] as const;
+
+export type StratumKey = (typeof ICD_STRATA)[number]["key"];
+
+/** ชั้นของรหัสโรคหลัก — null/ว่าง (ยังไม่ลงรหัส) อยู่ชั้น "อื่นๆ" */
+export function stratumOf(principalIcd: string | null | undefined): StratumKey {
+  const code = normalizeIcd(principalIcd ?? "");
+  if (code === "") return "OTHER";
+  return ICD_STRATA.find((s) => s.patterns.some((p) => icdMatches(code, p)))?.key ?? "OTHER";
+}
+
+/**
+ * แบ่ง n รายให้แต่ละชั้นตามสัดส่วน (largest remainder ให้ผลรวมเท่ากับ n พอดี)
+ * ชั้นที่มีคนไข้ไม่พอ → ส่วนที่ขาดเกลี่ยให้ชั้นที่ยังเหลือ ตามสัดส่วนของชั้นนั้น ๆ
+ * จนได้ครบ n หรือหมดทุกชั้น
+ */
+export function allocateStrata(available: Record<StratumKey, number>, n: number): Record<StratumKey, number> {
+  const out = Object.fromEntries(ICD_STRATA.map((s) => [s.key, 0])) as Record<StratumKey, number>;
+  const total = ICD_STRATA.reduce((a, s) => a + available[s.key], 0);
+  let left = Math.min(Math.max(0, n), total);
+  while (left > 0) {
+    const open = ICD_STRATA.filter((s) => available[s.key] > out[s.key]);
+    const weight = open.reduce((a, s) => a + s.percent, 0);
+    const exact = open.map((s) => ({ key: s.key, share: (left * s.percent) / weight }));
+    const give = Object.fromEntries(exact.map((e) => [e.key, Math.floor(e.share)])) as Record<string, number>;
+    let rest = left - exact.reduce((a, e) => a + give[e.key], 0);
+    // เศษที่เหลือให้ชั้นที่เศษมากสุดก่อน (เท่ากันให้ชั้นที่อยู่ก่อนในตาราง)
+    for (const e of [...exact].sort((a, b) => (b.share % 1) - (a.share % 1))) {
+      if (rest === 0) break;
+      give[e.key] += 1;
+      rest -= 1;
+    }
+    for (const s of open) {
+      const room = available[s.key] - out[s.key];
+      const take = Math.min(room, give[s.key]);
+      out[s.key] += take;
+      left -= take;
+    }
+  }
+  return out;
+}
+
+/** สุ่ม n รายแบบแบ่งชั้นตามรหัสโรคหลัก — ไม่ให้ stratum ของ visit = สุ่มธรรมดา */
+export function stratifiedSample<T>(
+  items: T[],
+  n: number,
+  stratum: (item: T) => StratumKey,
+  rand: () => number = Math.random,
+): T[] {
+  const groups = Object.fromEntries(ICD_STRATA.map((s) => [s.key, [] as T[]])) as Record<StratumKey, T[]>;
+  for (const it of items) groups[stratum(it)].push(it);
+  const counts = allocateStrata(
+    Object.fromEntries(ICD_STRATA.map((s) => [s.key, groups[s.key].length])) as Record<StratumKey, number>,
+    n,
+  );
+  return ICD_STRATA.flatMap((s) => sample(groups[s.key], counts[s.key], rand));
+}
+
 /** ฟอร์มที่มีอยู่แล้วของ visit หนึ่ง — ใช้ตัดสินว่าต้องตรวจ visit นั้นอีกไหม */
 export type ExistingForm = {
   id: string;
@@ -359,12 +438,17 @@ export type ExistingForm = {
  *
  * limit = null → ทุกรายตามลำดับที่มา, ตัวเลข → สุ่มเท่านั้นราย
  * quotas → แผนกที่กำหนดจำนวนไว้ สุ่มแยกแผนกละเท่านั้น ส่วนแผนกอื่นใช้ limit ร่วมกัน
+ * stratum → สุ่มแบบแบ่งชั้นตามรหัสโรคหลัก (ICD_STRATA) ทั้งกอง limit และกองของแต่ละแผนก
  */
 export function planVisits<V extends { vn: string; hn?: string; depcode?: string }>(
   visits: V[],
   forms: ExistingForm[],
   limit: number | null,
-  opts: { quotas?: Record<string, number>; sameDay?: { vn: string; hn?: string }[] } = {},
+  opts: {
+    quotas?: Record<string, number>;
+    sameDay?: { vn: string; hn?: string }[];
+    stratum?: (v: V) => StratumKey;
+  } = {},
   rand: () => number = Math.random,
 ): { todo: Array<V & { reuseFormId?: string }>; skipped: number } {
   const byVn = new Map<string, ExistingForm[]>();
@@ -392,16 +476,17 @@ export function planVisits<V extends { vn: string; hn?: string; depcode?: string
   );
 
   const quotas = opts.quotas ?? {};
+  const pick = <T extends V>(pool: T[], n: number): T[] =>
+    opts.stratum ? stratifiedSample(pool, n, opts.stratum, rand) : sample(pool, n, rand);
   const shared = candidates.filter((v) => !((v.depcode ?? "").trim() in quotas));
   const todo = [
     ...Object.entries(quotas).flatMap(([dep, n]) =>
-      sample(
+      pick(
         candidates.filter((v) => (v.depcode ?? "").trim() === dep),
         n,
-        rand,
       ),
     ),
-    ...(limit === null ? shared : sample(shared, limit, rand)),
+    ...(limit === null ? shared : pick(shared, limit)),
   ];
   return { todo, skipped: visits.length - candidates.length };
 }

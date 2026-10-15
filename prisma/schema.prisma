@@ -311,6 +311,7 @@ model AutoAuditSetting {
   targetDay String @default("yesterday") @db.VarChar(20)
 
   /// จำนวน visit สูงสุดต่อรอบ — คุมค่าใช้จ่าย AI (สุ่มจากทั้งวัน) · 0 = ทุกราย
+  ///   -1 = ตามแนวทาง: ร้อยละ 5 ของผู้ป่วยที่มารับบริการ ไม่ต่ำกว่า 40 ราย
   maxVisits Int @default(20)
 
   /// แผนกที่ให้ตรวจ — รหัส depcode ของ HOSxP คั่นด้วยจุลภาค · ว่าง = ทุกแผนก

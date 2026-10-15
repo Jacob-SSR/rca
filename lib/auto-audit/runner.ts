@@ -32,6 +32,7 @@ import {
   pruneRules,
   quotasOf,
   savedRulesSchema,
+  guidelineSampleSize,
   stratumOf,
   type RunFilters,
   runFiltersSchema,
@@ -231,7 +232,9 @@ export async function runAutoAudit(opts: {
   const settings = await loadSettings();
   const runDate = bangkokParts(opts.now ?? new Date()).date;
   const targetDate = opts.targetDate ?? targetDateFor(runDate, settings.targetDay);
-  const visitLimit = opts.visitLimit !== undefined ? opts.visitLimit : visitLimitOf(settings.maxVisits);
+  const limitSetting = opts.visitLimit !== undefined ? opts.visitLimit : visitLimitOf(settings.maxVisits);
+  // ตามแนวทาง → ยังไม่รู้จำนวนจนกว่าจะเห็นผู้ป่วยของวันนั้น (คิดแล้วบันทึกทับที่รอบหลังดึง visit)
+  let visitLimit = limitSetting === "guideline" ? null : limitSetting;
   const departments = opts.filters?.departments ?? settings.departments;
   const filters: RunFilters = {
     departments,
@@ -288,7 +291,7 @@ export async function runAutoAudit(opts: {
     //   - โหมดสุ่ม → Stratified Random Sampling ตามรหัสโรคหลัก (สัดส่วนใน ICD_STRATA)
     // อ่านรหัสไม่ได้ให้ล้มทั้งรอบ — ถ้าปล่อยไปจะกลายเป็นตรวจทุกโรค/สุ่มผิดวิธี
     const quotas = quotasOf(filters.rules);
-    const sampling = visitLimit !== null || Object.keys(quotas).length > 0;
+    const sampling = limitSetting !== null || Object.keys(quotas).length > 0;
     const diagOf = needsIcd(filters.rules) || sampling ? await opdDiagByDate(targetDate) : null;
     tracker.phase("planning");
     const visits = dayVisits.filter(
@@ -298,6 +301,13 @@ export async function runAutoAudit(opts: {
         (!diagOf || passesDepartmentIcd(v, diagOf.get(v.vn)?.codes ?? [], filters.rules)),
     );
     found = visits.length;
+
+    if (limitSetting === "guideline") {
+      // ผู้ป่วยที่มารับบริการ = คนไม่ซ้ำ (HN) ของกองรวม — แผนกที่กำหนดจำนวนแยกไว้ไม่นับรวม
+      const patients = new Set(visits.filter((v) => !((v.depcode ?? "").trim() in quotas)).map((v) => v.hn)).size;
+      visitLimit = guidelineSampleSize(patients);
+      await prisma.autoAuditRun.update({ where: { id: run.id }, data: { visitLimit } });
+    }
 
     // ฟอร์มที่มีอยู่แล้วของ visit ทั้งวัน (ไม่ใช่แค่ที่ผ่านตัวกรอง) + มีผลตรวจเสร็จแล้วหรือยัง
     // ทั้งวันเพราะต้องรู้ว่าคนนี้ถูกตรวจไปแล้วจาก visit อื่นในวันเดียวกันหรือยัง (ดูกติกาใน planVisits)

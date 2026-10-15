@@ -27,6 +27,8 @@ import {
   shiftDate,
   targetDateFor,
   visitLimitOf,
+  GUIDELINE_VISITS,
+  guidelineSampleSize,
 } from "@/lib/auto-audit/schedule";
 import { caseNumberBase } from "@/lib/form/case-number";
 import { classifySearch, isValidThaiCid, maskCid, parsePatientQuery } from "@/lib/hosxp/search-query";
@@ -150,7 +152,7 @@ test("maxVisits 0 = ทุกราย (limit null), ตัวเลข = สุ
   assert.equal(visitLimitOf(0), null);
   assert.equal(visitLimitOf(20), 20);
   assert.equal(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, maxVisits: 0 }).success, true);
-  assert.equal(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, maxVisits: -1 }).success, false);
+  assert.equal(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, maxVisits: -2 }).success, false);
 });
 
 test("ทุกราย: ตรวจครบตามลำดับ ข้ามรายที่ตรวจเสร็จแล้ว", () => {
@@ -392,6 +394,23 @@ test("stratifiedSample ไม่สุ่มซ้ำ และสุ่มจ�
   // มีแค่ Z (20) กับ J (4) → Z 8.33 · J 1.67 → ปัดเศษได้ Z 8 · J 2
   assert.equal(got.filter((x) => x.icd === "Z00").length, 8);
   assert.equal(got.filter((x) => x.icd === "J06").length, 2);
+});
+
+console.log("\n── จำนวนตัวอย่างตามแนวทาง (5% ไม่ต่ำกว่า 40) ──");
+
+test("maxVisits -1 = ตามแนวทาง และเป็นค่าตั้งต้น", () => {
+  assert.equal(visitLimitOf(GUIDELINE_VISITS), "guideline");
+  assert.equal(DEFAULT_SETTINGS.maxVisits, GUIDELINE_VISITS);
+  assert.equal(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, maxVisits: GUIDELINE_VISITS }).success, true);
+});
+
+test("ร้อยละ 5 ปัดขึ้น ไม่ต่ำกว่า 40 ไม่เกินจำนวนผู้ป่วย", () => {
+  assert.equal(guidelineSampleSize(300), 40); // 15 → ขั้นต่ำ 40
+  assert.equal(guidelineSampleSize(800), 40);
+  assert.equal(guidelineSampleSize(801), 41); // 40.05 → 41
+  assert.equal(guidelineSampleSize(1200), 60);
+  assert.equal(guidelineSampleSize(25), 25); // มีไม่ถึง 40 → ทุกคน
+  assert.equal(guidelineSampleSize(0), 0);
 });
 
 console.log(`\n${failed === 0 ? "✅" : "❌"} ผ่าน ${passed} / ${passed + failed} เทสต์\n`);

@@ -24,8 +24,24 @@ export const MAX_VISITS_CAP = 300;
  */
 export const ALL_VISITS = 0;
 
-/** จำนวนที่รอบหนึ่งต้องตรวจ — null = ทุกราย */
-export const visitLimitOf = (maxVisits: number): number | null => (maxVisits === ALL_VISITS ? null : maxVisits);
+/**
+ * maxVisits = -1 คือ "ตามแนวทางการตรวจสอบเวชระเบียน": สุ่มให้ได้ร้อยละ 5 ของจำนวนผู้ป่วย
+ * ที่มารับบริการ (นับคน — HN ไม่ซ้ำ ของ visit ที่ผ่านตัวกรอง) แต่ไม่ต่ำกว่า 40 ราย
+ * จำนวนจริงคิดตอนรัน (ต้องรู้จำนวนผู้ป่วยของวันก่อน) แล้วบันทึกเป็นตัวเลขไว้ที่รอบนั้น
+ */
+export const GUIDELINE_VISITS = -1;
+export const GUIDELINE = { percent: 5, min: 40 } as const;
+
+/** จำนวนตัวอย่างตามแนวทาง — ร้อยละ 5 ปัดขึ้น ไม่ต่ำกว่า 40 และไม่เกินจำนวนผู้ป่วยที่มี */
+export function guidelineSampleSize(patients: number): number {
+  return Math.min(patients, Math.max(GUIDELINE.min, Math.ceil((patients * GUIDELINE.percent) / 100)));
+}
+
+/** จำนวนที่รอบหนึ่งต้องตรวจ — null = ทุกราย · "guideline" = คิดตามแนวทางตอนรัน */
+export type VisitLimit = number | null | "guideline";
+
+export const visitLimitOf = (maxVisits: number): VisitLimit =>
+  maxVisits === ALL_VISITS ? null : maxVisits === GUIDELINE_VISITS ? "guideline" : maxVisits;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ICD-10 ที่ให้ตรวจ — ตรวจเฉพาะ visit ที่มีรหัสตามที่ระบุ ไม่มี = ข้าม
@@ -160,7 +176,7 @@ export const settingsSchema = z.object({
   maxVisits: z
     .number({ error: "ใส่จำนวนราย" })
     .int()
-    .min(ALL_VISITS, "จำนวนต้องไม่ติดลบ")
+    .min(GUIDELINE_VISITS, "จำนวนต้องไม่ติดลบ")
     .max(MAX_VISITS_CAP, `ไม่เกิน ${MAX_VISITS_CAP} ราย (ถ้าต้องการทุกราย เลือก "ตรวจทุกรายของวัน")`),
   /** เซ็ตแยกรายแผนก (จำนวนต่อรอบ + ICD-10) — ใส่ได้เฉพาะแผนกที่เลือก */
   departmentRules: savedRulesSchema,
@@ -176,7 +192,7 @@ export const DEFAULT_SETTINGS: AutoAuditSettings = {
   runTime: "12:00",
   weekdays: [0, 1, 2, 3, 4, 5, 6],
   targetDay: "yesterday",
-  maxVisits: 20,
+  maxVisits: GUIDELINE_VISITS,
   departments: [],
   departmentRules: {},
 };

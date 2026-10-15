@@ -41,7 +41,7 @@ const DEFAULT_POS: Pos = { right: 12, bottom: 12 };
 const EDGE = 8;
 /** ขยับเกินนี้ (px) ถือว่าลาก ไม่ใช่กด — กันลากแล้วเผลอเปิดหน้าตรวจอัตโนมัติ */
 const DRAG_THRESHOLD = 5;
-const HIDDEN_ON = ["/settings/auto-audit", "/login", "/no-access"];
+const HIDDEN_ON = ["/settings/auto-audit", "/animation", "/login", "/no-access"];
 
 function readMinimized(): boolean {
   try {

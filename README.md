@@ -383,6 +383,11 @@ DATABASE_URL="mysql://rca:rcapass@localhost:3308/rca"
 PORT=3800
 ```
 
+## Animation น้องผู้ตรวจ
+
+sprite sheet 5 ท่า + ตัวเล่น + หน้าดู/ตรวจคุณภาพที่ `/animation` — วิธีใช้ วิธีสร้างใหม่ และเช็กลิสต์ตรวจคุณภาพ
+อยู่ใน [docs/office-girl-animation.md](docs/office-girl-animation.md)
+
 ## Deploy
 
 ```bash

@@ -1,5 +1,6 @@
 // lib/auto-audit/runner.ts
 // รันตรวจอัตโนมัติหนึ่งรอบ: ดึง visit OPD ของวันเป้าหมายจาก HOSxP → สุ่มตามจำนวนที่ตั้ง
+// (Stratified Random Sampling ตามรหัสโรคหลัก — สัดส่วนดู ICD_STRATA ใน schedule.ts)
 // → สร้างเคส + ฟอร์มจากข้อมูล HOSxP → สร้างเอกสาร → ตรวจด้วย AI (pipeline เดิม)
 //
 // ⚠️ ใช้ pipeline ตัวเดียวกับปุ่ม "บันทึกและตรวจด้วย AI" ทุกขั้น
@@ -11,7 +12,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { isHosxpEnabled } from "@/lib/hosxp/env";
 import { listVisitsByDate, lookupVisit } from "@/lib/hosxp/visit";
-import { opdIcdByDate } from "@/lib/hosxp/icd";
+import { opdDiagByDate } from "@/lib/hosxp/icd";
 import { recordFormSchema } from "@/lib/form/schema";
 import { caseNumberFor, generateDocumentFromForm, isFormEmpty } from "@/lib/form/service";
 import { reviewExistingDocument } from "@/lib/review/pipeline";
@@ -31,6 +32,8 @@ import {
   pruneRules,
   quotasOf,
   savedRulesSchema,
+  guidelineSampleSize,
+  stratumOf,
   type RunFilters,
   runFiltersSchema,
   runTarget,
@@ -229,7 +232,9 @@ export async function runAutoAudit(opts: {
   const settings = await loadSettings();
   const runDate = bangkokParts(opts.now ?? new Date()).date;
   const targetDate = opts.targetDate ?? targetDateFor(runDate, settings.targetDay);
-  const visitLimit = opts.visitLimit !== undefined ? opts.visitLimit : visitLimitOf(settings.maxVisits);
+  const limitSetting = opts.visitLimit !== undefined ? opts.visitLimit : visitLimitOf(settings.maxVisits);
+  // ตามแนวทาง → ยังไม่รู้จำนวนจนกว่าจะเห็นผู้ป่วยของวันนั้น (คิดแล้วบันทึกทับที่รอบหลังดึง visit)
+  let visitLimit = limitSetting === "guideline" ? null : limitSetting;
   const departments = opts.filters?.departments ?? settings.departments;
   const filters: RunFilters = {
     departments,
@@ -281,17 +286,28 @@ export async function runAutoAudit(opts: {
     if (!isHosxpEnabled()) throw new Error("ยังไม่ได้ตั้งค่าเชื่อมต่อ HOSxP");
 
     const dayVisits = await listVisitsByDate(targetDate, 2000, { opdOnly: true, withDiag: false });
-    // แผนกที่เซ็ต ICD-10 ไว้ → ตรวจเฉพาะ visit ของแผนกนั้นที่มีรหัสนั้น (ไม่มี/ไม่ได้ลงรหัส = ข้าม)
-    // อ่านรหัสไม่ได้ให้ล้มทั้งรอบ — ถ้าปล่อยไปจะกลายเป็นตรวจทุกโรค ใช้ AI เกินที่ตั้งใจ
-    const icdOf = needsIcd(filters.rules) ? await opdIcdByDate(targetDate) : null;
+    // รหัสวินิจฉัยของทั้งวัน ใช้สองอย่าง:
+    //   - แผนกที่เซ็ต ICD-10 ไว้ → ตรวจเฉพาะ visit ของแผนกนั้นที่มีรหัสนั้น (ไม่มี/ไม่ได้ลงรหัส = ข้าม)
+    //   - โหมดสุ่ม → Stratified Random Sampling ตามรหัสโรคหลัก (สัดส่วนใน ICD_STRATA)
+    // อ่านรหัสไม่ได้ให้ล้มทั้งรอบ — ถ้าปล่อยไปจะกลายเป็นตรวจทุกโรค/สุ่มผิดวิธี
+    const quotas = quotasOf(filters.rules);
+    const sampling = limitSetting !== null || Object.keys(quotas).length > 0;
+    const diagOf = needsIcd(filters.rules) || sampling ? await opdDiagByDate(targetDate) : null;
     tracker.phase("planning");
     const visits = dayVisits.filter(
       (v) =>
         v.hn &&
         matchesFilters(v, filters) &&
-        (!icdOf || passesDepartmentIcd(v, icdOf.get(v.vn) ?? [], filters.rules)),
+        (!diagOf || passesDepartmentIcd(v, diagOf.get(v.vn)?.codes ?? [], filters.rules)),
     );
     found = visits.length;
+
+    if (limitSetting === "guideline") {
+      // ผู้ป่วยที่มารับบริการ = คนไม่ซ้ำ (HN) ของกองรวม — แผนกที่กำหนดจำนวนแยกไว้ไม่นับรวม
+      const patients = new Set(visits.filter((v) => !((v.depcode ?? "").trim() in quotas)).map((v) => v.hn)).size;
+      visitLimit = guidelineSampleSize(patients);
+      await prisma.autoAuditRun.update({ where: { id: run.id }, data: { visitLimit } });
+    }
 
     // ฟอร์มที่มีอยู่แล้วของ visit ทั้งวัน (ไม่ใช่แค่ที่ผ่านตัวกรอง) + มีผลตรวจเสร็จแล้วหรือยัง
     // ทั้งวันเพราะต้องรู้ว่าคนนี้ถูกตรวจไปแล้วจาก visit อื่นในวันเดียวกันหรือยัง (ดูกติกาใน planVisits)
@@ -313,7 +329,7 @@ export async function runAutoAudit(opts: {
         completed: f.documents.some((d) => d.reviews.length > 0),
       })),
       visitLimit,
-      { quotas: quotasOf(filters.rules), sameDay: dayVisits },
+      { quotas, sameDay: dayVisits, stratum: (v) => stratumOf(diagOf?.get(v.vn)?.principal) },
     );
     skipped = plan.skipped;
 

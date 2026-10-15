@@ -161,15 +161,18 @@ export async function lookupIcd(
   }
 }
 
+/** รหัสวินิจฉัยของ visit หนึ่ง: ทุกรหัส (โรคหลัก+โรคร่วม) และรหัสโรคหลัก (diagtype 1) */
+export type VisitDiag = { codes: string[]; principal: string | null };
+
 /**
- * รหัส ICD-10 ทุกตัวของทุก visit ผู้ป่วยนอกในวันนั้น { vn → [icd10] } — ใช้กรองรอบตรวจอัตโนมัติ
+ * รหัส ICD-10 ของทุก visit ผู้ป่วยนอกในวันนั้น { vn → รหัสทั้งหมด + โรคหลัก } — ใช้กรอง/แบ่งชั้นรอบตรวจอัตโนมัติ
  * query เดียวต่อวัน (join ด้วยวันที่) แทนการยิงทีละ VN
  * ⚠️ throw ได้ — ผู้เรียกต้องจัดการเอง (กรองไม่ได้ ห้ามปล่อยให้ตรวจทุกโรคแทน)
  */
-export async function opdIcdByDate(date: string): Promise<Map<string, string[]>> {
+export async function opdDiagByDate(date: string): Promise<Map<string, VisitDiag>> {
   const [ovst, ovstdiag] = await Promise.all([qualify("ovst"), qualify("ovstdiag")]);
   const rows = await hosxpSelect<Row>(
-    `SELECT d.vn AS vn, d.icd10 AS icd
+    `SELECT d.vn AS vn, d.icd10 AS icd, d.diagtype AS diagtype
        FROM ${ovstdiag} d
        JOIN ${ovst} o ON o.vn = d.vn
       WHERE o.vstdate = ?
@@ -177,12 +180,15 @@ export async function opdIcdByDate(date: string): Promise<Map<string, string[]>>
     [date],
   );
 
-  const out = new Map<string, string[]>();
+  const out = new Map<string, VisitDiag>();
   for (const r of rows) {
     const vn = str(r.vn);
     const icd = str(r.icd);
     if (vn === "" || icd === "") continue;
-    out.set(vn, [...(out.get(vn) ?? []), icd]);
+    const d = out.get(vn) ?? { codes: [], principal: null };
+    d.codes.push(icd);
+    if (str(r.diagtype) === "1" && d.principal === null) d.principal = icd;
+    out.set(vn, d);
   }
   return out;
 }

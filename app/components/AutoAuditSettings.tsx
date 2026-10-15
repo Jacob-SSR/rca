@@ -17,6 +17,9 @@ import { pctTone } from "@/app/components/ScoreBadge";
 import type { LiveProgress } from "@/lib/auto-audit/progress";
 import {
   ALL_VISITS,
+  GUIDELINE,
+  GUIDELINE_VISITS,
+  ICD_STRATA,
   MAX_VISITS_CAP,
   SHIFTS,
   type ShiftKey,
@@ -28,6 +31,7 @@ import {
   runTarget,
   settingsSchema,
   visitLimitOf,
+  type VisitLimit,
   type AutoAuditSettings as Settings,
   type TargetDay,
 } from "@/lib/auto-audit/schedule";
@@ -109,11 +113,26 @@ function runTargetOf(r: Run): number | null {
   return runTarget({ departments: r.filters?.departments ?? [], quotas: quotasOf(r.filters?.rules ?? {}) }, r.visitLimit);
 }
 
-/** เป้าของรอบ เช่น "ตรวจทุกราย" / "เป้า 25 ราย" */
-function targetLabel(departments: string[], rules: Rules, visitLimit: number | null): string {
-  const t = runTarget({ departments, quotas: quotasOf(rules) }, visitLimit);
+const GUIDELINE_LABEL = `${GUIDELINE.percent}% ของผู้ป่วย (ไม่ต่ำกว่า ${GUIDELINE.min} ราย)`;
+
+/** เป้าของรอบ เช่น "ตรวจทุกราย" / "เป้า 25 ราย" / "เป้า 5% ของผู้ป่วย …" */
+function targetLabel(departments: string[], rules: Rules, visitLimit: VisitLimit): string {
+  const quotas = quotasOf(rules);
+  if (visitLimit === "guideline" && hasSharedPool({ departments, quotas })) {
+    const fixed = Object.values(quotas).reduce((a, b) => a + b, 0);
+    return `เป้า ${GUIDELINE_LABEL}${fixed > 0 ? ` + ${fixed} ราย` : ""}`;
+  }
+  const t = runTarget({ departments, quotas }, visitLimit === "guideline" ? 0 : visitLimit);
   return t === null ? "ตรวจทุกราย" : `เป้า ${t} ราย`;
 }
+
+/** จำนวนของกองรวม ไว้แสดงในช่องของแผนกที่ไม่ได้เซ็ตจำนวนแยก */
+const sharedHintOf = (maxVisits: number) =>
+  maxVisits === ALL_VISITS
+    ? "ตรวจทุกราย"
+    : maxVisits === GUIDELINE_VISITS
+      ? `สุ่มรวมกัน ${GUIDELINE_LABEL}`
+      : `สุ่มรวมกัน ${maxVisits} ราย`;
 
 export default function AutoAuditSettings() {
   const [data, setData] = useState<Data | null>(null);
@@ -363,7 +382,7 @@ export default function AutoAuditSettings() {
               rules={runRules ?? {}}
               onChange={setRunRules}
               onInvalid={(d, bad) => setRunIcdInvalid((m) => ({ ...m, [d]: bad }))}
-              sharedHint={form.maxVisits === ALL_VISITS ? "ตรวจทุกราย" : `สุ่มรวมกัน ${form.maxVisits} ราย`}
+              sharedHint={sharedHintOf(form.maxVisits)}
             />
             <span className="hint">เริ่มจากค่าที่เซ็ตไว้ในตั้งค่า แก้ตรงนี้มีผลเฉพาะรอบนี้</span>
           </div>
@@ -540,6 +559,17 @@ export default function AutoAuditSettings() {
                   type="radio"
                   name="aa-mode"
                   className="size-4 accent-brand-600"
+                  checked={form.maxVisits === GUIDELINE_VISITS}
+                  onChange={() => patch({ maxVisits: GUIDELINE_VISITS })}
+                />
+                ตามแนวทาง: สุ่ม {GUIDELINE.percent}% ของผู้ป่วยที่มารับบริการ ไม่ต่ำกว่า {GUIDELINE.min} ราย
+                <span className="text-sm text-zinc-500">(แนะนำ · มีไม่ถึง {GUIDELINE.min} ราย ตรวจเท่าที่มี)</span>
+              </label>
+              <label className="flex items-center gap-2.5 text-base">
+                <input
+                  type="radio"
+                  name="aa-mode"
+                  className="size-4 accent-brand-600"
                   checked={form.maxVisits === ALL_VISITS}
                   onChange={() => patch({ maxVisits: ALL_VISITS })}
                 />
@@ -550,7 +580,7 @@ export default function AutoAuditSettings() {
                   type="radio"
                   name="aa-mode"
                   className="size-4 accent-brand-600"
-                  checked={form.maxVisits !== ALL_VISITS}
+                  checked={form.maxVisits > 0 || Number.isNaN(form.maxVisits)}
                   onChange={() => patch({ maxVisits: 20 })}
                 />
                 สุ่ม
@@ -561,8 +591,8 @@ export default function AutoAuditSettings() {
                   max={MAX_VISITS_CAP}
                   aria-label="จำนวนรายที่สุ่ม"
                   className="input tabular w-28 py-1.5"
-                  disabled={form.maxVisits === ALL_VISITS}
-                  value={form.maxVisits === ALL_VISITS ? "" : Number.isFinite(form.maxVisits) ? form.maxVisits : ""}
+                  disabled={form.maxVisits === ALL_VISITS || form.maxVisits === GUIDELINE_VISITS}
+                  value={Number.isFinite(form.maxVisits) && form.maxVisits > 0 ? form.maxVisits : ""}
                   onChange={(e) => patch({ maxVisits: e.target.valueAsNumber })}
                 />
                 ราย <span className="text-sm text-zinc-500">(สูงสุด {MAX_VISITS_CAP})</span>
@@ -576,6 +606,8 @@ export default function AutoAuditSettings() {
               ) : Object.keys(quotasOf(form.departmentRules)).length > 0 ? (
                 "ใช้กับแผนกที่ไม่ได้เซ็ตจำนวนแยก · "
               ) : null}
+              สุ่มแบบ <strong>Stratified Random Sampling</strong> ตามรหัสโรคหลัก (
+              {ICD_STRATA.map((s) => `${s.label} ${s.percent}%`).join(" · ")}) — ชั้นไหนมีไม่พอ เกลี่ยไปชั้นอื่น ·{" "}
               1 รายใช้ AI 1 ครั้ง · ข้ามรายที่ตรวจเสร็จแล้ว · ไม่ตรวจคนเดิมซ้ำในวันเดียวกัน · ถ้าโควตา AI หมดกลางทาง
               ระบบหยุดรอแล้ว<strong>ตรวจต่อเองหลังโควตารีเซ็ต</strong>จนครบ
             </span>
@@ -591,7 +623,7 @@ export default function AutoAuditSettings() {
               rules={form.departmentRules}
               onChange={(r) => patch({ departmentRules: r })}
               onInvalid={(d, bad) => setFormIcdInvalid((m) => ({ ...m, [d]: bad }))}
-              sharedHint={form.maxVisits === ALL_VISITS ? "ตรวจทุกราย" : `สุ่มรวมกัน ${form.maxVisits} ราย`}
+              sharedHint={sharedHintOf(form.maxVisits)}
             />
             <span className="hint">
               ICD-10 ใส่ได้ทั้งรหัสเต็ม (J02.9) ขึ้นต้นด้วย (E11 = ทุกรหัสย่อยของ E11) หรือช่วง (I10-I15) คั่นด้วยจุลภาค
